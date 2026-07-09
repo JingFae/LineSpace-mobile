@@ -1,11 +1,5 @@
-import { PlaceholderScreen } from "@/screens/PlaceholderScreen";
+import { ComposeScreen } from "@/features/compose/ComposeScreen";
 
 export default function ComposeRoute() {
-  return (
-    <PlaceholderScreen
-      activeTab="compose"
-      title="Compose"
-      body="Drafting, AI suggestions, and collaborative writing entry points belong here."
-    />
-  );
+  return <ComposeScreen />;
 }

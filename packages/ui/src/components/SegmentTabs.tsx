@@ -29,9 +29,23 @@ export function SegmentTabs<TValue extends string>({
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
             onPress={() => onChange(tab.value)}
-            style={[styles.tab, active && variant === "bar" && styles.activeBarTab]}
+            style={[
+              styles.tab,
+              variant === "plain" && styles.primaryTab,
+              variant === "bar" && styles.barTab,
+              active && variant === "bar" && styles.activeBarTab
+            ]}
           >
-            <Text style={[styles.label, active && styles.activeLabel]}>{tab.label}</Text>
+            <Text
+              style={[
+                styles.label,
+                variant === "plain" && styles.primaryLabel,
+                variant === "bar" && styles.filterLabel,
+                active && styles.activeLabel
+              ]}
+            >
+              {tab.label}
+            </Text>
           </Pressable>
         );
       })}
@@ -50,7 +64,8 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: colors.line,
-    paddingVertical: spacing.xs
+    paddingVertical: spacing.xs,
+    backgroundColor: colors.surface
   },
   tab: {
     minHeight: 38,
@@ -60,12 +75,30 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: spacing.sm
   },
+  primaryTab: {
+    minHeight: 58,
+    minWidth: 72
+  },
+  barTab: {
+    minHeight: 43,
+    minWidth: 52
+  },
   activeBarTab: {
-    backgroundColor: colors.surfaceMuted
+    backgroundColor: colors.surface
   },
   label: {
     ...typography.label,
     color: colors.muted
+  },
+  primaryLabel: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "400"
+  },
+  filterLabel: {
+    fontSize: 14,
+    lineHeight: 16,
+    fontWeight: "400"
   },
   activeLabel: {
     color: colors.ink

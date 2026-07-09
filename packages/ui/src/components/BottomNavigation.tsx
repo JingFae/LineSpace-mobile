@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { colors, radius, spacing, typography } from "@linespace/tokens";
+import { colors, spacing } from "@linespace/tokens";
 
 export type BottomNavItem<TValue extends string> = {
   value: TValue;
@@ -20,30 +20,76 @@ export function BottomNavigation<TValue extends string>({
   return (
     <View style={styles.root}>
       {items.map((item) => {
-        const active = item.value === value;
         const isCreate = item.value === "compose";
 
         return (
           <Pressable
             key={item.value}
             accessibilityRole="button"
-            accessibilityState={{ selected: active }}
+            accessibilityState={{ selected: item.value === value }}
             onPress={() => onChange(item.value)}
-            style={[styles.item, isCreate && styles.createItem, active && styles.activeItem]}
+            style={[styles.item, isCreate && styles.createItem]}
           >
-            <View
-              style={[
-                styles.icon,
-                isCreate && styles.createIcon,
-                active && !isCreate && styles.activeIcon
-              ]}
-            >
-              {isCreate ? <Text style={styles.createGlyph}>+</Text> : null}
-            </View>
-            {!isCreate ? <Text style={[styles.label, active && styles.activeLabel]}>{item.label}</Text> : null}
+            <NavIcon value={item.value} />
           </Pressable>
         );
       })}
+    </View>
+  );
+}
+
+function NavIcon({ value }: { value: string }) {
+  if (value === "compose") {
+    return (
+      <View style={styles.createIcon}>
+        <Text style={styles.createGlyph}>+</Text>
+      </View>
+    );
+  }
+
+  if (value === "discover") {
+    return <BookIcon color={colors.black} />;
+  }
+
+  if (value === "comments") {
+    return <BubbleIcon color="#9B9B9B" />;
+  }
+
+  if (value === "profile") {
+    return <View style={styles.profileDot} />;
+  }
+
+  return <ScrollIcon color="#9B9B9B" />;
+}
+
+function ScrollIcon({ color }: { color: string }) {
+  return (
+    <View style={[styles.scrollIcon, { borderColor: color }]}>
+      <View style={[styles.scrollRoll, { borderColor: color }]} />
+      <View style={[styles.scrollLine, { backgroundColor: color }]} />
+      <View style={[styles.scrollLineShort, { backgroundColor: color }]} />
+    </View>
+  );
+}
+
+function BookIcon({ color }: { color: string }) {
+  return (
+    <View style={styles.bookIcon}>
+      <View style={[styles.bookPage, styles.bookLeft, { borderColor: color }]} />
+      <View style={[styles.bookPage, styles.bookRight, { borderColor: color }]} />
+      <View style={[styles.bookSpine, { backgroundColor: color }]} />
+      <View style={[styles.bookBaseLeft, { backgroundColor: color }]} />
+      <View style={[styles.bookBaseRight, { backgroundColor: color }]} />
+    </View>
+  );
+}
+
+function BubbleIcon({ color }: { color: string }) {
+  return (
+    <View style={[styles.bubbleIcon, { borderColor: color }]}>
+      <View style={[styles.bubbleLine, { backgroundColor: color }]} />
+      <View style={[styles.bubbleLineShort, { backgroundColor: color }]} />
+      <View style={[styles.bubbleTail, { borderColor: color }]} />
     </View>
   );
 }
@@ -54,14 +100,19 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: 74,
+    height: 69,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-around",
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.line,
     backgroundColor: colors.surface,
-    paddingHorizontal: spacing.sm
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    paddingHorizontal: spacing.sm,
+    shadowColor: colors.black,
+    shadowOpacity: 0.07,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: -4 },
+    elevation: 10
   },
   item: {
     minWidth: 58,
@@ -70,22 +121,11 @@ const styles = StyleSheet.create({
     gap: 3
   },
   createItem: {
-    transform: [{ translateY: -10 }]
-  },
-  activeItem: {},
-  icon: {
-    width: 24,
-    height: 24,
-    borderWidth: 1.8,
-    borderColor: colors.ink,
-    borderRadius: radius.sm
-  },
-  activeIcon: {
-    backgroundColor: colors.accent
+    transform: [{ translateY: -8 }]
   },
   createIcon: {
-    width: 44,
-    height: 44,
+    width: 43,
+    height: 43,
     borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
@@ -94,14 +134,126 @@ const styles = StyleSheet.create({
   },
   createGlyph: {
     color: colors.white,
-    fontSize: 34,
-    lineHeight: 36
+    fontSize: 43,
+    lineHeight: 45,
+    fontWeight: "300"
   },
-  label: {
-    ...typography.caption,
-    color: colors.muted
+  profileDot: {
+    width: 29,
+    height: 29,
+    borderRadius: 15,
+    backgroundColor: "#FF0038"
   },
-  activeLabel: {
-    color: colors.ink
+  scrollIcon: {
+    width: 26,
+    height: 30,
+    borderWidth: 2,
+    borderRadius: 4
+  },
+  scrollRoll: {
+    position: "absolute",
+    left: -8,
+    top: 0,
+    width: 13,
+    height: 30,
+    borderWidth: 2,
+    borderRightWidth: 0,
+    borderTopLeftRadius: 7,
+    borderBottomLeftRadius: 7
+  },
+  scrollLine: {
+    position: "absolute",
+    left: 8,
+    top: 8,
+    width: 12,
+    height: 2,
+    borderRadius: 1
+  },
+  scrollLineShort: {
+    position: "absolute",
+    left: 8,
+    top: 16,
+    width: 8,
+    height: 2,
+    borderRadius: 1
+  },
+  bookIcon: {
+    width: 33,
+    height: 31
+  },
+  bookPage: {
+    position: "absolute",
+    top: 1,
+    width: 16,
+    height: 24,
+    borderWidth: 2,
+    borderTopWidth: 0,
+    borderBottomLeftRadius: 4,
+    borderBottomRightRadius: 4
+  },
+  bookLeft: {
+    left: 0,
+    borderRightWidth: 0,
+    transform: [{ skewY: "8deg" }]
+  },
+  bookRight: {
+    right: 0,
+    borderLeftWidth: 0,
+    transform: [{ skewY: "-8deg" }]
+  },
+  bookSpine: {
+    position: "absolute",
+    left: 15,
+    top: 3,
+    width: 3,
+    height: 24,
+    borderRadius: 2
+  },
+  bookBaseLeft: {
+    position: "absolute",
+    left: 2,
+    bottom: 0,
+    width: 14,
+    height: 2,
+    borderRadius: 1,
+    transform: [{ rotate: "13deg" }]
+  },
+  bookBaseRight: {
+    position: "absolute",
+    right: 2,
+    bottom: 0,
+    width: 14,
+    height: 2,
+    borderRadius: 1,
+    transform: [{ rotate: "-13deg" }]
+  },
+  bubbleIcon: {
+    width: 31,
+    height: 28,
+    borderWidth: 2,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  bubbleLine: {
+    width: 12,
+    height: 2,
+    borderRadius: 1,
+    marginBottom: 5
+  },
+  bubbleLineShort: {
+    width: 8,
+    height: 2,
+    borderRadius: 1
+  },
+  bubbleTail: {
+    position: "absolute",
+    left: 4,
+    bottom: -5,
+    width: 9,
+    height: 9,
+    borderLeftWidth: 2,
+    borderBottomWidth: 2,
+    transform: [{ rotate: "-18deg" }]
   }
 });

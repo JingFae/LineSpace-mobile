@@ -27,6 +27,7 @@ export function AppScreen({
 }: AppScreenProps) {
   const contentStyle = [
     styles.content,
+    !scroll && styles.fixedContent,
     padded && styles.padded,
     contentContainerStyle
   ];
@@ -64,6 +65,9 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     paddingBottom: 96
+  },
+  fixedContent: {
+    flex: 1
   },
   padded: {
     paddingHorizontal: spacing.lg

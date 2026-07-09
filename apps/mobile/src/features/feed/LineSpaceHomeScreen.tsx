@@ -1,7 +1,14 @@
 import { router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+  type ImageSourcePropType
+} from "react-native";
 import {
   AppScreen,
   BottomNavigation,
@@ -11,15 +18,20 @@ import {
   type PoemCardModel,
   type SegmentTab
 } from "@linespace/ui";
-import { colors, spacing, typography } from "@linespace/tokens";
+import { colors, spacing } from "@linespace/tokens";
 import type { FeedFilter, FeedSection, PoemSummary } from "@linespace/api-client";
 import { lineSpaceApi } from "@/services/lineSpaceApi";
 import { mainTabs, tabRoutes } from "@/navigation/tabs";
 
+declare const require: (path: string) => ImageSourcePropType;
+
+const waterArtwork = require("../../../assets/preview-water.png");
+const homeBackground = "#F6F7F7";
+
 const sectionTabs: SegmentTab<FeedSection>[] = [
   { value: "latest", label: "Latest" },
   { value: "popular", label: "Popular" },
-  { value: "following", label: "Follow" }
+  { value: "following", label: "follow" }
 ];
 
 const filterTabs: SegmentTab<FeedFilter>[] = [
@@ -44,22 +56,34 @@ export function LineSpaceHomeScreen() {
   );
 
   return (
-    <AppScreen scroll={false} contentContainerStyle={styles.screen}>
-      <View style={styles.header}>
-        <Text style={styles.brand}>LineSpace</Text>
-        <Pressable accessibilityRole="button" style={styles.searchButton}>
-          <Text style={styles.searchText}>Search</Text>
-        </Pressable>
+    <AppScreen
+      scroll={false}
+      padded={false}
+      style={styles.safeArea}
+      contentContainerStyle={styles.screen}
+    >
+      <View style={styles.topChrome}>
+        <View style={styles.header}>
+          <View style={styles.sectionTabs}>
+            <SegmentTabs tabs={sectionTabs} value={section} onChange={setSection} />
+          </View>
+          <SearchButton />
+        </View>
+
+        <View style={styles.filterWrap}>
+          <SegmentTabs tabs={filterTabs} value={filter} onChange={setFilter} variant="bar" />
+        </View>
       </View>
 
-      <SegmentTabs tabs={sectionTabs} value={section} onChange={setSection} />
-      <View style={styles.filterWrap}>
-        <SegmentTabs tabs={filterTabs} value={filter} onChange={setFilter} variant="bar" />
-      </View>
-
-      <View style={styles.feed}>
+      <ScrollView
+        style={styles.feed}
+        contentContainerStyle={styles.feedContent}
+        showsVerticalScrollIndicator={false}
+      >
         {feedQuery.isLoading ? (
-          <ActivityIndicator color={colors.accent} />
+          <View style={styles.loadingWrap}>
+            <ActivityIndicator color={colors.accent} />
+          </View>
         ) : feedQuery.isError ? (
           <EmptyState
             title="Feed unavailable"
@@ -79,7 +103,7 @@ export function LineSpaceHomeScreen() {
             />
           ))
         )}
-      </View>
+      </ScrollView>
 
       <BottomNavigation
         items={mainTabs}
@@ -87,6 +111,15 @@ export function LineSpaceHomeScreen() {
         onChange={(value) => router.push(tabRoutes[value])}
       />
     </AppScreen>
+  );
+}
+
+function SearchButton() {
+  return (
+    <Pressable accessibilityRole="button" style={styles.searchButton}>
+      <View style={styles.searchLens} />
+      <View style={styles.searchHandle} />
+    </Pressable>
   );
 }
 
@@ -105,7 +138,8 @@ function mapPoemToCard(poem: PoemSummary): PoemCardModel {
     statusLabel: poem.status === "growing" ? "Poem Growing" : "Final Poem",
     startedAtLabel: formatPoemDate(poem.startedAt),
     metrics: poem.metrics,
-    artworkTone: poem.artworkTone
+    artworkTone: poem.artworkTone,
+    artworkSource: poem.artworkTone === "water" ? waterArtwork : undefined
   };
 }
 
@@ -120,40 +154,70 @@ function formatPoemDate(value: string) {
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    backgroundColor: homeBackground
+  },
   screen: {
-    paddingTop: spacing.lg
+    backgroundColor: homeBackground
+  },
+  topChrome: {
+    height: 144,
+    backgroundColor: colors.surface
   },
   header: {
+    height: 101,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: spacing.md
+    paddingLeft: 73,
+    paddingRight: 28,
+    paddingTop: 44,
+    backgroundColor: colors.surface
   },
-  brand: {
-    ...typography.title,
-    color: colors.ink,
-    letterSpacing: 0
+  sectionTabs: {
+    flex: 1,
+    paddingRight: 12
   },
   searchButton: {
-    minHeight: 34,
-    borderRadius: 17,
-    borderWidth: 1,
-    borderColor: colors.ink,
+    width: 46,
+    height: 46,
     alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: spacing.md
+    justifyContent: "center"
   },
-  searchText: {
-    ...typography.label,
-    color: colors.ink
+  searchLens: {
+    width: 31,
+    height: 31,
+    borderRadius: 16,
+    borderWidth: 2.3,
+    borderColor: colors.ink
+  },
+  searchHandle: {
+    position: "absolute",
+    right: 6,
+    bottom: 7,
+    width: 15,
+    height: 2.3,
+    borderRadius: 2,
+    backgroundColor: colors.ink,
+    transform: [{ rotate: "45deg" }]
   },
   filterWrap: {
-    marginHorizontal: -spacing.lg,
-    marginTop: spacing.sm,
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.lg
+    backgroundColor: colors.surface,
+    height: 43,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#F8F8F8",
+    paddingHorizontal: 25
   },
   feed: {
-    flex: 1
+    flex: 1,
+    backgroundColor: homeBackground
+  },
+  feedContent: {
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 96
+  },
+  loadingWrap: {
+    paddingTop: spacing.xxxl
   }
 });

@@ -14,9 +14,33 @@ export type UserProfile = {
 
 export type PoemMetrics = {
   comments: number;
+  commentThreads?: number;
   likes: number;
   contributions: number;
+  contributionLines?: number;
   saves: number;
+};
+
+export type PoemCreditPerson = {
+  handle: string;
+  displayName: string;
+  avatarColor: string;
+};
+
+export type PoemCredits = {
+  startedBy: PoemCreditPerson;
+  commentContributors: PoemCreditPerson[];
+  quoteContributors: PoemCreditPerson[];
+};
+
+export type PoemComment = {
+  id: string;
+  author: UserProfile;
+  dateLabel: string;
+  body: string;
+  badgeLabel?: string;
+  badgeTone?: "dark" | "warm";
+  annotation?: string;
 };
 
 export type PoemSummary = {
@@ -30,6 +54,8 @@ export type PoemSummary = {
   startedAt: string;
   metrics: PoemMetrics;
   artworkTone: "water" | "paper" | "night";
+  credits?: PoemCredits;
+  comments?: PoemComment[];
 };
 
 export type FeedQuery = {
