@@ -1,4 +1,5 @@
 import type {
+  PoemDesignCatalog,
   PoemSummary,
   UserConnectionKind,
   UserConnectionSummary,
@@ -7,6 +8,129 @@ import type {
   UserProfileContentSection,
   UserProfileDetails
 } from "./types";
+
+export const mockPoemDesignCatalog: PoemDesignCatalog = {
+  templates: [
+    {
+      id: "quiet-letter",
+      label: "Quiet letter",
+      description: "Ruled paper, literary serif and a botanical mark.",
+      role: "template",
+      swatch: "#F4EFE2",
+      layout: {
+        templateId: "quiet-letter",
+        typographyId: "literary-serif",
+        backgroundId: "letter-paper",
+        stickerIds: ["botanical"]
+      }
+    },
+    {
+      id: "night-whisper",
+      label: "Night whisper",
+      description: "Dark blue paper, handwritten lines and a quiet moon.",
+      role: "template",
+      swatch: "#213142",
+      layout: {
+        templateId: "night-whisper",
+        typographyId: "handwritten",
+        backgroundId: "midnight",
+        stickerIds: ["moon"]
+      }
+    },
+    {
+      id: "travel-postcard",
+      label: "Postcard",
+      description: "Warm correspondence paper with a postmark accent.",
+      role: "template",
+      swatch: "#EADBC5",
+      layout: {
+        templateId: "travel-postcard",
+        typographyId: "clean-sans",
+        backgroundId: "postcard",
+        stickerIds: ["postmark"]
+      }
+    }
+  ],
+  typography: [
+    {
+      id: "literary-serif",
+      label: "Literary",
+      description: "A classic serif for reflective poems.",
+      role: "serif",
+      swatch: "#151515"
+    },
+    {
+      id: "handwritten",
+      label: "Handwritten",
+      description: "A softer English script for intimate lines.",
+      role: "script",
+      swatch: "#38516B"
+    },
+    {
+      id: "clean-sans",
+      label: "Clear",
+      description: "A restrained modern voice.",
+      role: "sans",
+      swatch: "#626262"
+    }
+  ],
+  backgrounds: [
+    {
+      id: "letter-paper",
+      label: "Letter paper",
+      description: "Warm ruled stationery.",
+      role: "ruled",
+      swatch: "#F4EFE2"
+    },
+    {
+      id: "kraft-paper",
+      label: "Kraft",
+      description: "Earthy paper with a tactile tone.",
+      role: "kraft",
+      swatch: "#C6A476"
+    },
+    {
+      id: "postcard",
+      label: "Postcard",
+      description: "Vintage correspondence stock.",
+      role: "postcard",
+      swatch: "#EADBC5"
+    },
+    {
+      id: "midnight",
+      label: "Midnight",
+      description: "Deep blue for luminous text.",
+      role: "dark",
+      swatch: "#213142"
+    }
+  ],
+  stickers: [
+    {
+      id: "botanical",
+      label: "Botanical",
+      description: "A small pressed-leaf mark.",
+      role: "botanical",
+      swatch: "#66765A",
+      symbol: "❦"
+    },
+    {
+      id: "moon",
+      label: "Moon",
+      description: "A pale crescent for night poems.",
+      role: "moon",
+      swatch: "#F3E8C8",
+      symbol: "☾"
+    },
+    {
+      id: "postmark",
+      label: "Postmark",
+      description: "A simple correspondence stamp.",
+      role: "postmark",
+      swatch: "#9D5D4D",
+      symbol: "✦"
+    }
+  ]
+};
 
 export const mockUsers: UserProfile[] = [
   {

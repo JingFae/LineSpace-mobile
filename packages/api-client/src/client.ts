@@ -1,16 +1,27 @@
 import {
   mockPoems,
+  mockPoemDesignCatalog,
   mockUserConnections,
   mockUserProfileContent,
-  mockUserProfileDetails
+  mockUserProfileDetails,
+  mockUsers
 } from "./mock-data";
 import type {
   AiAssistRequest,
   AiAssistResponse,
+  CreatePoemDraftInput,
+  DraftInvitation,
+  DraftOperationInput,
   FeedQuery,
+  InviteDraftCollaboratorInput,
   PoemCollectionKind,
+  PoemDesignCatalog,
+  PoemDraft,
   PoemEngagementResult,
+  PublishPoemDraftInput,
+  PublishPoemDraftResult,
   PoemSummary,
+  UpdatePoemDraftInput,
   UpdatePoemCollectionInput,
   UserConnectionKind,
   UserConnectionPage,
@@ -23,6 +34,14 @@ import type {
 } from "./types";
 
 export interface LineSpaceApi {
+  getPoemDesignCatalog(): Promise<PoemDesignCatalog>;
+  createPoemDraft(input: CreatePoemDraftInput): Promise<PoemDraft>;
+  getPoemDraft(id: string): Promise<PoemDraft | null>;
+  updatePoemDraft(input: UpdatePoemDraftInput): Promise<PoemDraft>;
+  applyDraftOperation(input: DraftOperationInput): Promise<PoemDraft>;
+  listDraftInviteCandidates(userId: string): Promise<UserConnectionPage["items"]>;
+  inviteDraftCollaborator(input: InviteDraftCollaboratorInput): Promise<DraftInvitation>;
+  publishPoemDraft(input: PublishPoemDraftInput): Promise<PublishPoemDraftResult>;
   listFeed(query?: FeedQuery): Promise<PoemSummary[]>;
   getPoem(id: string, viewerId?: string): Promise<PoemSummary | null>;
   setPoemCollection(input: UpdatePoemCollectionInput): Promise<PoemEngagementResult>;
@@ -46,7 +65,169 @@ type MutableUserCollections = Record<PoemCollectionKind, Set<string>>;
 export class MockLineSpaceApi implements LineSpaceApi {
   private readonly poems = mockPoems.map(clonePoem);
   private readonly profiles = mockUserProfileDetails.map(cloneUserProfile);
+  private readonly drafts = new Map<string, PoemDraft>();
+  private readonly invitations: DraftInvitation[] = [];
   private readonly collectionsByUser = new Map<string, MutableUserCollections>();
+  private draftSequence = 0;
+
+  async getPoemDesignCatalog(): Promise<PoemDesignCatalog> {
+    return cloneDesignCatalog(mockPoemDesignCatalog);
+  }
+
+  async createPoemDraft(input: CreatePoemDraftInput): Promise<PoemDraft> {
+    const owner = this.profiles.find((profile) => profile.id === input.ownerId);
+    if (!owner) {
+      throw new Error(`User ${input.ownerId} was not found`);
+    }
+
+    const now = new Date().toISOString();
+    const draft: PoemDraft = {
+      id: `draft-${++this.draftSequence}`,
+      ownerId: input.ownerId,
+      mode: input.mode,
+      status: "editing",
+      title: "",
+      body: "",
+      byline: owner.displayName,
+      tags: [],
+      settings: {
+        declareOriginal: false,
+        isPublic: true,
+        allowComments: true,
+        allowQuotes: true,
+        allowSave: true
+      },
+      layout: cloneLayout(mockPoemDesignCatalog.templates[0]!.layout),
+      collaborators: [
+        {
+          user: profileToUser(owner),
+          role: "owner",
+          status: "active",
+          cursorLine: 1,
+          lastSeenAt: now
+        }
+      ],
+      version: 1,
+      createdAt: now,
+      updatedAt: now
+    };
+    this.drafts.set(draft.id, draft);
+    return cloneDraft(draft);
+  }
+
+  async getPoemDraft(id: string): Promise<PoemDraft | null> {
+    const draft = this.drafts.get(id);
+    return draft ? cloneDraft(draft) : null;
+  }
+
+  async updatePoemDraft(input: UpdatePoemDraftInput): Promise<PoemDraft> {
+    const draft = this.requireEditableDraft(input.draftId, input.userId);
+    if (input.title !== undefined) draft.title = input.title;
+    if (input.body !== undefined) draft.body = input.body;
+    if (input.byline !== undefined) draft.byline = input.byline;
+    if (input.tags !== undefined) draft.tags = [...input.tags];
+    if (input.media !== undefined) draft.media = input.media ? { ...input.media } : undefined;
+    if (input.settings) draft.settings = { ...draft.settings, ...input.settings };
+    if (input.layout) draft.layout = cloneLayout(input.layout);
+    draft.status = "editing";
+    draft.version += 1;
+    draft.updatedAt = new Date().toISOString();
+    return cloneDraft(draft);
+  }
+
+  async applyDraftOperation(input: DraftOperationInput): Promise<PoemDraft> {
+    const draft = this.requireEditableDraft(input.draftId, input.userId);
+    draft.title = input.title;
+    draft.body = input.body;
+    draft.version = Math.max(draft.version, input.baseVersion) + 1;
+    draft.updatedAt = new Date().toISOString();
+    const collaborator = draft.collaborators.find((item) => item.user.id === input.userId);
+    if (collaborator) {
+      collaborator.cursorLine = Math.max(1, input.body.split(/\r?\n/).length);
+      collaborator.lastSeenAt = draft.updatedAt;
+    }
+    return cloneDraft(draft);
+  }
+
+  async listDraftInviteCandidates(userId: string): Promise<UserConnectionPage["items"]> {
+    return mockUsers
+      .filter((user) => user.id !== userId)
+      .map((user) => ({ ...user, isFollowing: true }));
+  }
+
+  async inviteDraftCollaborator(
+    input: InviteDraftCollaboratorInput
+  ): Promise<DraftInvitation> {
+    const draft = this.requireEditableDraft(input.draftId, input.inviterId);
+    const invitee = mockUsers.find((user) => user.id === input.inviteeId);
+    if (!invitee) {
+      throw new Error(`User ${input.inviteeId} was not found`);
+    }
+
+    const existing = this.invitations.find(
+      (invitation) =>
+        invitation.draftId === input.draftId && invitation.inviteeId === input.inviteeId
+    );
+    if (existing) {
+      return { ...existing };
+    }
+
+    const invitation: DraftInvitation = {
+      id: `invite-${this.invitations.length + 1}`,
+      draftId: input.draftId,
+      inviterId: input.inviterId,
+      inviteeId: input.inviteeId,
+      status: "accepted",
+      createdAt: new Date().toISOString()
+    };
+    this.invitations.push(invitation);
+    draft.collaborators.push({
+      user: { ...invitee },
+      role: "editor",
+      status: "active",
+      cursorLine: 2,
+      lastSeenAt: invitation.createdAt
+    });
+    draft.version += 1;
+    draft.updatedAt = invitation.createdAt;
+    return { ...invitation };
+  }
+
+  async publishPoemDraft(input: PublishPoemDraftInput): Promise<PublishPoemDraftResult> {
+    const draft = this.requireEditableDraft(input.draftId, input.userId);
+    const owner = this.profiles.find((profile) => profile.id === draft.ownerId)!;
+    const now = new Date().toISOString();
+    const poem: PoemSummary = {
+      id: `poem-${draft.id}`,
+      title: draft.title.trim() || "untitled line",
+      lines: draft.body.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
+      author: profileToUser(owner),
+      contributorsCount: draft.collaborators.length,
+      tags: [...draft.tags],
+      status: "growing",
+      startedAt: draft.createdAt,
+      metrics: { comments: 0, likes: 0, contributions: 0, saves: 0 },
+      viewer: { liked: false, saved: false },
+      artworkTone: draft.layout.backgroundId === "midnight" ? "night" : "paper",
+      credits: {
+        startedBy: profileToUser(owner),
+        commentContributors: draft.collaborators.slice(1).map((item) => ({
+          handle: item.user.handle,
+          displayName: item.user.displayName,
+          avatarColor: item.user.avatarColor
+        })),
+        quoteContributors: []
+      }
+    };
+    if (poem.lines.length === 0) {
+      poem.lines = ["A new line is waiting to be written."];
+    }
+    draft.status = "published";
+    draft.updatedAt = now;
+    draft.version += 1;
+    this.poems.unshift(poem);
+    return { draft: cloneDraft(draft), poem: clonePoem(poem) };
+  }
 
   async listFeed(query: FeedQuery = {}): Promise<PoemSummary[]> {
     const { filter, viewerId } = query;
@@ -290,6 +471,17 @@ export class MockLineSpaceApi implements LineSpaceApi {
         }
       : { ...item };
   }
+
+  private requireEditableDraft(draftId: string, userId: string) {
+    const draft = this.drafts.get(draftId);
+    if (!draft) {
+      throw new Error(`Draft ${draftId} was not found`);
+    }
+    if (!draft.collaborators.some((item) => item.user.id === userId)) {
+      throw new Error(`User ${userId} cannot edit draft ${draftId}`);
+    }
+    return draft;
+  }
 }
 
 function clonePoem(poem: PoemSummary): PoemSummary {
@@ -318,6 +510,47 @@ function profileContentFromPoem(poem: PoemSummary) {
     tags: [...poem.tags],
     finishedAt: poem.startedAt,
     highlightCount: poem.metrics.likes
+  };
+}
+
+function profileToUser(profile: UserProfileDetails) {
+  return {
+    id: profile.id,
+    handle: profile.handle,
+    displayName: profile.displayName,
+    avatarColor: profile.avatarColor,
+    avatarUrl: profile.avatarUrl,
+    bio: profile.bio
+  };
+}
+
+function cloneLayout(layout: PoemDraft["layout"]): PoemDraft["layout"] {
+  return { ...layout, stickerIds: [...layout.stickerIds] };
+}
+
+function cloneDraft(draft: PoemDraft): PoemDraft {
+  return {
+    ...draft,
+    tags: [...draft.tags],
+    media: draft.media ? { ...draft.media } : undefined,
+    settings: { ...draft.settings },
+    layout: cloneLayout(draft.layout),
+    collaborators: draft.collaborators.map((item) => ({
+      ...item,
+      user: { ...item.user }
+    }))
+  };
+}
+
+function cloneDesignCatalog(catalog: PoemDesignCatalog): PoemDesignCatalog {
+  return {
+    templates: catalog.templates.map((item) => ({
+      ...item,
+      layout: cloneLayout(item.layout)
+    })),
+    typography: catalog.typography.map((item) => ({ ...item })),
+    backgrounds: catalog.backgrounds.map((item) => ({ ...item })),
+    stickers: catalog.stickers.map((item) => ({ ...item }))
   };
 }
 

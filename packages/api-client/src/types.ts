@@ -4,6 +4,138 @@ export type FeedFilter = "all" | "most-contributed" | "growing" | "final";
 
 export type PoemStatus = "growing" | "final" | "draft";
 
+export type ComposeMode = "draft" | "relay";
+
+export type PoemDraftStatus = "editing" | "ready" | "published";
+
+export type PoemTypographyId = "literary-serif" | "handwritten" | "clean-sans";
+
+export type PoemBackgroundId = "letter-paper" | "kraft-paper" | "postcard" | "midnight";
+
+export type PoemTemplateId = "quiet-letter" | "night-whisper" | "travel-postcard";
+
+export type PoemStickerId = "botanical" | "moon" | "postmark";
+
+export type PoemLayoutConfig = {
+  templateId: PoemTemplateId;
+  typographyId: PoemTypographyId;
+  backgroundId: PoemBackgroundId;
+  stickerIds: PoemStickerId[];
+};
+
+export type PoemDesignOption<TId extends string, TRole extends string> = {
+  id: TId;
+  label: string;
+  description: string;
+  role: TRole;
+  swatch: string;
+};
+
+export type PoemTemplateOption = PoemDesignOption<PoemTemplateId, "template"> & {
+  layout: PoemLayoutConfig;
+};
+
+export type PoemDesignCatalog = {
+  templates: PoemTemplateOption[];
+  typography: Array<PoemDesignOption<PoemTypographyId, "serif" | "script" | "sans">>;
+  backgrounds: Array<
+    PoemDesignOption<PoemBackgroundId, "ruled" | "kraft" | "postcard" | "dark">
+  >;
+  stickers: Array<PoemDesignOption<PoemStickerId, "botanical" | "moon" | "postmark"> & {
+    symbol: string;
+  }>;
+};
+
+export type PoemDraftMedia = {
+  uri: string;
+  kind: "image" | "video";
+  name: string;
+};
+
+export type PoemDraftSettings = {
+  declareOriginal: boolean;
+  isPublic: boolean;
+  allowComments: boolean;
+  allowQuotes: boolean;
+  allowSave: boolean;
+};
+
+export type DraftCollaborator = {
+  user: UserProfile;
+  role: "owner" | "editor";
+  status: "invited" | "active";
+  cursorLine?: number;
+  lastSeenAt: string;
+};
+
+export type PoemDraft = {
+  id: string;
+  ownerId: string;
+  mode: ComposeMode;
+  status: PoemDraftStatus;
+  title: string;
+  body: string;
+  byline: string;
+  tags: string[];
+  media?: PoemDraftMedia;
+  settings: PoemDraftSettings;
+  layout: PoemLayoutConfig;
+  collaborators: DraftCollaborator[];
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreatePoemDraftInput = {
+  ownerId: string;
+  mode: ComposeMode;
+};
+
+export type UpdatePoemDraftInput = {
+  draftId: string;
+  userId: string;
+  title?: string;
+  body?: string;
+  byline?: string;
+  tags?: string[];
+  media?: PoemDraftMedia | null;
+  settings?: Partial<PoemDraftSettings>;
+  layout?: PoemLayoutConfig;
+};
+
+export type DraftOperationInput = {
+  draftId: string;
+  userId: string;
+  title: string;
+  body: string;
+  baseVersion: number;
+};
+
+export type DraftInvitation = {
+  id: string;
+  draftId: string;
+  inviterId: string;
+  inviteeId: string;
+  status: "pending" | "accepted" | "declined";
+  createdAt: string;
+};
+
+export type InviteDraftCollaboratorInput = {
+  draftId: string;
+  inviterId: string;
+  inviteeId: string;
+};
+
+export type PublishPoemDraftInput = {
+  draftId: string;
+  userId: string;
+};
+
+export type PublishPoemDraftResult = {
+  draft: PoemDraft;
+  poem: PoemSummary;
+};
+
 export type UserProfile = {
   id: string;
   handle: string;

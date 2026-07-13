@@ -1,9 +1,18 @@
 import type {
   AiAssistRequest,
   AiAssistResponse,
+  CreatePoemDraftInput,
+  DraftInvitation,
+  DraftOperationInput,
   FeedQuery,
+  InviteDraftCollaboratorInput,
+  PoemDesignCatalog,
+  PoemDraft,
   PoemEngagementResult,
   PoemSummary,
+  PublishPoemDraftInput,
+  PublishPoemDraftResult,
+  UpdatePoemDraftInput,
   UpdatePoemCollectionInput,
   UserConnectionKind,
   UserConnectionPage,
@@ -18,6 +27,55 @@ import type { LineSpaceApi } from "./client";
 
 export class HttpLineSpaceApi implements LineSpaceApi {
   constructor(private readonly baseUrl: string) {}
+
+  async getPoemDesignCatalog(): Promise<PoemDesignCatalog> {
+    return this.getJson<PoemDesignCatalog>("/v1/compose/design-catalog");
+  }
+
+  async createPoemDraft(input: CreatePoemDraftInput): Promise<PoemDraft> {
+    return this.postJson<PoemDraft>("/v1/drafts", input);
+  }
+
+  async getPoemDraft(id: string): Promise<PoemDraft | null> {
+    return this.getJson<PoemDraft | null>(`/v1/drafts/${encodeURIComponent(id)}`);
+  }
+
+  async updatePoemDraft(input: UpdatePoemDraftInput): Promise<PoemDraft> {
+    const { draftId, ...changes } = input;
+    return this.putJson<PoemDraft>(`/v1/drafts/${encodeURIComponent(draftId)}`, changes);
+  }
+
+  async applyDraftOperation(input: DraftOperationInput): Promise<PoemDraft> {
+    const { draftId, ...operation } = input;
+    return this.postJson<PoemDraft>(
+      `/v1/drafts/${encodeURIComponent(draftId)}/operations`,
+      operation
+    );
+  }
+
+  async listDraftInviteCandidates(userId: string) {
+    return this.getJson<Awaited<ReturnType<LineSpaceApi["listDraftInviteCandidates"]>>>(
+      `/v1/users/${encodeURIComponent(userId)}/invite-candidates`
+    );
+  }
+
+  async inviteDraftCollaborator(
+    input: InviteDraftCollaboratorInput
+  ): Promise<DraftInvitation> {
+    const { draftId, ...invitation } = input;
+    return this.postJson<DraftInvitation>(
+      `/v1/drafts/${encodeURIComponent(draftId)}/invitations`,
+      invitation
+    );
+  }
+
+  async publishPoemDraft(input: PublishPoemDraftInput): Promise<PublishPoemDraftResult> {
+    const { draftId, ...request } = input;
+    return this.postJson<PublishPoemDraftResult>(
+      `/v1/drafts/${encodeURIComponent(draftId)}/publish`,
+      request
+    );
+  }
 
   async listFeed(query: FeedQuery = {}): Promise<PoemSummary[]> {
     const params = new URLSearchParams();

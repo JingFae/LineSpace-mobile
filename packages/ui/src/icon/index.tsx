@@ -1,4 +1,4 @@
-import Svg, { Circle, Path, Rect } from "react-native-svg";
+import Svg, { Circle, Line, Path, Rect, Text as SvgText } from "react-native-svg";
 
 export type FigmaIconProps = {
   width?: number;
@@ -145,6 +145,63 @@ export function CameraIcon({ width = 22, height = 22, color = "#FFFFFF" }: Figma
     <Svg width={width} height={height} viewBox="0 0 24 24">
       <Path d="M8.2 5.2L9.6 3H14.4L15.8 5.2H18.5C20.43 5.2 22 6.77 22 8.7V17.5C22 19.43 20.43 21 18.5 21H5.5C3.57 21 2 19.43 2 17.5V8.7C2 6.77 3.57 5.2 5.5 5.2H8.2Z" fill="none" stroke={color} strokeWidth={1.6} strokeLinejoin="round" />
       <Circle cx={12} cy={13} r={3.6} fill="none" stroke={color} strokeWidth={1.6} />
+    </Svg>
+  );
+}
+
+export function InviteIcon({ width = 75, height = 75, color = "#A3A3A3" }: FigmaIconProps) {
+  return (
+    <Svg width={width} height={height} viewBox="0 0 75 75">
+      <Circle cx={37.5} cy={37.5} r={37} fill="none" stroke={color} />
+      <Circle cx={34} cy={28} r={7} fill="none" stroke={color} strokeWidth={2.2} />
+      <Path d="M20 49C22.4 41.8 28.1 38 35 38C38 38 40.8 38.7 43.2 40" fill="none" stroke={color} strokeWidth={2.2} strokeLinecap="round" />
+      <Circle cx={51} cy={48} r={8} fill="none" stroke={color} strokeWidth={2.2} />
+      <Line x1={51} y1={44} x2={51} y2={52} stroke={color} strokeWidth={2} strokeLinecap="round" />
+      <Line x1={47} y1={48} x2={55} y2={48} stroke={color} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function PoemRelayIcon({ width = 82, height = 82 }: FigmaIconProps) {
+  return (
+    <Svg width={width} height={height} viewBox="0 0 108 108">
+      <Circle cx={54} cy={54} r={54} fill="#000000" />
+      <Path d="M31 21H64C69 21 72 24 72 29V43C72 48 69 51 64 51H50L42 58V51H39C34 51 31 48 31 43V21Z" fill="none" stroke="#FFFFFF" strokeWidth={2.5} strokeLinejoin="round" />
+      <Path d="M53 32H79C83 32 86 35 86 39V50C86 54 83 57 79 57H75V64L67 57H60C56 57 53 54 53 50V32Z" fill="#000000" stroke="#FFFFFF" strokeWidth={2.5} strokeLinejoin="round" />
+      <SvgText x={54} y={79} fill="#FFFFFF" fontSize={12} textAnchor="middle">Poem</SvgText>
+      <SvgText x={54} y={94} fill="#FFFFFF" fontSize={12} textAnchor="middle">Relay</SvgText>
+    </Svg>
+  );
+}
+
+export function TemplateIcon({ width = 36, height = 34, color = "#000000" }: FigmaIconProps) {
+  return (
+    <Svg width={width} height={height} viewBox="0 0 36 34">
+      <Path d="M18 0.5C27.7 0.5 35.5 7.9 35.5 17C35.5 26.1 27.7 33.5 18 33.5C8.3 33.5 0.5 26.1 0.5 17C0.5 7.9 8.3 0.5 18 0.5Z" fill="none" stroke={color} />
+      <Rect x={9.5} y={8.5} width={9} height={17} rx={2} fill="none" stroke={color} strokeWidth={1.3} />
+      <Path d="M18.5 13L22 10.5C23.4 9.5 25.2 9.8 26.2 11.1C27.2 12.4 27.1 14 26.1 15.3L18.5 24" fill="none" stroke={color} strokeWidth={1.3} strokeLinejoin="round" />
+      <Circle cx={14} cy={21} r={1} fill={color} />
+    </Svg>
+  );
+}
+
+export function BackgroundPaperIcon({ width = 36, height = 34, color = "#000000" }: FigmaIconProps) {
+  return (
+    <Svg width={width} height={height} viewBox="0 0 36 34">
+      <Path d="M18 0.5C27.7 0.5 35.5 7.9 35.5 17C35.5 26.1 27.7 33.5 18 33.5C8.3 33.5 0.5 26.1 0.5 17C0.5 7.9 8.3 0.5 18 0.5Z" fill="none" stroke={color} />
+      <Path d="M11 8.5H20.5C24 8.5 26 10.5 26 14V20.5C26 24 24 25.5 20.5 25.5H11V8.5Z" fill="none" stroke={color} strokeWidth={1.3} strokeLinejoin="round" />
+      <Line x1={14} y1={13} x2={22} y2={13} stroke={color} strokeWidth={1.2} strokeLinecap="round" />
+      <Line x1={14} y1={17} x2={21} y2={17} stroke={color} strokeWidth={1.2} strokeLinecap="round" />
+      <Line x1={14} y1={21} x2={18} y2={21} stroke={color} strokeWidth={1.2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function TypographyIcon({ width = 36, height = 34, color = "#000000" }: FigmaIconProps) {
+  return (
+    <Svg width={width} height={height} viewBox="0 0 36 34">
+      <Path d="M18 0.5C27.7 0.5 35.5 7.9 35.5 17C35.5 26.1 27.7 33.5 18 33.5C8.3 33.5 0.5 26.1 0.5 17C0.5 7.9 8.3 0.5 18 0.5Z" fill="none" stroke={color} />
+      <Path d="M11 10H25M18 10V25M14 25H22" fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
     </Svg>
   );
 }

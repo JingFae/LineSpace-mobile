@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { router, type Href } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import {
@@ -12,6 +12,7 @@ import {
 import {
   AppScreen,
   BottomNavigation,
+  CreateFlowSheet,
   EmptyState,
   PoemCard,
   SearchIcon,
@@ -46,6 +47,7 @@ const filterTabs: SegmentTab<FeedFilter>[] = [
 export function LineSpaceHomeScreen() {
   const [section, setSection] = useState<FeedSection>("latest");
   const [filter, setFilter] = useState<FeedFilter>("all");
+  const [createOpen, setCreateOpen] = useState(false);
   const engagement = usePoemEngagement();
 
   const feedQuery = useQuery({
@@ -121,7 +123,25 @@ export function LineSpaceHomeScreen() {
       <BottomNavigation
         items={mainTabs}
         value="home"
-        onChange={(value) => router.push(tabRoutes[value])}
+        onChange={(value) => {
+          if (value === "compose") {
+            setCreateOpen(true);
+            return;
+          }
+          router.push(tabRoutes[value]);
+        }}
+      />
+
+      <CreateFlowSheet
+        onClose={() => setCreateOpen(false)}
+        onDraftPress={() => {
+          setCreateOpen(false);
+          router.push({
+            pathname: "/(tabs)/compose",
+            params: { session: `${Date.now()}` }
+          } as Href);
+        }}
+        visible={createOpen}
       />
     </AppScreen>
   );
