@@ -62,6 +62,7 @@ export const mockPoems: PoemSummary[] = [
       contributionLines: 4,
       saves: 111
     },
+    viewer: { liked: false, saved: false },
     artworkTone: "water",
     credits: {
       startedBy: creditPeople.lili,
@@ -157,6 +158,7 @@ export const mockPoems: PoemSummary[] = [
       contributionLines: 4,
       saves: 111
     },
+    viewer: { liked: false, saved: false },
     artworkTone: "paper",
     credits: {
       startedBy: creditPeople.ray,
@@ -194,6 +196,7 @@ export const mockPoems: PoemSummary[] = [
       contributionLines: 3,
       saves: 220
     },
+    viewer: { liked: false, saved: false },
     artworkTone: "night"
   }
 ];

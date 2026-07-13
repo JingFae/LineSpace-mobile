@@ -14,14 +14,16 @@ import {
   BottomNavigation,
   EmptyState,
   PoemCard,
+  SearchIcon,
   SegmentTabs,
   type PoemCardModel,
   type SegmentTab
 } from "@linespace/ui";
 import { colors, spacing } from "@linespace/tokens";
 import type { FeedFilter, FeedSection, PoemSummary } from "@linespace/api-client";
-import { lineSpaceApi } from "@/services/lineSpaceApi";
+import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
 import { mainTabs, tabRoutes } from "@/navigation/tabs";
+import { usePoemEngagement } from "@/features/poem/usePoemEngagement";
 
 declare const require: (path: string) => ImageSourcePropType;
 
@@ -44,10 +46,11 @@ const filterTabs: SegmentTab<FeedFilter>[] = [
 export function LineSpaceHomeScreen() {
   const [section, setSection] = useState<FeedSection>("latest");
   const [filter, setFilter] = useState<FeedFilter>("all");
+  const engagement = usePoemEngagement();
 
   const feedQuery = useQuery({
-    queryKey: ["feed", section, filter],
-    queryFn: () => lineSpaceApi.listFeed({ section, filter })
+    queryKey: ["feed", section, filter, currentUserId],
+    queryFn: () => lineSpaceApi.listFeed({ section, filter, viewerId: currentUserId })
   });
 
   const poems = useMemo(
@@ -98,8 +101,18 @@ export function LineSpaceHomeScreen() {
           poems.map((poem) => (
             <PoemCard
               key={poem.id}
+              interactionsDisabled={engagement.isPending}
               poem={poem}
+              onCommentPress={(id) =>
+                router.push({ pathname: "/poem/[id]", params: { id } })
+              }
+              onLikePress={(id, isLiked) =>
+                engagement.setCollection(id, "liked", isLiked)
+              }
               onPress={(id) => router.push({ pathname: "/poem/[id]", params: { id } })}
+              onSavePress={(id, isSaved) =>
+                engagement.setCollection(id, "saved", isSaved)
+              }
             />
           ))
         )}
@@ -117,8 +130,7 @@ export function LineSpaceHomeScreen() {
 function SearchButton() {
   return (
     <Pressable accessibilityRole="button" style={styles.searchButton}>
-      <View style={styles.searchLens} />
-      <View style={styles.searchHandle} />
+      <SearchIcon width={26} height={26} />
     </Pressable>
   );
 }
@@ -138,6 +150,7 @@ function mapPoemToCard(poem: PoemSummary): PoemCardModel {
     statusLabel: poem.status === "growing" ? "Poem Growing" : "Final Poem",
     startedAtLabel: formatPoemDate(poem.startedAt),
     metrics: poem.metrics,
+    viewer: poem.viewer,
     artworkTone: poem.artworkTone,
     artworkSource: poem.artworkTone === "water" ? waterArtwork : undefined
   };
@@ -183,23 +196,6 @@ const styles = StyleSheet.create({
     height: 46,
     alignItems: "center",
     justifyContent: "center"
-  },
-  searchLens: {
-    width: 31,
-    height: 31,
-    borderRadius: 16,
-    borderWidth: 2.3,
-    borderColor: colors.ink
-  },
-  searchHandle: {
-    position: "absolute",
-    right: 6,
-    bottom: 7,
-    width: 15,
-    height: 2.3,
-    borderRadius: 2,
-    backgroundColor: colors.ink,
-    transform: [{ rotate: "45deg" }]
   },
   filterWrap: {
     backgroundColor: colors.surface,

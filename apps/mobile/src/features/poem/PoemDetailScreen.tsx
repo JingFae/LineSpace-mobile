@@ -11,10 +11,17 @@ import {
   View,
   type ImageSourcePropType
 } from "react-native";
-import { AppScreen, EmptyState } from "@linespace/ui";
+import {
+  AppScreen,
+  CommentIcon,
+  EmptyState,
+  PoemEngagementBar,
+  SearchIcon
+} from "@linespace/ui";
 import { colors, radius, spacing } from "@linespace/tokens";
 import type { PoemComment, PoemCreditPerson, PoemSummary } from "@linespace/api-client";
-import { lineSpaceApi } from "@/services/lineSpaceApi";
+import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
+import { usePoemEngagement } from "./usePoemEngagement";
 
 declare const require: (path: string) => ImageSourcePropType;
 
@@ -26,14 +33,13 @@ type PoemDetailScreenProps = {
   id?: string;
 };
 
-type MetricKind = "comment" | "heart" | "contribution" | "save";
-
 export function PoemDetailScreen({ id }: PoemDetailScreenProps) {
   const [creditsOpen, setCreditsOpen] = useState(false);
+  const engagement = usePoemEngagement();
   const poemQuery = useQuery({
-    queryKey: ["poem", id],
+    queryKey: ["poem", id, currentUserId],
     enabled: Boolean(id),
-    queryFn: () => lineSpaceApi.getPoem(id!)
+    queryFn: () => lineSpaceApi.getPoem(id!, currentUserId)
   });
 
   const poem = poemQuery.data ?? undefined;
@@ -76,7 +82,16 @@ export function PoemDetailScreen({ id }: PoemDetailScreenProps) {
             isOpen={creditsOpen}
             onToggle={() => setCreditsOpen((value) => !value)}
           />
-          <MetricDock poem={poem} />
+          <MetricDock
+            onLikePress={(isLiked) =>
+              engagement.setCollection(poem.id, "liked", isLiked)
+            }
+            onSavePress={(isSaved) =>
+              engagement.setCollection(poem.id, "saved", isSaved)
+            }
+            disabled={engagement.isPending}
+            poem={poem}
+          />
         </>
       ) : null}
     </AppScreen>
@@ -143,6 +158,7 @@ function PoemDetailContent({ poem }: { poem: PoemSummary }) {
         </View>
 
         <View style={styles.commentInput}>
+          <CommentIcon color="#9B9B9B" height={23} width={23} />
           <Text style={styles.commentPlaceholder}>Comment a line...</Text>
         </View>
 
@@ -271,73 +287,28 @@ function CreditPerson({
   );
 }
 
-function MetricDock({ poem }: { poem: PoemSummary }) {
-  return (
-    <View style={styles.metricDock}>
-      <Metric
-        kind="comment"
-        primary={formatMetricLead(poem.metrics.commentThreads, poem.metrics.comments)}
-        secondary={formatMetricTail(poem.metrics.commentThreads, poem.metrics.comments)}
-      />
-      <Metric kind="heart" primary={`${poem.metrics.likes}`} />
-      <Metric
-        kind="contribution"
-        primary={formatMetricLead(poem.metrics.contributionLines, poem.metrics.contributions)}
-        secondary={formatMetricTail(poem.metrics.contributionLines, poem.metrics.contributions)}
-      />
-      <Metric kind="save" primary={`${poem.metrics.saves}`} />
-    </View>
-  );
-}
-
-function Metric({
-  kind,
-  primary,
-  secondary
+function MetricDock({
+  poem,
+  disabled,
+  onLikePress,
+  onSavePress
 }: {
-  kind: MetricKind;
-  primary: string;
-  secondary?: string;
+  poem: PoemSummary;
+  disabled: boolean;
+  onLikePress: (isLiked: boolean) => void;
+  onSavePress: (isSaved: boolean) => void;
 }) {
   return (
-    <View style={styles.metric}>
-      <MetricIcon kind={kind} />
-      <Text style={styles.metricValue}>
-        {primary}
-        {secondary ? <Text style={styles.metricSecondary}>/{secondary}</Text> : null}
-      </Text>
-    </View>
-  );
-}
-
-function MetricIcon({ kind }: { kind: MetricKind }) {
-  if (kind === "heart") {
-    return <Text style={styles.heartIcon}>♡</Text>;
-  }
-
-  if (kind === "save") {
-    return (
-      <View style={styles.saveIcon}>
-        <View style={styles.saveNotch} />
-      </View>
-    );
-  }
-
-  if (kind === "contribution") {
-    return (
-      <View style={styles.contributionIcon}>
-        <View style={styles.arrowStem} />
-        <View style={styles.arrowHeadLeft} />
-        <View style={styles.arrowHeadRight} />
-        <View style={styles.uploadTray} />
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.commentIcon}>
-      <View style={styles.commentLine} />
-      <View style={styles.commentTail} />
+    <View style={styles.metricDock}>
+      <PoemEngagementBar
+        disabled={disabled}
+        liked={poem.viewer.liked}
+        metrics={poem.metrics}
+        onLikePress={() => onLikePress(!poem.viewer.liked)}
+        onSavePress={() => onSavePress(!poem.viewer.saved)}
+        saved={poem.viewer.saved}
+        variant="dock"
+      />
     </View>
   );
 }
@@ -345,8 +316,7 @@ function MetricIcon({ kind }: { kind: MetricKind }) {
 function SearchButton() {
   return (
     <Pressable accessibilityRole="button" style={styles.searchButton}>
-      <View style={styles.searchLens} />
-      <View style={styles.searchHandle} />
+      <SearchIcon width={26} height={26} />
     </Pressable>
   );
 }
@@ -405,14 +375,6 @@ function formatPoemDate(value: string) {
   return `${year}/${month}/${day} ${weekday}.`;
 }
 
-function formatMetricLead(current: number | undefined, total: number) {
-  return current === undefined ? `${total}` : `${current}`;
-}
-
-function formatMetricTail(current: number | undefined, total: number) {
-  return current === undefined ? undefined : `${total}`;
-}
-
 const fallbackPalette = {
   paper: {
     root: { backgroundColor: "#E8D6B7" },
@@ -458,7 +420,7 @@ const styles = StyleSheet.create({
   backButton: {
     width: 24,
     height: 44,
-    justifyContent: "center",
+    justifyContent: "flex-start",
     marginRight: 4
   },
   chevronLeft: {
@@ -514,23 +476,6 @@ const styles = StyleSheet.create({
     height: 42,
     alignItems: "center",
     justifyContent: "center"
-  },
-  searchLens: {
-    width: 30,
-    height: 30,
-    borderRadius: 16,
-    borderWidth: 2.2,
-    borderColor: colors.ink
-  },
-  searchHandle: {
-    position: "absolute",
-    right: 3,
-    bottom: 4,
-    width: 15,
-    height: 2.2,
-    borderRadius: 2,
-    backgroundColor: colors.ink,
-    transform: [{ rotate: "45deg" }]
   },
   scroll: {
     flex: 1,
@@ -659,7 +604,10 @@ const styles = StyleSheet.create({
     height: 43,
     borderRadius: radius.pill,
     backgroundColor: "#F0F0F0",
-    justifyContent: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-start",
+    gap: 10,
     paddingHorizontal: 24,
     marginBottom: 18
   },
@@ -865,121 +813,6 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     height: 68,
-    borderTopLeftRadius: 17,
-    borderTopRightRadius: 17,
-    backgroundColor: colors.surface,
-    flexDirection: "row",
-    justifyContent: "space-around",
-    paddingTop: 10,
     zIndex: 30
-  },
-  metric: {
-    alignItems: "center",
-    minWidth: 58
-  },
-  commentIcon: {
-    width: 30,
-    height: 30,
-    borderWidth: 2,
-    borderColor: colors.ink,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  commentLine: {
-    width: 12,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: colors.ink
-  },
-  commentTail: {
-    position: "absolute",
-    left: 5,
-    bottom: -4,
-    width: 9,
-    height: 9,
-    borderLeftWidth: 2,
-    borderBottomWidth: 2,
-    borderColor: colors.ink,
-    transform: [{ rotate: "-18deg" }]
-  },
-  heartIcon: {
-    fontSize: 46,
-    lineHeight: 31,
-    color: colors.ink
-  },
-  contributionIcon: {
-    width: 32,
-    height: 32
-  },
-  arrowStem: {
-    position: "absolute",
-    left: 15,
-    top: 1,
-    width: 3,
-    height: 22,
-    borderRadius: 2,
-    backgroundColor: colors.ink
-  },
-  arrowHeadLeft: {
-    position: "absolute",
-    left: 7,
-    top: 4,
-    width: 14,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: colors.ink,
-    transform: [{ rotate: "-45deg" }]
-  },
-  arrowHeadRight: {
-    position: "absolute",
-    right: 6,
-    top: 4,
-    width: 14,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: colors.ink,
-    transform: [{ rotate: "45deg" }]
-  },
-  uploadTray: {
-    position: "absolute",
-    left: 3,
-    right: 3,
-    bottom: 0,
-    height: 14,
-    borderLeftWidth: 3,
-    borderRightWidth: 3,
-    borderBottomWidth: 3,
-    borderColor: colors.ink,
-    borderBottomLeftRadius: 8,
-    borderBottomRightRadius: 8
-  },
-  saveIcon: {
-    width: 25,
-    height: 32,
-    borderWidth: 2.2,
-    borderColor: colors.ink,
-    borderRadius: 5
-  },
-  saveNotch: {
-    position: "absolute",
-    left: 8,
-    bottom: -2,
-    width: 10,
-    height: 10,
-    borderLeftWidth: 2.4,
-    borderBottomWidth: 2.4,
-    borderColor: colors.ink,
-    backgroundColor: colors.surface,
-    transform: [{ rotate: "-45deg" }]
-  },
-  metricValue: {
-    fontSize: 12,
-    lineHeight: 14,
-    color: colors.ink,
-    fontWeight: "400"
-  },
-  metricSecondary: {
-    color: colors.muted
   }
 });

@@ -2,7 +2,10 @@ import type {
   AiAssistRequest,
   AiAssistResponse,
   FeedQuery,
-  PoemSummary
+  PoemEngagementResult,
+  PoemSummary,
+  UpdatePoemCollectionInput,
+  UserPoemCollections
 } from "./types";
 import type { LineSpaceApi } from "./client";
 
@@ -17,12 +20,42 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     if (query.filter) {
       params.set("filter", query.filter);
     }
+    if (query.viewerId) {
+      params.set("viewerId", query.viewerId);
+    }
 
     return this.getJson<PoemSummary[]>(`/v1/feed?${params.toString()}`);
   }
 
-  async getPoem(id: string): Promise<PoemSummary | null> {
-    return this.getJson<PoemSummary | null>(`/v1/poems/${encodeURIComponent(id)}`);
+  async getPoem(id: string, viewerId?: string): Promise<PoemSummary | null> {
+    const params = new URLSearchParams();
+    if (viewerId) {
+      params.set("viewerId", viewerId);
+    }
+    const query = params.size > 0 ? `?${params.toString()}` : "";
+    return this.getJson<PoemSummary | null>(
+      `/v1/poems/${encodeURIComponent(id)}${query}`
+    );
+  }
+
+  async setPoemCollection(
+    input: UpdatePoemCollectionInput
+  ): Promise<PoemEngagementResult> {
+    const path = [
+      "/v1/users",
+      encodeURIComponent(input.userId),
+      "poem-collections",
+      input.collection,
+      encodeURIComponent(input.poemId)
+    ].join("/");
+
+    return this.putJson<PoemEngagementResult>(path, { isActive: input.isActive });
+  }
+
+  async getUserPoemCollections(userId: string): Promise<UserPoemCollections> {
+    return this.getJson<UserPoemCollections>(
+      `/v1/users/${encodeURIComponent(userId)}/poem-collections`
+    );
   }
 
   async requestAiAssist(request: AiAssistRequest): Promise<AiAssistResponse> {
@@ -38,8 +71,16 @@ export class HttpLineSpaceApi implements LineSpaceApi {
   }
 
   private async postJson<T>(path: string, body: unknown): Promise<T> {
+    return this.sendJson<T>("POST", path, body);
+  }
+
+  private async putJson<T>(path: string, body: unknown): Promise<T> {
+    return this.sendJson<T>("PUT", path, body);
+  }
+
+  private async sendJson<T>(method: "POST" | "PUT", path: string, body: unknown): Promise<T> {
     const response = await fetch(`${this.baseUrl}${path}`, {
-      method: "POST",
+      method,
       headers: {
         "content-type": "application/json"
       },
@@ -47,7 +88,7 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     });
 
     if (!response.ok) {
-      throw new Error(`LineSpace API POST ${path} failed with ${response.status}`);
+      throw new Error(`LineSpace API ${method} ${path} failed with ${response.status}`);
     }
 
     return (await response.json()) as T;

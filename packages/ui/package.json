@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@linespace/tokens": "workspace:*"
+    "@linespace/tokens": "workspace:*",
+    "react-native-svg": "15.8.0"
   },
   "peerDependencies": {
     "react": "*",

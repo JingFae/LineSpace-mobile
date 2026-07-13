@@ -11,6 +11,8 @@ export const colors = {
   accent: "#F5324A",
   accentWarm: "#E95638",
   accentSoft: "#FFE4E0",
+  liked: "#FF2E49",
+  saved: "#F2C94C",
   success: "#63A85E",
   black: "#000000",
   white: "#FFFFFF"

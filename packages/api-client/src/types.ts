@@ -21,6 +21,26 @@ export type PoemMetrics = {
   saves: number;
 };
 
+export type PoemViewerEngagement = {
+  liked: boolean;
+  saved: boolean;
+};
+
+export type PoemCollectionKind = "liked" | "saved";
+
+export type UpdatePoemCollectionInput = {
+  userId: string;
+  poemId: string;
+  collection: PoemCollectionKind;
+  isActive: boolean;
+};
+
+export type UserPoemCollections = {
+  userId: string;
+  likedPoemIds: string[];
+  savedPoemIds: string[];
+};
+
 export type PoemCreditPerson = {
   handle: string;
   displayName: string;
@@ -53,6 +73,7 @@ export type PoemSummary = {
   status: PoemStatus;
   startedAt: string;
   metrics: PoemMetrics;
+  viewer: PoemViewerEngagement;
   artworkTone: "water" | "paper" | "night";
   credits?: PoemCredits;
   comments?: PoemComment[];
@@ -61,6 +82,12 @@ export type PoemSummary = {
 export type FeedQuery = {
   section?: FeedSection;
   filter?: FeedFilter;
+  viewerId?: string;
+};
+
+export type PoemEngagementResult = {
+  poem: PoemSummary;
+  collections: UserPoemCollections;
 };
 
 export type AiAssistIntent =

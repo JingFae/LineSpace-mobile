@@ -32,7 +32,7 @@ server.listen(port, () => {
 });
 
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
-  if (request.method !== "POST") {
+  if (request.method !== "POST" && request.method !== "PUT") {
     return undefined;
   }
 
@@ -48,7 +48,7 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
 function corsHeaders() {
   return {
     "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-methods": "GET,POST,PUT,OPTIONS",
     "access-control-allow-headers": "content-type"
   };
 }

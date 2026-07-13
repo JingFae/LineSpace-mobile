@@ -9,10 +9,15 @@ export type {
   FeedQuery,
   FeedSection,
   PoemComment,
+  PoemCollectionKind,
   PoemCreditPerson,
   PoemCredits,
+  PoemEngagementResult,
   PoemMetrics,
   PoemStatus,
   PoemSummary,
+  PoemViewerEngagement,
+  UpdatePoemCollectionInput,
+  UserPoemCollections,
   UserProfile
 } from "./types";
