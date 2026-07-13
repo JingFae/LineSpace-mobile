@@ -9,7 +9,77 @@ export type UserProfile = {
   handle: string;
   displayName: string;
   avatarColor: string;
+  avatarUrl?: string;
   bio?: string;
+};
+
+export type UserBadge = {
+  id: string;
+  label: string;
+  symbol?: string;
+  tone: "neutral" | "warm";
+};
+
+export type UserProfileStats = {
+  followers: number;
+  following: number;
+  likesAndSaves: number;
+};
+
+export type UserContentCounts = {
+  posts: number;
+  comments: number;
+  quotes: number;
+  saves: number;
+};
+
+export type UserProfileDetails = UserProfile & {
+  linespaceId: string;
+  level: number;
+  badges: UserBadge[];
+  stats: UserProfileStats;
+  contentCounts: UserContentCounts;
+};
+
+export type UserProfileContentSection = "posts" | "comments" | "quotes" | "saves";
+
+export type UserProfileContentItem = {
+  id: string;
+  poemId?: string;
+  title: string;
+  excerpt: string;
+  tags: string[];
+  finishedAt: string;
+  highlightCount?: number;
+  artworkUrl?: string;
+  muted?: boolean;
+};
+
+export type UserProfileContentPage = {
+  userId: string;
+  section: UserProfileContentSection;
+  total: number;
+  items: UserProfileContentItem[];
+};
+
+export type UserConnectionKind = "followers" | "following";
+
+export type UserConnectionSummary = UserProfile & {
+  isFollowing: boolean;
+};
+
+export type UserConnectionPage = {
+  userId: string;
+  kind: UserConnectionKind;
+  total: number;
+  items: UserConnectionSummary[];
+  nextCursor?: string;
+};
+
+export type UserConnectionQuery = {
+  cursor?: string;
+  limit?: number;
+  viewerId?: string;
 };
 
 export type PoemMetrics = {

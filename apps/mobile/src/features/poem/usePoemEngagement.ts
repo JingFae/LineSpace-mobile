@@ -40,12 +40,24 @@ export function usePoemEngagement() {
         queryClient.setQueryData(queryKey, data);
       });
     },
-    onSuccess: (result) => {
+    onSuccess: (result, input) => {
       updatePoemCaches(queryClient, result.poem.id, () => result.poem);
       queryClient.setQueryData(
         ["profile-poem-collections", result.collections.userId],
         result.collections
       );
+      void queryClient.invalidateQueries({
+        queryKey: ["user-profile", result.poem.author.id]
+      });
+
+      if (input.collection === "saved") {
+        void queryClient.invalidateQueries({
+          queryKey: ["user-profile", result.collections.userId]
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["user-profile-content", result.collections.userId, "saves"]
+        });
+      }
     }
   });
 

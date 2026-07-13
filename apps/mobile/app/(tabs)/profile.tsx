@@ -1,11 +1,5 @@
-import { PlaceholderScreen } from "@/screens/PlaceholderScreen";
+import { ProfileScreen } from "@/features/profile/ProfileScreen";
 
 export default function ProfileRoute() {
-  return (
-    <PlaceholderScreen
-      activeTab="profile"
-      title="Profile"
-      body="User profile, poems, saved drafts, and settings will be implemented here."
-    />
-  );
+  return <ProfileScreen />;
 }

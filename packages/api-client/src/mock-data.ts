@@ -1,4 +1,12 @@
-import type { PoemSummary, UserProfile } from "./types";
+import type {
+  PoemSummary,
+  UserConnectionKind,
+  UserConnectionSummary,
+  UserProfile,
+  UserProfileContentItem,
+  UserProfileContentSection,
+  UserProfileDetails
+} from "./types";
 
 export const mockUsers: UserProfile[] = [
   {
@@ -6,7 +14,7 @@ export const mockUsers: UserProfile[] = [
     handle: "lili",
     displayName: "Lili",
     avatarColor: "#FF0038",
-    bio: "Writes small weather systems."
+    bio: "love nature"
   },
   {
     id: "user-ray",
@@ -16,6 +24,176 @@ export const mockUsers: UserProfile[] = [
     bio: "Collaborative poem drafts."
   }
 ];
+
+export const mockUserProfileDetails: UserProfileDetails[] = [
+  {
+    ...mockUsers[0]!,
+    linespaceId: "12345678",
+    level: 12,
+    badges: [
+      {
+        id: "badge-classical",
+        label: "Classical",
+        symbol: "🏮",
+        tone: "warm"
+      }
+    ],
+    stats: {
+      followers: 199,
+      following: 230,
+      likesAndSaves: 590
+    },
+    contentCounts: {
+      posts: 17,
+      comments: 42,
+      quotes: 9,
+      saves: 29
+    }
+  },
+  {
+    ...mockUsers[1]!,
+    linespaceId: "87654321",
+    level: 8,
+    badges: [
+      {
+        id: "badge-modern",
+        label: "Modern",
+        tone: "neutral"
+      }
+    ],
+    stats: {
+      followers: 88,
+      following: 104,
+      likesAndSaves: 274
+    },
+    contentCounts: {
+      posts: 9,
+      comments: 31,
+      quotes: 5,
+      saves: 18
+    }
+  }
+];
+
+const profilePost = (
+  id: string,
+  highlightCount: number,
+  overrides: Partial<UserProfileContentItem> = {}
+): UserProfileContentItem => ({
+  id,
+  poemId: "poem-cedar",
+  title: "Remembered",
+  excerpt: "I dreamed that AI …",
+  tags: ["AI", "false nostalgia", "dreamed"],
+  finishedAt: "2026-09-02T09:00:00.000Z",
+  highlightCount,
+  ...overrides
+});
+
+export const mockUserProfileContent: Record<
+  string,
+  Record<UserProfileContentSection, UserProfileContentItem[]>
+> = {
+  "user-lili": {
+    posts: [
+      profilePost("profile-post-1", 7, { muted: true }),
+      profilePost("profile-post-2", 9),
+      profilePost("profile-post-3", 17),
+      profilePost("profile-post-4", 29),
+      profilePost("profile-post-5", 12),
+      profilePost("profile-post-6", 21)
+    ],
+    comments: [
+      profilePost("profile-comment-1", 22, {
+        title: "A quiet revision",
+        excerpt: "The maps insisted I had lived there once."
+      }),
+      profilePost("profile-comment-2", 18, {
+        title: "Between floors",
+        excerpt: "It stopped between floors."
+      })
+    ],
+    quotes: [
+      profilePost("profile-quote-1", 14, {
+        title: "Borrowed light",
+        excerpt: "Yesterday kept borrowing tomorrow's light."
+      }),
+      profilePost("profile-quote-2", 6, {
+        title: "Separate moons",
+        excerpt: "Every window kept a separate moon."
+      })
+    ],
+    saves: [
+      profilePost("profile-save-1", 11),
+      profilePost("profile-save-2", 8, {
+        title: "orbit",
+        poemId: "poem-orbit",
+        excerpt: "The city hummed below its own reflection.",
+        tags: ["night", "city", "shared"]
+      })
+    ]
+  },
+  "user-ray": {
+    posts: [profilePost("ray-profile-post-1", 5, { poemId: "poem-cedar" })],
+    comments: [],
+    quotes: [],
+    saves: []
+  }
+};
+
+const connectionUsers: UserConnectionSummary[] = [
+  {
+    id: "user-ray",
+    handle: "ray",
+    displayName: "Ray",
+    avatarColor: "#E75435",
+    bio: "Collaborative poem drafts.",
+    isFollowing: true
+  },
+  {
+    id: "user-jinghe",
+    handle: "jinghe",
+    displayName: "Jinghe",
+    avatarColor: "#E35755",
+    bio: "Collecting images from ordinary days.",
+    isFollowing: true
+  },
+  {
+    id: "user-zhihan",
+    handle: "zhihan",
+    displayName: "Zhihan",
+    avatarColor: "#AFCEE5",
+    bio: "Writes about cities and weather.",
+    isFollowing: false
+  },
+  {
+    id: "user-roma",
+    handle: "roma",
+    displayName: "Roma",
+    avatarColor: "#4A5E2E",
+    bio: "Short poems, long walks.",
+    isFollowing: true
+  }
+];
+
+export const mockUserConnections: Record<
+  string,
+  Record<UserConnectionKind, UserConnectionSummary[]>
+> = {
+  "user-lili": {
+    followers: connectionUsers,
+    following: [connectionUsers[0]!, connectionUsers[1]!, connectionUsers[3]!]
+  },
+  "user-ray": {
+    followers: [
+      {
+        ...mockUsers[0]!,
+        isFollowing: true
+      }
+    ],
+    following: []
+  }
+};
 
 const creditPeople = {
   lili: {

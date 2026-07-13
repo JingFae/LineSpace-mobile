@@ -1,6 +1,12 @@
 export { createMockLineSpaceApi, MockLineSpaceApi, type LineSpaceApi } from "./client";
 export { HttpLineSpaceApi } from "./http-client";
-export { mockPoems, mockUsers } from "./mock-data";
+export {
+  mockPoems,
+  mockUserConnections,
+  mockUserProfileContent,
+  mockUserProfileDetails,
+  mockUsers
+} from "./mock-data";
 export type {
   AiAssistIntent,
   AiAssistRequest,
@@ -18,6 +24,17 @@ export type {
   PoemSummary,
   PoemViewerEngagement,
   UpdatePoemCollectionInput,
+  UserBadge,
+  UserConnectionKind,
+  UserConnectionPage,
+  UserConnectionQuery,
+  UserConnectionSummary,
+  UserContentCounts,
   UserPoemCollections,
-  UserProfile
+  UserProfile,
+  UserProfileContentItem,
+  UserProfileContentPage,
+  UserProfileContentSection,
+  UserProfileDetails,
+  UserProfileStats
 } from "./types";

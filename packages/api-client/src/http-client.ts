@@ -5,7 +5,13 @@ import type {
   PoemEngagementResult,
   PoemSummary,
   UpdatePoemCollectionInput,
-  UserPoemCollections
+  UserConnectionKind,
+  UserConnectionPage,
+  UserConnectionQuery,
+  UserPoemCollections,
+  UserProfileContentPage,
+  UserProfileContentSection,
+  UserProfileDetails
 } from "./types";
 import type { LineSpaceApi } from "./client";
 
@@ -55,6 +61,43 @@ export class HttpLineSpaceApi implements LineSpaceApi {
   async getUserPoemCollections(userId: string): Promise<UserPoemCollections> {
     return this.getJson<UserPoemCollections>(
       `/v1/users/${encodeURIComponent(userId)}/poem-collections`
+    );
+  }
+
+  async getUserProfile(userId: string): Promise<UserProfileDetails | null> {
+    return this.getJson<UserProfileDetails | null>(
+      `/v1/users/${encodeURIComponent(userId)}/profile`
+    );
+  }
+
+  async listUserProfileContent(
+    userId: string,
+    section: UserProfileContentSection
+  ): Promise<UserProfileContentPage> {
+    return this.getJson<UserProfileContentPage>(
+      `/v1/users/${encodeURIComponent(userId)}/profile-content/${section}`
+    );
+  }
+
+  async listUserConnections(
+    userId: string,
+    kind: UserConnectionKind,
+    query: UserConnectionQuery = {}
+  ): Promise<UserConnectionPage> {
+    const params = new URLSearchParams();
+    if (query.cursor) {
+      params.set("cursor", query.cursor);
+    }
+    if (query.limit) {
+      params.set("limit", `${query.limit}`);
+    }
+    if (query.viewerId) {
+      params.set("viewerId", query.viewerId);
+    }
+    const suffix = params.size > 0 ? `?${params.toString()}` : "";
+
+    return this.getJson<UserConnectionPage>(
+      `/v1/users/${encodeURIComponent(userId)}/${kind}${suffix}`
     );
   }
 

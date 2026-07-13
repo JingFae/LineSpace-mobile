@@ -5,6 +5,10 @@ export { EmptyState } from "./components/EmptyState";
 export { PoemArtwork, type ArtworkTone } from "./components/PoemArtwork";
 export { PoemCard, type PoemCardModel } from "./components/PoemCard";
 export {
+  ProfilePostCard,
+  type ProfilePostCardModel
+} from "./components/ProfilePostCard";
+export {
   PoemEngagementBar,
   type PoemEngagementMetrics
 } from "./components/PoemEngagementBar";
@@ -14,10 +18,12 @@ export {
   CommentIcon,
   CreateIcon,
   LikeIcon,
+  MenuIcon,
   MessagesIcon,
   ReadPostIcon,
   SaveIcon,
   SearchIcon,
+  SettingsIcon,
   ShareIcon,
   type FigmaIconProps
 } from "./icon";
