@@ -15,6 +15,19 @@ create table if not exists users (
   updated_at timestamptz not null default now()
 );
 
+create or replace function touch_users_updated_at()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists users_touch_updated_at on users;
+create trigger users_touch_updated_at
+before update of display_name, avatar_url, avatar_color, bio, level on users
+for each row execute function touch_users_updated_at();
+
 create table if not exists badges (
   id text primary key,
   label varchar(80) not null,

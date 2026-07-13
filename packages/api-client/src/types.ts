@@ -41,6 +41,14 @@ export type UserProfileDetails = UserProfile & {
   contentCounts: UserContentCounts;
 };
 
+export type UpdateUserProfileInput = {
+  userId: string;
+  displayName?: string;
+  bio?: string;
+  /** Durable object-storage URL in production; local cropped URI in mock mode. */
+  avatarUrl?: string;
+};
+
 export type UserProfileContentSection = "posts" | "comments" | "quotes" | "saves";
 
 export type UserProfileContentItem = {

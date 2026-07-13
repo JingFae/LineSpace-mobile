@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { router, type Href } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import {
@@ -39,6 +39,7 @@ declare const require: (path: string) => ImageSourcePropType;
 const profileHeaderArtwork = require("../../../assets/profile/profile-header-water.png");
 const profileAvatarArtwork = require("../../../assets/profile/profile-avatar-water.png");
 const profilePostArtwork = require("../../../assets/profile/profile-post-mountain.png");
+const profileEditRoute = "/profile/edit" as Href;
 
 const contentTabs: Array<{ value: UserProfileContentSection; label: string }> = [
   { value: "posts", label: "Posts" },
@@ -190,7 +191,12 @@ function ProfileHero({
           <Pressable accessibilityLabel="Search" hitSlop={12} style={styles.iconButton}>
             <SearchIcon height={22} width={22} />
           </Pressable>
-          <Pressable accessibilityLabel="Profile settings" hitSlop={12} style={styles.iconButton}>
+          <Pressable
+            accessibilityLabel="Profile settings"
+            hitSlop={12}
+            onPress={() => router.push(profileEditRoute)}
+            style={styles.iconButton}
+          >
             <SettingsIcon />
           </Pressable>
         </View>

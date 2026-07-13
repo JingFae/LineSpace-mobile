@@ -18,7 +18,8 @@ import type {
   UserPoemCollections,
   UserProfileContentPage,
   UserProfileContentSection,
-  UserProfileDetails
+  UserProfileDetails,
+  UpdateUserProfileInput
 } from "./types";
 
 export interface LineSpaceApi {
@@ -27,6 +28,7 @@ export interface LineSpaceApi {
   setPoemCollection(input: UpdatePoemCollectionInput): Promise<PoemEngagementResult>;
   getUserPoemCollections(userId: string): Promise<UserPoemCollections>;
   getUserProfile(userId: string): Promise<UserProfileDetails | null>;
+  updateUserProfile(input: UpdateUserProfileInput): Promise<UserProfileDetails>;
   listUserProfileContent(
     userId: string,
     section: UserProfileContentSection
@@ -126,6 +128,49 @@ export class MockLineSpaceApi implements LineSpaceApi {
     return profile ? cloneUserProfile(profile) : null;
   }
 
+  async updateUserProfile(input: UpdateUserProfileInput): Promise<UserProfileDetails> {
+    const profile = this.profiles.find((item) => item.id === input.userId);
+    if (!profile) {
+      throw new Error(`User ${input.userId} was not found`);
+    }
+
+    const displayName = input.displayName?.trim();
+    const bio = input.bio?.trim();
+    if (input.displayName !== undefined && (!displayName || displayName.length > 120)) {
+      throw new Error("displayName must contain 1 to 120 characters");
+    }
+    if (bio && bio.length > 280) {
+      throw new Error("bio cannot exceed 280 characters");
+    }
+    if (input.avatarUrl !== undefined && input.avatarUrl.trim().length === 0) {
+      throw new Error("avatarUrl must not be empty");
+    }
+
+    if (displayName !== undefined) {
+      profile.displayName = displayName;
+    }
+    if (input.bio !== undefined) {
+      profile.bio = bio ?? "";
+    }
+    if (input.avatarUrl !== undefined) {
+      profile.avatarUrl = input.avatarUrl;
+    }
+
+    this.poems.forEach((poem) => {
+      if (poem.author.id !== profile.id) {
+        return;
+      }
+      poem.author = {
+        ...poem.author,
+        displayName: profile.displayName,
+        bio: profile.bio,
+        avatarUrl: profile.avatarUrl
+      };
+    });
+
+    return cloneUserProfile(profile);
+  }
+
   async listUserProfileContent(
     userId: string,
     section: UserProfileContentSection
@@ -158,7 +203,9 @@ export class MockLineSpaceApi implements LineSpaceApi {
       userId,
       kind,
       total: profile?.stats[kind] ?? items.length,
-      items: items.slice(offset, offset + limit).map((item) => ({ ...item }))
+      items: items
+        .slice(offset, offset + limit)
+        .map((item) => this.withCurrentProfileSummary(item))
     };
   }
 
@@ -229,6 +276,19 @@ export class MockLineSpaceApi implements LineSpaceApi {
       ...samples.filter((item) => item.poemId && savedIds.has(item.poemId)),
       ...dynamicItems
     ];
+  }
+
+  private withCurrentProfileSummary(item: UserConnectionPage["items"][number]) {
+    const current = this.profiles.find((profile) => profile.id === item.id);
+    return current
+      ? {
+          ...item,
+          displayName: current.displayName,
+          bio: current.bio,
+          avatarColor: current.avatarColor,
+          avatarUrl: current.avatarUrl
+        }
+      : { ...item };
   }
 }
 

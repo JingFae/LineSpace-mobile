@@ -24,6 +24,7 @@ export type {
   PoemSummary,
   PoemViewerEngagement,
   UpdatePoemCollectionInput,
+  UpdateUserProfileInput,
   UserBadge,
   UserConnectionKind,
   UserConnectionPage,

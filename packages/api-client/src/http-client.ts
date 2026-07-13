@@ -11,7 +11,8 @@ import type {
   UserPoemCollections,
   UserProfileContentPage,
   UserProfileContentSection,
-  UserProfileDetails
+  UserProfileDetails,
+  UpdateUserProfileInput
 } from "./types";
 import type { LineSpaceApi } from "./client";
 
@@ -67,6 +68,14 @@ export class HttpLineSpaceApi implements LineSpaceApi {
   async getUserProfile(userId: string): Promise<UserProfileDetails | null> {
     return this.getJson<UserProfileDetails | null>(
       `/v1/users/${encodeURIComponent(userId)}/profile`
+    );
+  }
+
+  async updateUserProfile(input: UpdateUserProfileInput): Promise<UserProfileDetails> {
+    const { userId, ...changes } = input;
+    return this.putJson<UserProfileDetails>(
+      `/v1/users/${encodeURIComponent(userId)}/profile`,
+      changes
     );
   }
 

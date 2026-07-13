@@ -8,6 +8,7 @@ export {
   ProfilePostCard,
   type ProfilePostCardModel
 } from "./components/ProfilePostCard";
+export { ProfileSettingRow } from "./components/ProfileSettingRow";
 export {
   PoemEngagementBar,
   type PoemEngagementMetrics
@@ -15,6 +16,9 @@ export {
 export { SegmentTabs, type SegmentTab } from "./components/SegmentTabs";
 export {
   ActivityIcon,
+  BackIcon,
+  CameraIcon,
+  ChevronRightIcon,
   CommentIcon,
   CreateIcon,
   LikeIcon,
