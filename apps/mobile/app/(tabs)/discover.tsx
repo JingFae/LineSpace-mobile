@@ -4,8 +4,8 @@ export default function DiscoverRoute() {
   return (
     <PlaceholderScreen
       activeTab="discover"
-      title="Discover"
-      body="Search, tags, and poet discovery will be implemented here."
+      title="Post"
+      body="Published poems and post discovery will appear here."
     />
   );
 }

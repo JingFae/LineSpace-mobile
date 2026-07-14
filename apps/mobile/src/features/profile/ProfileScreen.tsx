@@ -150,6 +150,17 @@ export function ProfileScreen() {
 
       <BottomNavigation
         items={mainTabs}
+        profileAvatar={
+          profileQuery.data
+            ? {
+                color: profileQuery.data.avatarColor,
+                imageSource: profileQuery.data.avatarUrl
+                  ? { uri: profileQuery.data.avatarUrl }
+                  : undefined,
+                label: profileQuery.data.displayName
+              }
+            : undefined
+        }
         onChange={(value) => router.push(tabRoutes[value])}
         value="profile"
       />
@@ -339,7 +350,12 @@ function ConnectionSheet({
             <ScrollView showsVerticalScrollIndicator={false}>
               {(page?.items ?? []).map((person) => (
                 <View key={person.id} style={styles.connectionRow}>
-                  <Avatar color={person.avatarColor} label={person.displayName} size={42} />
+                  <Avatar
+                    color={person.avatarColor}
+                    imageSource={person.avatarUrl ? { uri: person.avatarUrl } : undefined}
+                    label={person.displayName}
+                    size={42}
+                  />
                   <View style={styles.connectionCopy}>
                     <Text style={styles.connectionName}>{person.displayName}</Text>
                     <Text style={styles.connectionHandle}>@{person.handle}</Text>

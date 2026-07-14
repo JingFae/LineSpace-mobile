@@ -1,6 +1,7 @@
-import { Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View, type ImageSourcePropType } from "react-native";
 import { colors, spacing } from "@linespace/tokens";
 import { ActivityIcon, CreateIcon, MessagesIcon, ReadPostIcon } from "../icon";
+import { Avatar } from "./Avatar";
 
 export type BottomNavItem<TValue extends string> = {
   value: TValue;
@@ -11,12 +12,18 @@ type BottomNavigationProps<TValue extends string> = {
   items: readonly BottomNavItem<TValue>[];
   value: TValue;
   onChange: (value: TValue) => void;
+  profileAvatar?: {
+    color: string;
+    label: string;
+    imageSource?: ImageSourcePropType;
+  };
 };
 
 export function BottomNavigation<TValue extends string>({
   items,
   value,
-  onChange
+  onChange,
+  profileAvatar
 }: BottomNavigationProps<TValue>) {
   return (
     <View style={styles.root}>
@@ -26,12 +33,17 @@ export function BottomNavigation<TValue extends string>({
         return (
           <Pressable
             key={item.value}
+            accessibilityLabel={item.label}
             accessibilityRole="button"
             accessibilityState={{ selected: item.value === value }}
             onPress={() => onChange(item.value)}
             style={[styles.item, isCreate && styles.createItem]}
           >
-            <NavIcon selected={item.value === value} value={item.value} />
+            <NavIcon
+              profileAvatar={profileAvatar}
+              selected={item.value === value}
+              value={item.value}
+            />
           </Pressable>
         );
       })}
@@ -39,7 +51,15 @@ export function BottomNavigation<TValue extends string>({
   );
 }
 
-function NavIcon({ selected, value }: { selected: boolean; value: string }) {
+function NavIcon({
+  selected,
+  value,
+  profileAvatar
+}: {
+  selected: boolean;
+  value: string;
+  profileAvatar?: BottomNavigationProps<string>["profileAvatar"];
+}) {
   const color = selected ? colors.black : "#9B9B9B";
 
   if (value === "compose") {
@@ -55,7 +75,16 @@ function NavIcon({ selected, value }: { selected: boolean; value: string }) {
   }
 
   if (value === "profile") {
-    return <View style={styles.profileDot} />;
+    return profileAvatar ? (
+      <Avatar
+        color={profileAvatar.color}
+        imageSource={profileAvatar.imageSource}
+        label={profileAvatar.label}
+        size={29}
+      />
+    ) : (
+      <View style={styles.profileDot} />
+    );
   }
 
   return <ActivityIcon color={color} />;

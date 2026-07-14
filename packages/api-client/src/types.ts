@@ -255,6 +255,7 @@ export type PoemCreditPerson = {
   handle: string;
   displayName: string;
   avatarColor: string;
+  avatarUrl?: string;
 };
 
 export type PoemCredits = {

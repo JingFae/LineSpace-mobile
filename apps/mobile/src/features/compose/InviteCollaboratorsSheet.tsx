@@ -71,7 +71,12 @@ export function InviteCollaboratorsSheet({
                   const invited = invitedIds.includes(person.id);
                   return (
                     <View key={person.id} style={styles.personRow}>
-                      <Avatar color={person.avatarColor} label={person.displayName} size={44} />
+                      <Avatar
+                        color={person.avatarColor}
+                        imageSource={person.avatarUrl ? { uri: person.avatarUrl } : undefined}
+                        label={person.displayName}
+                        size={44}
+                      />
                       <View style={styles.personCopy}>
                         <Text style={styles.personName}>{person.displayName}</Text>
                         <Text style={styles.personHandle}>@{person.handle}</Text>

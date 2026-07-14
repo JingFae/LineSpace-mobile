@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import {
   AppScreen,
+  Avatar,
   CommentIcon,
   EmptyState,
   PoemEngagementBar,
@@ -107,7 +108,12 @@ function DetailHeader({ poem }: { poem?: PoemSummary }) {
         <Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.backButton}>
           <ChevronLeftIcon />
         </Pressable>
-        <View style={[styles.headerAvatar, { backgroundColor: avatarColor ?? colors.accent }]} />
+        <Avatar
+          color={avatarColor ?? colors.accent}
+          imageSource={poem?.author.avatarUrl ? { uri: poem.author.avatarUrl } : undefined}
+          label={poem?.author.displayName ?? "LineSpace"}
+          size={34}
+        />
         <Text style={styles.headerName}>{poem?.author.displayName.toLowerCase() ?? "line"}</Text>
       </View>
 
@@ -191,7 +197,12 @@ function CommentRow({ comment }: { comment: PoemComment }) {
 
   return (
     <View style={styles.commentRow}>
-      <View style={[styles.commentAvatar, { backgroundColor: avatarColor }]} />
+      <Avatar
+        color={avatarColor}
+        imageSource={comment.author.avatarUrl ? { uri: comment.author.avatarUrl } : undefined}
+        label={comment.author.displayName}
+        size={30}
+      />
       <View style={styles.commentBody}>
         <View style={styles.commentNameRow}>
           <Text style={styles.commentAuthor}>{comment.author.displayName}</Text>
@@ -281,7 +292,12 @@ function CreditPerson({
 }) {
   return (
     <View style={[styles.creditPerson, compact && styles.creditPersonCompact]}>
-      <View style={[styles.creditDot, { backgroundColor: person.avatarColor }]} />
+      <Avatar
+        color={person.avatarColor}
+        imageSource={person.avatarUrl ? { uri: person.avatarUrl } : undefined}
+        label={person.displayName}
+        size={compact ? 22 : 28}
+      />
       <Text style={styles.creditHandle}>@{person.handle}</Text>
     </View>
   );
@@ -357,7 +373,8 @@ function getCredits(poem: PoemSummary): NonNullable<PoemSummary["credits"]> {
       startedBy: {
         handle: poem.author.handle.toUpperCase(),
         displayName: poem.author.displayName,
-        avatarColor: poem.author.avatarColor
+        avatarColor: poem.author.avatarColor,
+        avatarUrl: poem.author.avatarUrl
       },
       commentContributors: [],
       quoteContributors: []

@@ -69,7 +69,7 @@ export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["feed"] });
-      router.replace("/(tabs)" as Href);
+      router.replace("/(tabs)/discover" as Href);
     }
   });
 

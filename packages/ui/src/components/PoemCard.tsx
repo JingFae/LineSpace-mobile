@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, Text, View, type ImageSourcePropType } from "rea
 import { colors, radius } from "@linespace/tokens";
 import { PoemArtwork, type ArtworkTone } from "./PoemArtwork";
 import { PoemEngagementBar } from "./PoemEngagementBar";
+import { Avatar } from "./Avatar";
 
 export type PoemCardModel = {
   id: string;
@@ -11,6 +12,7 @@ export type PoemCardModel = {
     displayName: string;
     handle: string;
     avatarColor: string;
+    avatarUrl?: string;
   };
   contributorsCount: number;
   tags: string[];
@@ -56,7 +58,12 @@ export function PoemCard({
       <Pressable onPress={() => onPress?.(poem.id)} style={styles.contentPressable}>
         <View style={styles.authorRow}>
           <View style={styles.authorIdentity}>
-            <View style={[styles.avatarDot, { backgroundColor: poem.author.avatarColor }]} />
+            <Avatar
+              color={poem.author.avatarColor}
+              imageSource={poem.author.avatarUrl ? { uri: poem.author.avatarUrl } : undefined}
+              label={poem.author.displayName}
+              size={39}
+            />
             <Text style={styles.authorName}>{poem.author.displayName}</Text>
           </View>
           <Text style={styles.contributors}>with {poem.contributorsCount} contributors</Text>

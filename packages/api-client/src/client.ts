@@ -3,8 +3,7 @@ import {
   mockPoemDesignCatalog,
   mockUserConnections,
   mockUserProfileContent,
-  mockUserProfileDetails,
-  mockUsers
+  mockUserProfileDetails
 } from "./mock-data";
 import type {
   AiAssistRequest,
@@ -15,6 +14,7 @@ import type {
   FeedQuery,
   InviteDraftCollaboratorInput,
   PoemCollectionKind,
+  PoemCreditPerson,
   PoemDesignCatalog,
   PoemDraft,
   PoemEngagementResult,
@@ -27,6 +27,7 @@ import type {
   UserConnectionPage,
   UserConnectionQuery,
   UserPoemCollections,
+  UserProfile,
   UserProfileContentPage,
   UserProfileContentSection,
   UserProfileDetails,
@@ -150,16 +151,16 @@ export class MockLineSpaceApi implements LineSpaceApi {
   }
 
   async listDraftInviteCandidates(userId: string): Promise<UserConnectionPage["items"]> {
-    return mockUsers
-      .filter((user) => user.id !== userId)
-      .map((user) => ({ ...user, isFollowing: true }));
+    return this.profiles
+      .filter((profile) => profile.id !== userId)
+      .map((profile) => ({ ...profileToUser(profile), isFollowing: true }));
   }
 
   async inviteDraftCollaborator(
     input: InviteDraftCollaboratorInput
   ): Promise<DraftInvitation> {
     const draft = this.requireEditableDraft(input.draftId, input.inviterId);
-    const invitee = mockUsers.find((user) => user.id === input.inviteeId);
+    const invitee = this.profiles.find((profile) => profile.id === input.inviteeId);
     if (!invitee) {
       throw new Error(`User ${input.inviteeId} was not found`);
     }
@@ -182,7 +183,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
     };
     this.invitations.push(invitation);
     draft.collaborators.push({
-      user: { ...invitee },
+      user: profileToUser(invitee),
       role: "editor",
       status: "active",
       cursorLine: 2,
@@ -211,11 +212,9 @@ export class MockLineSpaceApi implements LineSpaceApi {
       artworkTone: draft.layout.backgroundId === "midnight" ? "night" : "paper",
       credits: {
         startedBy: profileToUser(owner),
-        commentContributors: draft.collaborators.slice(1).map((item) => ({
-          handle: item.user.handle,
-          displayName: item.user.displayName,
-          avatarColor: item.user.avatarColor
-        })),
+        commentContributors: draft.collaborators
+          .slice(1)
+          .map((collaborator) => profileToCreditPerson(collaborator.user)),
         quoteContributors: []
       }
     };
@@ -348,6 +347,13 @@ export class MockLineSpaceApi implements LineSpaceApi {
         avatarUrl: profile.avatarUrl
       };
     });
+    this.drafts.forEach((draft) => {
+      draft.collaborators.forEach((collaborator) => {
+        if (collaborator.user.id === profile.id) {
+          collaborator.user = profileToUser(profile);
+        }
+      });
+    });
 
     return cloneUserProfile(profile);
   }
@@ -437,7 +443,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
   private withViewer(poem: PoemSummary, viewerId?: string): PoemSummary {
     const collections = viewerId ? this.getOrCreateCollections(viewerId) : undefined;
     return {
-      ...clonePoem(poem),
+      ...hydratePoem(poem, this.profiles),
       viewer: {
         liked: collections?.liked.has(poem.id) ?? false,
         saved: collections?.saved.has(poem.id) ?? false
@@ -487,9 +493,53 @@ export class MockLineSpaceApi implements LineSpaceApi {
 function clonePoem(poem: PoemSummary): PoemSummary {
   return {
     ...poem,
+    author: { ...poem.author },
     metrics: { ...poem.metrics },
-    viewer: { ...poem.viewer }
+    viewer: { ...poem.viewer },
+    credits: poem.credits
+      ? {
+          startedBy: { ...poem.credits.startedBy },
+          commentContributors: poem.credits.commentContributors.map((person) => ({ ...person })),
+          quoteContributors: poem.credits.quoteContributors.map((person) => ({ ...person }))
+        }
+      : undefined,
+    comments: poem.comments?.map((comment) => ({
+      ...comment,
+      author: { ...comment.author }
+    }))
   };
+}
+
+function hydratePoem(poem: PoemSummary, profiles: UserProfileDetails[]) {
+  const hydrated = clonePoem(poem);
+  hydrated.author = profileToUser(findProfile(profiles, poem.author));
+  hydrated.comments = hydrated.comments?.map((comment) => ({
+    ...comment,
+    author: profileToUser(findProfile(profiles, comment.author))
+  }));
+  if (hydrated.credits) {
+    hydrated.credits = {
+      startedBy: hydrateCreditPerson(hydrated.credits.startedBy, profiles),
+      commentContributors: hydrated.credits.commentContributors.map((person) =>
+        hydrateCreditPerson(person, profiles)
+      ),
+      quoteContributors: hydrated.credits.quoteContributors.map((person) =>
+        hydrateCreditPerson(person, profiles)
+      )
+    };
+  }
+  return hydrated;
+}
+
+function findProfile(profiles: UserProfileDetails[], user: UserProfile) {
+  return profiles.find((profile) => profile.id === user.id) ?? user;
+}
+
+function hydrateCreditPerson(person: PoemCreditPerson, profiles: UserProfileDetails[]) {
+  const profile = profiles.find(
+    (candidate) => candidate.handle.toLowerCase() === person.handle.toLowerCase()
+  );
+  return profile ? profileToCreditPerson(profile) : { ...person };
 }
 
 function cloneUserProfile(profile: UserProfileDetails): UserProfileDetails {
@@ -513,7 +563,7 @@ function profileContentFromPoem(poem: PoemSummary) {
   };
 }
 
-function profileToUser(profile: UserProfileDetails) {
+function profileToUser(profile: UserProfileDetails | UserProfile) {
   return {
     id: profile.id,
     handle: profile.handle,
@@ -521,6 +571,15 @@ function profileToUser(profile: UserProfileDetails) {
     avatarColor: profile.avatarColor,
     avatarUrl: profile.avatarUrl,
     bio: profile.bio
+  };
+}
+
+function profileToCreditPerson(profile: UserProfileDetails | UserProfile): PoemCreditPerson {
+  return {
+    handle: profile.handle,
+    displayName: profile.displayName,
+    avatarColor: profile.avatarColor,
+    avatarUrl: profile.avatarUrl
   };
 }
 

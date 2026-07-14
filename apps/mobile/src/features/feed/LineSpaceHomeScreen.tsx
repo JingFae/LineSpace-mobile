@@ -49,6 +49,10 @@ export function LineSpaceHomeScreen() {
   const [filter, setFilter] = useState<FeedFilter>("all");
   const [createOpen, setCreateOpen] = useState(false);
   const engagement = usePoemEngagement();
+  const profileQuery = useQuery({
+    queryKey: ["user-profile", currentUserId],
+    queryFn: () => lineSpaceApi.getUserProfile(currentUserId)
+  });
 
   const feedQuery = useQuery({
     queryKey: ["feed", section, filter, currentUserId],
@@ -122,6 +126,17 @@ export function LineSpaceHomeScreen() {
 
       <BottomNavigation
         items={mainTabs}
+        profileAvatar={
+          profileQuery.data
+            ? {
+                color: profileQuery.data.avatarColor,
+                imageSource: profileQuery.data.avatarUrl
+                  ? { uri: profileQuery.data.avatarUrl }
+                  : undefined,
+                label: profileQuery.data.displayName
+              }
+            : undefined
+        }
         value="home"
         onChange={(value) => {
           if (value === "compose") {
@@ -163,7 +178,8 @@ function mapPoemToCard(poem: PoemSummary): PoemCardModel {
     author: {
       displayName: poem.author.displayName,
       handle: poem.author.handle,
-      avatarColor: poem.author.avatarColor
+      avatarColor: poem.author.avatarColor,
+      avatarUrl: poem.author.avatarUrl
     },
     contributorsCount: poem.contributorsCount,
     tags: poem.tags,

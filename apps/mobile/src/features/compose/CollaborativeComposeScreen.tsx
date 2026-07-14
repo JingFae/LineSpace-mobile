@@ -163,7 +163,12 @@ function SharedEditor({
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.people}>
           {draft.collaborators.map((collaborator, index) => (
             <View key={collaborator.user.id} style={[styles.person, index > 0 && styles.personOverlap]}>
-              <Avatar color={collaborator.user.avatarColor} label={collaborator.user.displayName} size={38} />
+              <Avatar
+                color={collaborator.user.avatarColor}
+                imageSource={collaborator.user.avatarUrl ? { uri: collaborator.user.avatarUrl } : undefined}
+                label={collaborator.user.displayName}
+                size={38}
+              />
               <View style={[styles.presenceDot, collaborator.user.id === currentUserId && styles.youDot]} />
             </View>
           ))}

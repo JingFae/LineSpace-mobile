@@ -101,11 +101,34 @@ async function main() {
       viewerId: profile.id
     });
     assert(connections.userId === profile.id, "Connection route returned the wrong user.");
+    const avatarUrl = "https://linespace.local/avatars/user-lili.png";
     const updatedProfile = await httpApi.updateUserProfile({
       userId: profile.id,
-      displayName: profile.displayName
+      displayName: profile.displayName,
+      avatarUrl
     });
     assert(updatedProfile.id === profile.id, "Profile update route returned the wrong user.");
+    assert(updatedProfile.avatarUrl === avatarUrl, "Profile avatar update was not persisted.");
+
+    const refreshedPoem = await httpApi.getPoem(published.poem.id, profile.id);
+    assert(
+      refreshedPoem?.author.avatarUrl === avatarUrl,
+      "Published poem author avatar was not refreshed from the profile."
+    );
+    const commentedPoem = await httpApi.getPoem("poem-light", profile.id);
+    assert(
+      commentedPoem?.comments?.some(
+        (comment) => comment.author.id === profile.id && comment.author.avatarUrl === avatarUrl
+      ),
+      "Comment avatar was not refreshed from the profile."
+    );
+    const inviteCandidates = await httpApi.listDraftInviteCandidates("user-ray");
+    assert(
+      inviteCandidates.some(
+        (candidate) => candidate.id === profile.id && candidate.avatarUrl === avatarUrl
+      ),
+      "Invite candidate avatar was not refreshed from the profile."
+    );
 
     let aiBoundaryRejected = false;
     try {

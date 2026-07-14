@@ -55,6 +55,11 @@ export function ProfileEditScreen() {
     mutationFn: (input: UpdateUserProfileInput) => lineSpaceApi.updateUserProfile(input),
     onSuccess: (profile) => {
       queryClient.setQueryData(["user-profile", profile.id], profile);
+      void queryClient.invalidateQueries({ queryKey: ["feed"] });
+      void queryClient.invalidateQueries({ queryKey: ["poem"] });
+      void queryClient.invalidateQueries({ queryKey: ["compose-draft"] });
+      void queryClient.invalidateQueries({ queryKey: ["draft-invite-candidates"] });
+      void queryClient.invalidateQueries({ queryKey: ["user-connections"] });
     }
   });
 

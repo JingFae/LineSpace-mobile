@@ -3,8 +3,8 @@ import type { Href } from "expo-router";
 export type MainTab = "home" | "discover" | "compose" | "comments" | "profile";
 
 export const mainTabs = [
-  { value: "home", label: "Home" },
-  { value: "discover", label: "Read" },
+  { value: "home", label: "Thread" },
+  { value: "discover", label: "Post" },
   { value: "compose", label: "Compose" },
   { value: "comments", label: "Notes" },
   { value: "profile", label: "Me" }
