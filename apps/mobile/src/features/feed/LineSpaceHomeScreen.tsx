@@ -21,7 +21,7 @@ import {
   type SegmentTab
 } from "@linespace/ui";
 import { colors, spacing } from "@linespace/tokens";
-import type { FeedFilter, FeedSection, PoemSummary } from "@linespace/api-client";
+import type { FeedSection, PoemSummary } from "@linespace/api-client";
 import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
 import { mainTabs, tabRoutes } from "@/navigation/tabs";
 import { usePoemEngagement } from "@/features/poem/usePoemEngagement";
@@ -34,25 +34,17 @@ const homeBackground = "#F6F7F7";
 const sectionTabs: SegmentTab<FeedSection>[] = [
   { value: "latest", label: "Latest" },
   { value: "popular", label: "Popular" },
-  { value: "following", label: "follow" }
-];
-
-const filterTabs: SegmentTab<FeedFilter>[] = [
-  { value: "all", label: "All" },
-  { value: "most-contributed", label: "Most Contributed" },
-  { value: "growing", label: "Growing" },
-  { value: "final", label: "Final" }
+  { value: "following", label: "Follow" }
 ];
 
 export function LineSpaceHomeScreen() {
   const [section, setSection] = useState<FeedSection>("latest");
-  const [filter, setFilter] = useState<FeedFilter>("all");
   const [createOpen, setCreateOpen] = useState(false);
   const engagement = usePoemEngagement();
 
   const feedQuery = useQuery({
-    queryKey: ["feed", section, filter, currentUserId],
-    queryFn: () => lineSpaceApi.listFeed({ section, filter, viewerId: currentUserId })
+    queryKey: ["feed", section, currentUserId],
+    queryFn: () => lineSpaceApi.listFeed({ section, viewerId: currentUserId })
   });
 
   const poems = useMemo(
@@ -73,10 +65,6 @@ export function LineSpaceHomeScreen() {
             <SegmentTabs tabs={sectionTabs} value={section} onChange={setSection} />
           </View>
           <SearchButton />
-        </View>
-
-        <View style={styles.filterWrap}>
-          <SegmentTabs tabs={filterTabs} value={filter} onChange={setFilter} variant="bar" />
         </View>
       </View>
 
@@ -122,7 +110,7 @@ export function LineSpaceHomeScreen() {
 
       <BottomNavigation
         items={mainTabs}
-        value="home"
+        value="post"
         onChange={(value) => {
           if (value === "compose") {
             setCreateOpen(true);
@@ -194,7 +182,7 @@ const styles = StyleSheet.create({
     backgroundColor: homeBackground
   },
   topChrome: {
-    height: 144,
+    height: 101,
     backgroundColor: colors.surface
   },
   header: {
@@ -216,13 +204,6 @@ const styles = StyleSheet.create({
     height: 46,
     alignItems: "center",
     justifyContent: "center"
-  },
-  filterWrap: {
-    backgroundColor: colors.surface,
-    height: 43,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#F8F8F8",
-    paddingHorizontal: 25
   },
   feed: {
     flex: 1,
