@@ -1,98 +1,40 @@
-# Windows file lock troubleshooting
+# Windows 文件锁排查
 
-Expo static export writes to:
+Expo 静态导出写入 `apps/mobile/dist`。该目录是生成物，已被 Git 忽略。
 
-```txt
-apps/mobile/dist
-```
+## 正常处理
 
-If export fails with:
+先停止当前仓库正在运行的 Expo/Metro：
 
-```txt
-EPERM: operation not permitted, unlink '...\apps\mobile\dist\index.html'
-```
-
-Windows is locking the previous build output.
-
-## Normal fix
-
-Stop Expo first:
-
-```powershell
+```text
 Ctrl + C
 ```
 
-Then remove the old export:
+确认终端位于仓库根目录，再检查是否仍有当前项目进程。只停止命令行明确包含当前仓库路径或 Expo 项目标识的进程，不要无差别结束所有 Node 进程。
+
+确认没有开发服务器使用 `dist` 后，可以删除该生成目录并重新导出：
 
 ```powershell
-cd B:\LineSpace\LineSpace-mobile
-Remove-Item -LiteralPath .\apps\mobile\dist -Recurse -Force
-pnpm --filter @linespace/mobile export:web
+$target = (Resolve-Path .\apps\mobile\dist).Path
+Remove-Item -LiteralPath $target -Recurse -Force
+pnpm build:web
 ```
 
-Do not run `expo export` while `pnpm dev:web` is still running.
+执行递归删除前应核对 `$target` 确实位于当前仓库的 `apps/mobile/dist`。如果目录不存在，直接运行 `pnpm build:web`。
 
-## Find project node processes
+## 常见占用来源
 
-Use this before killing processes:
+- 仍在运行的 `pnpm dev:web`、Expo 或 Metro。
+- 浏览器、静态文件服务器或编辑器正在监视导出目录。
+- 杀毒软件正在扫描新生成的大型 Bundle。
+- 先前以不同权限级别创建的文件。
 
-```powershell
-Get-CimInstance Win32_Process |
-  Where-Object { $_.CommandLine -match 'LineSpace-mobile|expo|metro|node' } |
-  Select-Object ProcessId, Name, CommandLine
-```
+## 不应采用的做法
 
-Stop only the relevant process:
+- 不要运行 `git clean` 或 `git reset --hard`。
+- 不要删除 `pnpm-lock.yaml` 来处理文件锁。
+- 不要把 `dist` 加入 Git。
+- 不要无差别结束机器上的全部 Node 进程。
+- 不要为了规避锁而把生成物改到源码目录。
 
-```powershell
-Stop-Process -Id <PID> -Force
-```
-
-If you are certain no other Node project is running, this broader command is faster:
-
-```powershell
-taskkill /F /IM node.exe
-```
-
-## If the file is still locked
-
-Remove read-only attributes:
-
-```powershell
-attrib -R .\apps\mobile\dist\* /S /D
-Remove-Item -LiteralPath .\apps\mobile\dist -Recurse -Force
-```
-
-If the folder was created from an elevated/admin terminal and your normal terminal cannot overwrite it, repair permissions:
-
-```powershell
-icacls B:\LineSpace\LineSpace-mobile /grant "$env:USERNAME:(OI)(CI)F" /T
-```
-
-Run that from an administrator PowerShell only if normal deletion still fails.
-
-## Windows Defender / antivirus
-
-If locks happen repeatedly, add a trusted-folder exclusion for:
-
-```txt
-B:\LineSpace\LineSpace-mobile
-```
-
-Windows Security path:
-
-```txt
-Windows Security -> Virus & threat protection -> Manage settings -> Exclusions -> Add folder exclusion
-```
-
-Only do this for trusted local development folders.
-
-## Clean export command
-
-After the lock is gone:
-
-```powershell
-cd B:\LineSpace\LineSpace-mobile
-pnpm --filter @linespace/mobile export:web
-```
-
+如果只有自动化沙箱报 `spawn EPERM`，而普通本地终端能够导出，这通常是子进程权限限制，不是 `dist` 文件损坏。

@@ -3,7 +3,12 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**"],
+      "env": [
+        "EXPO_PUBLIC_API_BASE_URL",
+        "EXPO_PUBLIC_CURRENT_USER_ID",
+        "EXPO_PUBLIC_USE_MOCKS"
+      ]
     },
     "typecheck": {
       "dependsOn": ["^typecheck"],

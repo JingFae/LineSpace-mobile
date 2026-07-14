@@ -1,6 +1,6 @@
 {
   "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm --filter @linespace/mobile export:web",
+  "buildCommand": "pnpm build:web",
   "outputDirectory": "apps/mobile/dist",
   "rewrites": [
     {

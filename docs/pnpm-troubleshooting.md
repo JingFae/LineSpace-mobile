@@ -1,153 +1,77 @@
-# pnpm troubleshooting
+# pnpm 故障排查
 
-This project uses `pnpm@11.7.0`. Most pnpm failures on Windows fall into four categories: version switching, locked temp files, network/registry access, or a corrupted store.
+项目固定使用 pnpm `11.7.0`，Node.js 要求 `>=20.0.0`，CI 使用 Node 22。
 
-## 1. Confirm versions
+## 1. 确认版本
 
 ```powershell
-node -v
-pnpm -v
+node --version
+pnpm --version
 corepack --version
 ```
 
-Expected:
+版本不一致时优先通过 Corepack 启用 `package.json#packageManager` 指定的版本，不要把仓库永久切换到 npm 或 yarn。
 
-- Node.js: `20+`, recommended `22 LTS` or newer.
-- pnpm: `11.x`, recommended `11.7.0`.
-
-If pnpm is missing or the version is inconsistent:
+## 2. 锁定安装
 
 ```powershell
-corepack enable
-corepack prepare pnpm@11.7.0 --activate
-pnpm -v
+pnpm install --frozen-lockfile
 ```
 
-## 2. Fix pnpm version auto-download issues
+这应当是本地复现和 CI 的默认安装方式。除非正在有意更新依赖，否则不要删除或重写 `pnpm-lock.yaml`。
 
-This repository includes `.npmrc` settings:
+## 3. 依赖构建脚本
 
-```ini
-manage-package-manager-versions=false
-package-manager-strict=false
+`pnpm-workspace.yaml` 使用最小 allowlist，只允许 `esbuild` 执行构建脚本。`tsx` 的运行需要该二进制。如果出现 ignored builds 提示，先确认配置仍是：
+
+```yaml
+allowBuilds:
+  esbuild: true
 ```
 
-These prevent pnpm from stopping or downloading another pnpm version just because `package.json` pins a version.
-
-If your global config overrides this, run:
+然后运行：
 
 ```powershell
-pnpm config set manage-package-manager-versions false --global
-pnpm config set package-manager-strict false --global
+pnpm install --frozen-lockfile
+pnpm rebuild esbuild
 ```
 
-## 3. Fix `EPERM: operation not permitted, unlink ... _tmp_*`
+不要开启允许所有依赖脚本的宽泛配置。
 
-This usually means a pnpm temp file is locked by the terminal, editor, antivirus, or a previous failed pnpm process.
+## 4. `spawn EPERM`
 
-Steps:
+Windows、受限沙箱或安全软件可能阻止 pnpm、Metro、tsx/esbuild 创建子进程。先关闭遗留的 Expo/Node 进程并在普通本地终端重试。若只在受限执行环境失败，而同一命令在正常终端通过，应把它记录为环境限制，不要为此重写产品代码。
 
-1. Close running dev servers and terminals inside this repo.
-2. Close editors that may be indexing the folder.
-3. Open a fresh PowerShell terminal.
-4. Remove stale root temp files:
+全仓 TypeScript 命令已经使用串行 Workspace 执行，以减少 Windows 进程并发导致的 `EPERM`：
 
 ```powershell
-Remove-Item -LiteralPath .\_tmp_* -Force
+pnpm typecheck
 ```
 
-If PowerShell refuses because a file is still locked, restart the terminal or reboot Windows, then run the command again.
+## 5. 文件锁
 
-Optional: move pnpm's store out of volatile temp paths:
+如果 pnpm 报告临时文件或 `apps/mobile/dist` 被占用：
 
-```powershell
-pnpm config set store-dir "$env:LOCALAPPDATA\pnpm-store" --global
-pnpm store prune
-```
+1. 停止当前仓库的 Expo、Metro 和 Node 服务。
+2. 关闭正在预览导出文件的工具。
+3. 在新终端重试命令。
+4. 仍失败时参考 `docs/windows-file-locks.md`，只处理确认属于当前仓库的进程和生成目录。
 
-Then reinstall:
-
-```powershell
-pnpm install
-```
-
-## 4. Fix registry/network errors
-
-Check registry:
+## 6. Registry / 网络
 
 ```powershell
 pnpm config get registry
 ```
 
-Use the default npm registry:
+默认 Registry 应为 `https://registry.npmjs.org/`。公司代理、证书和镜像应按组织策略配置到用户环境，不提交到项目文件。
+
+## 7. 最小诊断顺序
 
 ```powershell
-pnpm config set registry https://registry.npmjs.org/
-```
-
-If you are behind a proxy, configure npm/pnpm proxy settings through your company network instructions:
-
-```powershell
-pnpm config set proxy http://host:port
-pnpm config set https-proxy http://host:port
-```
-
-## 5. Clean install
-
-Use this only after saving your work.
-
-```powershell
-Remove-Item -LiteralPath .\node_modules -Recurse -Force
-Remove-Item -LiteralPath .\pnpm-lock.yaml -Force
-Remove-Item -LiteralPath .\_tmp_* -Force
-pnpm store prune
-pnpm install
+pnpm install --frozen-lockfile
 pnpm typecheck
+pnpm check:api
+pnpm build:web
 ```
 
-If `pnpm-lock.yaml` already exists and should be preserved, do not delete it. Run `pnpm install --frozen-lockfile` instead.
-
-## 6. Fix `ERR_PNPM_IGNORED_BUILDS`
-
-If pnpm reports:
-
-```text
-ERR_PNPM_IGNORED_BUILDS Ignored build scripts: esbuild
-Run "pnpm approve-builds"
-```
-
-This means pnpm blocked a dependency postinstall script. `esbuild` needs that script to install its platform binary.
-
-This repository allows `esbuild` in `pnpm-workspace.yaml`:
-
-```yaml
-onlyBuiltDependencies:
-  - esbuild
-```
-
-Then run:
-
-```powershell
-pnpm install
-pnpm rebuild esbuild
-pnpm dev:web
-```
-
-If pnpm still asks for approval, run:
-
-```powershell
-pnpm approve-builds
-```
-
-Select `esbuild` with `Space`, then press `Enter`.
-
-## 7. Temporary fallback
-
-If pnpm remains blocked, do not switch the repo permanently to npm. Use npm only to inspect whether Node itself is functional:
-
-```powershell
-npm -v
-node -v
-```
-
-The project workspace layout expects pnpm.
+记录第一个失败命令及完整错误。不要在未确认原因时删除 `node_modules`、锁文件或源码。

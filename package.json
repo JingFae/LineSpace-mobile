@@ -3,13 +3,19 @@
   "private": true,
   "version": "0.1.0",
   "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "pnpm --filter @linespace/mobile dev",
     "dev:web": "pnpm --filter @linespace/mobile web",
     "dev:api": "pnpm --filter @linespace/api dev",
-    "typecheck": "pnpm -r --if-present typecheck",
-    "build": "turbo build",
-    "lint": "pnpm -r --if-present lint"
+    "typecheck": "pnpm -r --workspace-concurrency=1 --if-present typecheck",
+    "build": "turbo run build",
+    "build:web": "pnpm --filter @linespace/mobile export:web",
+    "check:api": "pnpm --filter @linespace/api check",
+    "check": "pnpm typecheck && pnpm check:api && pnpm build:web",
+    "lint": "pnpm typecheck"
   },
   "devDependencies": {
     "turbo": "^2.3.3",
