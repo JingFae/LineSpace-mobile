@@ -36,9 +36,11 @@ export function PoemArtwork({ tone, imageSource }: PoemArtworkProps) {
 
 const styles = StyleSheet.create({
   root: {
-    height: 180,
+    width: "100%",
+    height: 257,
     overflow: "hidden",
-    borderRadius: radius.md,
+    borderTopLeftRadius: radius.md,
+    borderTopRightRadius: radius.md,
     backgroundColor: colors.surfaceMuted
   },
   band: {

@@ -29,6 +29,7 @@ import { usePoemEngagement } from "@/features/poem/usePoemEngagement";
 declare const require: (path: string) => ImageSourcePropType;
 
 const waterArtwork = require("../../../assets/preview-water.png");
+const currentUserAvatar = require("../../../assets/profile/profile-avatar-water.png");
 const homeBackground = "#F6F7F7";
 
 const sectionTabs: SegmentTab<FeedSection>[] = [
@@ -151,12 +152,14 @@ function mapPoemToCard(poem: PoemSummary): PoemCardModel {
     author: {
       displayName: poem.author.displayName,
       handle: poem.author.handle,
-      avatarColor: poem.author.avatarColor
+      avatarColor: poem.author.avatarColor,
+      avatarSource: currentUserAvatar
     },
     contributorsCount: poem.contributorsCount,
     tags: poem.tags,
     statusLabel: poem.status === "growing" ? "Poem Growing" : "Final Poem",
     startedAtLabel: formatPoemDate(poem.startedAt),
+    postedAtLabel: formatPostTimestamp(poem.startedAt),
     metrics: poem.metrics,
     viewer: poem.viewer,
     artworkTone: poem.artworkTone,
@@ -174,6 +177,11 @@ function formatPoemDate(value: string) {
   return `${year}/${month}/${day} ${weekday}.`;
 }
 
+function formatPostTimestamp(value: string) {
+  const date = new Date(value);
+  return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()} 21:09`;
+}
+
 const styles = StyleSheet.create({
   safeArea: {
     backgroundColor: homeBackground
@@ -189,17 +197,17 @@ const styles = StyleSheet.create({
     height: 101,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingLeft: 73,
-    paddingRight: 28,
+    justifyContent: "center",
     paddingTop: 44,
     backgroundColor: colors.surface
   },
   sectionTabs: {
-    flex: 1,
-    paddingRight: 12
+    width: 252
   },
   searchButton: {
+    position: "absolute",
+    right: 16,
+    top: 52,
     width: 46,
     height: 46,
     alignItems: "center",
