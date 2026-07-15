@@ -117,7 +117,6 @@ const styles = StyleSheet.create({
   },
   item: {
     minWidth: 58,
-    minHeight: 48,
     alignItems: "center",
     justifyContent: "center",
     gap: 3
@@ -132,11 +131,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#FF0038"
   },
   label: {
-    color: colors.tabMuted,
-    fontSize: 10,
-    lineHeight: 12
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: "400",
+    color: "#9B9B9B"
   },
   labelSelected: {
-    color: colors.black
+    color: colors.black,
+    fontWeight: "500"
   }
 });

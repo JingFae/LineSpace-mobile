@@ -18,7 +18,6 @@ export type PoemCardModel = {
   tags: string[];
   statusLabel: string;
   startedAtLabel: string;
-  postedAtLabel: string;
   metrics: {
     comments: number;
     commentThreads?: number;
@@ -67,27 +66,41 @@ export function PoemCard({
             />
             <Text style={styles.authorName}>{poem.author.displayName}</Text>
           </View>
-          <Text style={styles.timestamp}>{poem.postedAtLabel}</Text>
+          <Text style={styles.contributors}>with {poem.contributorsCount} contributors</Text>
         </View>
 
-        <View style={styles.cardClip}>
+        <View style={styles.dots} pointerEvents="none">
+          {Array.from({ length: 13 }).map((_, index) => (
+            <View key={index} style={styles.dot} />
+          ))}
+        </View>
+
+        <View style={styles.artworkWrap}>
           <PoemArtwork tone={poem.artworkTone} imageSource={poem.artworkSource} />
+        </View>
 
-          <View style={styles.body}>
-            <View style={styles.titleRow}>
-              <Text style={styles.bulbEmoji}>💡</Text>
-              <Text style={styles.title}>{poem.title}</Text>
+        <View style={styles.body}>
+          <View style={styles.titleRow}>
+            <Text style={styles.bulbEmoji}>💡</Text>
+            <Text style={styles.title}>{poem.title}</Text>
+          </View>
+
+          <View style={styles.lines}>
+            {poem.lines.map((line) => (
+              <Text key={line} style={styles.poemLine}>
+                {line}
+              </Text>
+            ))}
+          </View>
+
+          <Text style={styles.tags}>{poem.tags.map((tag) => `#${tag}`).join("  |  ")}</Text>
+
+          <View style={styles.status}>
+            <View style={styles.statusTitleRow}>
+              <View style={styles.sproutMark} />
+              <Text style={styles.statusTitle}>{poem.statusLabel}</Text>
             </View>
-
-            <View style={styles.lines}>
-              {poem.lines.map((line) => (
-                <Text key={line} style={styles.poemLine}>
-                  {line}
-                </Text>
-              ))}
-            </View>
-
-            <Text style={styles.tags}>{poem.tags.map((tag) => `#${tag}`).join("  |  ")}</Text>
+            <Text style={styles.statusMeta}>started from {poem.startedAtLabel}</Text>
           </View>
         </View>
       </Pressable>
@@ -114,10 +127,7 @@ export function PoemCard({
 
 const styles = StyleSheet.create({
   root: {
-    marginBottom: 24,
-    width: "100%",
-    maxWidth: 365,
-    alignSelf: "center"
+    marginBottom: 24
   },
   contentPressable: {
     borderRadius: radius.md
@@ -126,40 +136,60 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    height: 37,
+    height: 45,
     paddingHorizontal: 0,
     zIndex: 2
   },
   authorIdentity: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8
+    gap: 10
+  },
+  avatarDot: {
+    width: 39,
+    height: 39,
+    borderRadius: 20
   },
   authorName: {
     fontSize: 20,
-    lineHeight: 24,
+    lineHeight: 25,
     fontWeight: "400",
     color: colors.ink,
-    fontStyle: "normal"
+    fontStyle: "italic",
+    fontFamily: "Brush Script MT"
   },
-  timestamp: {
+  contributors: {
     fontSize: 15,
-    lineHeight: 18,
+    lineHeight: 17,
     fontWeight: "400",
-    color: "rgba(0, 0, 0, 0.5)"
+    color: colors.ink
   },
-  cardClip: {
-    overflow: "hidden",
-    borderTopLeftRadius: radius.md,
-    borderTopRightRadius: radius.md
+  dots: {
+    position: "absolute",
+    top: 32,
+    left: 54,
+    right: 2,
+    zIndex: 3,
+    flexDirection: "row",
+    justifyContent: "space-between"
+  },
+  dot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#F4F4F4"
+  },
+  artworkWrap: {
+    marginTop: 0
   },
   body: {
-    marginTop: -1,
+    minHeight: 298,
+    marginTop: 0,
     borderRadius: radius.md,
     backgroundColor: colors.surface,
     paddingHorizontal: 23,
-    paddingTop: 16,
-    paddingBottom: 25,
+    paddingTop: 18,
+    paddingBottom: 14,
     shadowColor: colors.black,
     shadowOpacity: 0.04,
     shadowRadius: 12,
@@ -170,11 +200,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    marginBottom: 15
+    marginBottom: 25
   },
   bulbEmoji: {
-    fontSize: 24,
-    lineHeight: 28
+    fontSize: 28,
+    lineHeight: 31
   },
   title: {
     fontSize: 26,
@@ -184,20 +214,52 @@ const styles = StyleSheet.create({
     fontStyle: "italic"
   },
   lines: {
-    gap: 18,
-    marginBottom: 19
+    gap: 16,
+    marginBottom: 31
   },
   poemLine: {
     fontSize: 20,
-    lineHeight: 23,
+    lineHeight: 22,
     fontWeight: "400",
     color: colors.ink,
     fontStyle: "italic"
   },
   tags: {
-    fontSize: 15,
+    fontSize: 20,
+    lineHeight: 22,
+    fontWeight: "400",
+    color: colors.muted,
+    marginBottom: 11
+  },
+  status: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.line,
+    paddingTop: 8
+  },
+  statusTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4
+  },
+  sproutMark: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.success,
+    transform: [{ rotate: "-20deg" }]
+  },
+  statusTitle: {
+    fontSize: 16,
     lineHeight: 18,
     fontWeight: "400",
-    color: colors.profileMuted
+    color: colors.ink,
+    fontStyle: "italic"
+  },
+  statusMeta: {
+    fontSize: 15,
+    lineHeight: 17,
+    fontWeight: "400",
+    color: colors.muted,
+    fontStyle: "italic"
   }
 });
