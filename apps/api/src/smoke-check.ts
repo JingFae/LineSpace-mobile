@@ -1,8 +1,42 @@
-import { createMockLineSpaceApi, HttpLineSpaceApi } from "@linespace/api-client";
+import {
+  createMockLineSpaceApi,
+  HttpLineSpaceApi,
+  type AuthUser
+} from "@linespace/api-client";
+import { ApiAuthError, type AuthService } from "./auth";
 import { handleApiRequest } from "./routes";
 
 const baseUrl = "http://linespace.local";
 const originalFetch = globalThis.fetch;
+const smokeUser: AuthUser = {
+  id: "user-lili",
+  authUserId: "11111111-1111-4111-8111-111111111111",
+  username: "lili",
+  email: "lili@example.com",
+  displayName: "Lili",
+  emailConfirmed: true,
+  createdAt: "2026-01-01T00:00:00.000Z"
+};
+const smokeAuthService: AuthService = {
+  async authenticate(accessToken) {
+    if (accessToken !== "smoke-token") {
+      throw new ApiAuthError("INVALID_TOKEN", 401, "A valid access token is required.");
+    }
+    return smokeUser;
+  },
+  async register() {
+    throw new Error("Not used by the HTTP contract smoke check.");
+  },
+  async login() {
+    throw new Error("Not used by the HTTP contract smoke check.");
+  },
+  async refresh() {
+    throw new Error("Not used by the HTTP contract smoke check.");
+  },
+  async logout() {
+    throw new Error("Not used by the HTTP contract smoke check.");
+  }
+};
 
 const routeAdapter: typeof fetch = async (input, init) => {
   const requestUrl =
@@ -16,7 +50,11 @@ const routeAdapter: typeof fetch = async (input, init) => {
   const method = init?.method ?? request?.method ?? "GET";
   const rawBody = init?.body;
   const body = typeof rawBody === "string" && rawBody.length > 0 ? JSON.parse(rawBody) : undefined;
-  const result = await handleApiRequest(method, url.pathname, url.searchParams, body);
+  const headers = new Headers(init?.headers ?? request?.headers);
+  const result = await handleApiRequest(method, url.pathname, url.searchParams, body, {
+    authService: smokeAuthService,
+    authorization: headers.get("authorization") ?? undefined
+  });
 
   return new Response(JSON.stringify(result.body), {
     status: result.status,
@@ -38,8 +76,28 @@ async function main() {
   const health = await handleApiRequest("GET", "/health", new URLSearchParams());
   assert(health.status === 200, "The API health handler did not return 200.");
 
+  const unauthenticatedInbox = await handleApiRequest(
+    "GET",
+    "/v1/users/user-lili/inbox-summary",
+    new URLSearchParams(),
+    undefined,
+    { authService: smokeAuthService }
+  );
+  assert(unauthenticatedInbox.status === 401, "Inbox summary must require authentication.");
+
+  const forbiddenInbox = await handleApiRequest(
+    "GET",
+    "/v1/users/user-ray/inbox-summary",
+    new URLSearchParams(),
+    undefined,
+    { authService: smokeAuthService, authorization: "Bearer smoke-token" }
+  );
+  assert(forbiddenInbox.status === 403, "Users must not be able to read another user's inbox.");
+
   globalThis.fetch = routeAdapter;
-  const httpApi = new HttpLineSpaceApi(baseUrl);
+  const httpApi = new HttpLineSpaceApi(baseUrl, {
+    getAccessToken: () => "smoke-token"
+  });
 
   try {
     const catalog = await httpApi.getPoemDesignCatalog();
@@ -47,6 +105,11 @@ async function main() {
 
     const profile = await httpApi.getUserProfile("user-lili");
     assert(profile, "The current mock user profile was not found over HTTP.");
+    const inboxSummary = await httpApi.getInboxActivitySummary(profile.id);
+    assert(
+      inboxSummary.unread.comments > 0 && inboxSummary.unread.likes > 0,
+      "Inbox summary did not return unread activity counts."
+    );
 
     const draft = await httpApi.createPoemDraft({ ownerId: profile.id, mode: "draft" });
     const loadedDraft = await httpApi.getPoemDraft(draft.id);
@@ -139,7 +202,7 @@ async function main() {
     assert(aiBoundaryRejected, "The unconfigured AI boundary should reject HTTP requests.");
 
     process.stdout.write(
-      "API smoke check passed: health, Mock mode, HTTP contract, drafts, feed, poem, profile, collections, collaboration, and AI boundary.\n"
+      "API smoke check passed: health, Auth, Inbox privacy, Mock mode, HTTP contract, drafts, feed, poem, profile, collections, collaboration, and AI boundary.\n"
     );
   } finally {
     globalThis.fetch = originalFetch;

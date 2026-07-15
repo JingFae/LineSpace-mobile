@@ -17,7 +17,8 @@ const server = createServer(async (request, response) => {
     request.method ?? "GET",
     url.pathname,
     url.searchParams,
-    body
+    body,
+    { authorization: request.headers.authorization }
   );
 
   response.writeHead(result.status, {
@@ -49,6 +50,6 @@ function corsHeaders() {
   return {
     "access-control-allow-origin": "*",
     "access-control-allow-methods": "GET,POST,PUT,OPTIONS",
-    "access-control-allow-headers": "content-type"
+    "access-control-allow-headers": "authorization,content-type"
   };
 }

@@ -1,11 +1,5 @@
-import { PlaceholderScreen } from "@/screens/PlaceholderScreen";
+import { InboxScreen } from "@/features/inbox/InboxScreen";
 
 export default function CommentsRoute() {
-  return (
-    <PlaceholderScreen
-      activeTab="inbox"
-      title="Inbox"
-      body="Line notifications, replies, and contribution updates will appear here."
-    />
-  );
+  return <InboxScreen />;
 }

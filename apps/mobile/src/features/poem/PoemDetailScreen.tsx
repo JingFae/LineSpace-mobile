@@ -31,10 +31,12 @@ const detailBackground = "#F6F7F7";
 const figmaAccent = "#FF0038";
 
 type PoemDetailScreenProps = {
+  commentId?: string;
   id?: string;
+  targetKind?: "post" | "comment";
 };
 
-export function PoemDetailScreen({ id }: PoemDetailScreenProps) {
+export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreenProps) {
   const [creditsOpen, setCreditsOpen] = useState(false);
   const engagement = usePoemEngagement();
   const poemQuery = useQuery({
@@ -71,7 +73,7 @@ export function PoemDetailScreen({ id }: PoemDetailScreenProps) {
             />
           </View>
         ) : (
-          <PoemDetailContent poem={poem} />
+          <PoemDetailContent commentId={commentId} poem={poem} targetKind={targetKind} />
         )}
       </ScrollView>
 
@@ -127,11 +129,19 @@ function DetailHeader({ poem }: { poem?: PoemSummary }) {
   );
 }
 
-function PoemDetailContent({ poem }: { poem: PoemSummary }) {
+function PoemDetailContent({
+  commentId,
+  poem,
+  targetKind
+}: {
+  commentId?: string;
+  poem: PoemSummary;
+  targetKind?: "post" | "comment";
+}) {
   return (
     <View>
       <HeroArtwork poem={poem} />
-      <View style={styles.poemPanel}>
+      <View style={[styles.poemPanel, targetKind === "post" && styles.targetHighlight]}>
         <View style={styles.titleRow}>
           <Text style={styles.bulbEmoji}>💡</Text>
           <Text style={styles.poemTitle}>{poem.title}</Text>
@@ -170,7 +180,11 @@ function PoemDetailContent({ poem }: { poem: PoemSummary }) {
 
         <View style={styles.commentList}>
           {(poem.comments ?? []).map((comment) => (
-            <CommentRow key={comment.id} comment={comment} />
+            <CommentRow
+              highlighted={targetKind === "comment" && comment.id === commentId}
+              key={comment.id}
+              comment={comment}
+            />
           ))}
         </View>
       </View>
@@ -192,11 +206,17 @@ function HeroArtwork({ poem }: { poem: PoemSummary }) {
   );
 }
 
-function CommentRow({ comment }: { comment: PoemComment }) {
+function CommentRow({
+  comment,
+  highlighted
+}: {
+  comment: PoemComment;
+  highlighted?: boolean;
+}) {
   const avatarColor = comment.author.handle === "lili" ? figmaAccent : comment.author.avatarColor;
 
   return (
-    <View style={styles.commentRow}>
+    <View style={[styles.commentRow, highlighted && styles.targetHighlight]}>
       <Avatar
         color={avatarColor}
         imageSource={comment.author.avatarUrl ? { uri: comment.author.avatarUrl } : undefined}
@@ -539,6 +559,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 25,
     paddingTop: 19,
     paddingBottom: 32
+  },
+  targetHighlight: {
+    backgroundColor: "#FFF7D7",
+    borderColor: "#F2C94C",
+    borderWidth: 1,
+    borderRadius: 8
   },
   titleRow: {
     flexDirection: "row",

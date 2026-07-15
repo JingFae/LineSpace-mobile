@@ -8,6 +8,7 @@ import type {
   DraftInvitation,
   DraftOperationInput,
   FeedQuery,
+  InboxActivitySummary,
   InviteDraftCollaboratorInput,
   PoemDesignCatalog,
   PoemDraft,
@@ -36,8 +37,15 @@ import type {
 } from "./types";
 import type { LineSpaceApi } from "./client";
 
+export type HttpLineSpaceApiOptions = {
+  getAccessToken?: () => Promise<string | null | undefined> | string | null | undefined;
+};
+
 export class HttpLineSpaceApi implements LineSpaceApi {
-  constructor(private readonly baseUrl: string) {}
+  constructor(
+    private readonly baseUrl: string,
+    private readonly options: HttpLineSpaceApiOptions = {}
+  ) {}
 
   async getPoemDesignCatalog(): Promise<PoemDesignCatalog> {
     return this.getJson<PoemDesignCatalog>("/v1/compose/design-catalog");
@@ -131,6 +139,12 @@ export class HttpLineSpaceApi implements LineSpaceApi {
   async getUserPoemCollections(userId: string): Promise<UserPoemCollections> {
     return this.getJson<UserPoemCollections>(
       `/v1/users/${encodeURIComponent(userId)}/poem-collections`
+    );
+  }
+
+  async getInboxActivitySummary(userId: string): Promise<InboxActivitySummary> {
+    return this.getJson<InboxActivitySummary>(
+      `/v1/users/${encodeURIComponent(userId)}/inbox-summary`
     );
   }
 
@@ -260,7 +274,9 @@ export class HttpLineSpaceApi implements LineSpaceApi {
   }
 
   private async getJson<T>(path: string): Promise<T> {
-    const response = await fetch(`${this.baseUrl}${path}`);
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      headers: await this.requestHeaders()
+    });
     if (!response.ok) {
       throw new Error(`LineSpace API GET ${path} failed with ${response.status}`);
     }
@@ -278,9 +294,7 @@ export class HttpLineSpaceApi implements LineSpaceApi {
   private async sendJson<T>(method: "POST" | "PUT", path: string, body: unknown): Promise<T> {
     const response = await fetch(`${this.baseUrl}${path}`, {
       method,
-      headers: {
-        "content-type": "application/json"
-      },
+      headers: await this.requestHeaders(true),
       body: JSON.stringify(body)
     });
 
@@ -289,5 +303,19 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     }
 
     return (await response.json()) as T;
+  }
+
+  private async requestHeaders(hasJsonBody = false): Promise<Record<string, string>> {
+    const headers: Record<string, string> = {};
+    if (hasJsonBody) {
+      headers["content-type"] = "application/json";
+    }
+
+    const accessToken = await this.options.getAccessToken?.();
+    if (accessToken) {
+      headers.authorization = `Bearer ${accessToken}`;
+    }
+
+    return headers;
   }
 }

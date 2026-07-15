@@ -1,5 +1,6 @@
 import {
   createMockLineSpaceApi,
+  type AuthUser,
   type AiAssistRequest,
   type CreateContinuationInput,
   type CreatePoemDraftInput,
@@ -17,6 +18,13 @@ import {
   type UserConnectionKind,
   type UserProfileContentSection
 } from "@linespace/api-client";
+import {
+  authErrorResponse,
+  getServerAuthService,
+  handleAuthRoute,
+  parseBearerToken,
+  type AuthRequestContext
+} from "./auth";
 
 const api = createMockLineSpaceApi();
 
@@ -29,11 +37,15 @@ export async function handleApiRequest(
   method: string,
   pathname: string,
   searchParams: URLSearchParams,
-  body?: unknown
+  body?: unknown,
+  context: AuthRequestContext = {}
 ): Promise<ApiResponse> {
   if (method === "GET" && pathname === "/health") {
     return json(200, { ok: true, service: "linespace-api" });
   }
+
+  const authRoute = await handleAuthRoute(method, pathname, body, context);
+  if (authRoute) return authRoute;
 
   if (method === "GET" && pathname === "/v1/threads") {
     const sort = searchParams.get("sort");
@@ -57,35 +69,48 @@ export async function handleApiRequest(
       }
 
       if (threadRoute.resource === "continuations" && method === "POST") {
-        const request = body as Omit<CreateThreadContinuationInput, "threadId">;
-        if (!request?.userId || typeof request.content !== "string") {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        const request = body as Omit<CreateThreadContinuationInput, "threadId" | "userId">;
+        if (typeof request?.content !== "string") {
           return json(400, { code: "INVALID_THREAD_CONTINUATION" });
         }
         return json(
           201,
-          await api.createThreadContinuation({ threadId: threadRoute.threadId, ...request })
+          await api.createThreadContinuation({
+            threadId: threadRoute.threadId,
+            ...request,
+            userId: actor.user.id
+          })
         );
       }
 
       if (threadRoute.resource === "like" && method === "PUT") {
-        const request = body as Omit<UpdateThreadLikeInput, "threadId">;
-        if (!request?.userId || typeof request.isActive !== "boolean") {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        const request = body as Omit<UpdateThreadLikeInput, "threadId" | "userId">;
+        if (typeof request?.isActive !== "boolean") {
           return json(400, { code: "INVALID_THREAD_LIKE" });
         }
-        return json(200, await api.setThreadLike({ threadId: threadRoute.threadId, ...request }));
+        return json(
+          200,
+          await api.setThreadLike({
+            threadId: threadRoute.threadId,
+            ...request,
+            userId: actor.user.id
+          })
+        );
       }
 
       if (threadRoute.resource === "share" && method === "POST") {
-        const request = body as { userId?: unknown } | undefined;
-        if (typeof request?.userId !== "string") {
-          return json(400, { code: "INVALID_THREAD_SHARE" });
-        }
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
         return json(
           200,
           await api.recordThreadShare({
             kind: "thread",
             threadId: threadRoute.threadId,
-            userId: request.userId
+            userId: actor.user.id
           })
         );
       }
@@ -108,44 +133,48 @@ export async function handleApiRequest(
       }
 
       if (continuationRoute.resource === "continuations" && method === "POST") {
-        const request = body as Omit<CreateContinuationInput, "continuationId">;
-        if (!request?.userId || typeof request.content !== "string") {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        const request = body as Omit<CreateContinuationInput, "continuationId" | "userId">;
+        if (typeof request?.content !== "string") {
           return json(400, { code: "INVALID_CONTINUATION_CREATE" });
         }
         return json(
           201,
           await api.createContinuation({
             continuationId: continuationRoute.continuationId,
-            ...request
+            ...request,
+            userId: actor.user.id
           })
         );
       }
 
       if (continuationRoute.resource === "like" && method === "PUT") {
-        const request = body as Omit<UpdateContinuationLikeInput, "continuationId">;
-        if (!request?.userId || typeof request.isActive !== "boolean") {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        const request = body as Omit<UpdateContinuationLikeInput, "continuationId" | "userId">;
+        if (typeof request?.isActive !== "boolean") {
           return json(400, { code: "INVALID_CONTINUATION_LIKE" });
         }
         return json(
           200,
           await api.setContinuationLike({
             continuationId: continuationRoute.continuationId,
-            ...request
+            ...request,
+            userId: actor.user.id
           })
         );
       }
 
       if (continuationRoute.resource === "share" && method === "POST") {
-        const request = body as { userId?: unknown } | undefined;
-        if (typeof request?.userId !== "string") {
-          return json(400, { code: "INVALID_CONTINUATION_SHARE" });
-        }
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
         return json(
           200,
           await api.recordThreadShare({
             kind: "continuation",
             continuationId: continuationRoute.continuationId,
-            userId: request.userId
+            userId: actor.user.id
           })
         );
       }
@@ -159,12 +188,17 @@ export async function handleApiRequest(
   }
 
   if (method === "POST" && pathname === "/v1/drafts") {
-    const request = body as Partial<CreatePoemDraftInput> | undefined;
-    if (!request?.ownerId || (request.mode !== "draft" && request.mode !== "relay")) {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
+    const request = body as Partial<Omit<CreatePoemDraftInput, "ownerId">> | undefined;
+    if (request?.mode !== "draft" && request?.mode !== "relay") {
       return json(400, { code: "INVALID_DRAFT_CREATE" });
     }
     try {
-      return json(201, await api.createPoemDraft(request as CreatePoemDraftInput));
+      return json(
+        201,
+        await api.createPoemDraft({ ownerId: actor.user.id, mode: request.mode })
+      );
     } catch {
       return json(404, { code: "USER_NOT_FOUND" });
     }
@@ -178,31 +212,63 @@ export async function handleApiRequest(
       }
 
       if (method === "PUT" && draftRoute.resource === "draft") {
-        const request = body as Omit<UpdatePoemDraftInput, "draftId">;
-        if (!request?.userId) return json(400, { code: "INVALID_DRAFT_UPDATE" });
-        return json(200, await api.updatePoemDraft({ draftId: draftRoute.draftId, ...request }));
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        const request = (body ?? {}) as Omit<UpdatePoemDraftInput, "draftId" | "userId">;
+        return json(
+          200,
+          await api.updatePoemDraft({
+            draftId: draftRoute.draftId,
+            ...request,
+            userId: actor.user.id
+          })
+        );
       }
 
       if (method === "POST" && draftRoute.resource === "operations") {
-        const request = body as Omit<DraftOperationInput, "draftId">;
-        if (!request?.userId || typeof request.body !== "string") {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        const request = body as Omit<DraftOperationInput, "draftId" | "userId">;
+        if (typeof request?.body !== "string") {
           return json(400, { code: "INVALID_DRAFT_OPERATION" });
         }
-        return json(200, await api.applyDraftOperation({ draftId: draftRoute.draftId, ...request }));
+        return json(
+          200,
+          await api.applyDraftOperation({
+            draftId: draftRoute.draftId,
+            ...request,
+            userId: actor.user.id
+          })
+        );
       }
 
       if (method === "POST" && draftRoute.resource === "invitations") {
-        const request = body as Omit<InviteDraftCollaboratorInput, "draftId">;
-        if (!request?.inviterId || !request.inviteeId) {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        const request = body as Omit<InviteDraftCollaboratorInput, "draftId" | "inviterId">;
+        if (!request?.inviteeId) {
           return json(400, { code: "INVALID_DRAFT_INVITATION" });
         }
-        return json(201, await api.inviteDraftCollaborator({ draftId: draftRoute.draftId, ...request }));
+        return json(
+          201,
+          await api.inviteDraftCollaborator({
+            draftId: draftRoute.draftId,
+            ...request,
+            inviterId: actor.user.id
+          })
+        );
       }
 
       if (method === "POST" && draftRoute.resource === "publish") {
-        const request = body as Omit<PublishPoemDraftInput, "draftId">;
-        if (!request?.userId) return json(400, { code: "INVALID_DRAFT_PUBLISH" });
-        return json(200, await api.publishPoemDraft({ draftId: draftRoute.draftId, ...request }));
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        return json(
+          200,
+          await api.publishPoemDraft({
+            draftId: draftRoute.draftId,
+            userId: actor.user.id
+          })
+        );
       }
     } catch {
       return json(404, { code: "DRAFT_NOT_FOUND_OR_FORBIDDEN" });
@@ -231,8 +297,23 @@ export async function handleApiRequest(
     return json(200, await api.getPoem(id, searchParams.get("viewerId") ?? undefined));
   }
 
+  const inboxSummaryUserId = parseInboxSummaryRoute(pathname);
+  if (method === "GET" && inboxSummaryUserId) {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
+    if (inboxSummaryUserId !== actor.user.id) {
+      return json(403, { code: "FORBIDDEN", message: "This inbox belongs to another user." });
+    }
+    return json(200, await api.getInboxActivitySummary(actor.user.id));
+  }
+
   const profileRoute = parseUserProfileRoute(pathname);
   if (profileRoute?.resource === "profile" && method === "PUT") {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
+    if (profileRoute.userId !== actor.user.id) {
+      return json(403, { code: "FORBIDDEN", message: "This resource belongs to another user." });
+    }
     const changes = parseUserProfileChanges(body);
     if (!changes.ok) {
       return json(400, {
@@ -244,7 +325,7 @@ export async function handleApiRequest(
     try {
       return json(
         200,
-        await api.updateUserProfile({ userId: profileRoute.userId, ...changes.value })
+        await api.updateUserProfile({ userId: actor.user.id, ...changes.value })
       );
     } catch {
       return json(404, { code: "USER_NOT_FOUND" });
@@ -284,6 +365,11 @@ export async function handleApiRequest(
     collectionRoute.poemId &&
     method === "PUT"
   ) {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
+    if (collectionRoute.userId !== actor.user.id) {
+      return json(403, { code: "FORBIDDEN", message: "This resource belongs to another user." });
+    }
     const isActive = (body as { isActive?: unknown } | undefined)?.isActive;
     if (typeof isActive !== "boolean") {
       return json(400, {
@@ -296,7 +382,7 @@ export async function handleApiRequest(
       return json(
         200,
         await api.setPoemCollection({
-          userId: collectionRoute.userId,
+          userId: actor.user.id,
           poemId: collectionRoute.poemId,
           collection: collectionRoute.collection,
           isActive
@@ -308,6 +394,8 @@ export async function handleApiRequest(
   }
 
   if (method === "POST" && pathname === "/v1/ai/assist") {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
     const request = body as AiAssistRequest;
     return json(501, {
       code: "LLM_NOT_CONFIGURED",
@@ -322,6 +410,22 @@ export async function handleApiRequest(
 
 function json(status: number, body: unknown): ApiResponse {
   return { status, body };
+}
+
+async function authenticateRequest(
+  context: AuthRequestContext
+): Promise<
+  | { ok: true; user: AuthUser }
+  | { ok: false; response: ApiResponse }
+> {
+  try {
+    const accessToken = parseBearerToken(context.authorization);
+    const service = context.authService ?? getServerAuthService();
+    const user = await service.authenticate(accessToken);
+    return { ok: true, user };
+  } catch (error) {
+    return { ok: false, response: authErrorResponse(error) };
+  }
 }
 
 function isFeedFilter(value: string | undefined): value is FeedFilter {
@@ -439,6 +543,17 @@ function parseInviteCandidatesRoute(pathname: string) {
     segments[1] === "users" &&
     segments[2] &&
     segments[3] === "invite-candidates"
+    ? segments[2]
+    : null;
+}
+
+function parseInboxSummaryRoute(pathname: string) {
+  const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  return segments.length === 4 &&
+    segments[0] === "v1" &&
+    segments[1] === "users" &&
+    segments[2] &&
+    segments[3] === "inbox-summary"
     ? segments[2]
     : null;
 }
