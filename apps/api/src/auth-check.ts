@@ -211,6 +211,46 @@ async function main() {
     "Draft owner trusted the request body instead of the verified token."
   );
 
+  const draftId = (spoofedDraft.body as { id?: string }).id;
+  assert(draftId, "Authenticated draft creation did not return an id.");
+  const unauthenticatedDraftRead = await request(
+    auth,
+    "GET",
+    `/v1/drafts/${draftId}`
+  );
+  assert(
+    unauthenticatedDraftRead.status === 401,
+    "Draft history must require authentication."
+  );
+
+  const ownDraftRead = await request(
+    auth,
+    "GET",
+    `/v1/drafts/${draftId}`,
+    undefined,
+    "valid-access-token"
+  );
+  assert(ownDraftRead.status === 200, "The authenticated owner could not read draft history.");
+
+  const ownCollections = await request(
+    auth,
+    "GET",
+    `/v1/users/${lili.id}/poem-collections`,
+    undefined,
+    "valid-access-token"
+  );
+  assert(ownCollections.status === 200, "The authenticated owner could not read collections.");
+
+  const unauthenticatedCollections = await request(
+    auth,
+    "GET",
+    `/v1/users/${lili.id}/poem-collections`
+  );
+  assert(
+    unauthenticatedCollections.status === 401,
+    "Collections must require authentication."
+  );
+
   const crossUserProfile = await request(
     auth,
     "PUT",

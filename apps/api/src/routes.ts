@@ -208,7 +208,19 @@ export async function handleApiRequest(
   if (draftRoute) {
     try {
       if (method === "GET" && draftRoute.resource === "draft") {
-        return json(200, await api.getPoemDraft(draftRoute.draftId));
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+
+        const draft = await api.getPoemDraft(draftRoute.draftId);
+        if (
+          !draft ||
+          !draft.collaborators.some(
+            (collaborator) => collaborator.user.id === actor.user.id
+          )
+        ) {
+          return json(404, { code: "DRAFT_NOT_FOUND" });
+        }
+        return json(200, draft);
       }
 
       if (method === "PUT" && draftRoute.resource === "draft") {
@@ -357,7 +369,15 @@ export async function handleApiRequest(
 
   const collectionRoute = parsePoemCollectionRoute(pathname);
   if (collectionRoute && method === "GET" && !collectionRoute.collection) {
-    return json(200, await api.getUserPoemCollections(collectionRoute.userId));
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
+    if (collectionRoute.userId !== actor.user.id) {
+      return json(403, {
+        code: "FORBIDDEN",
+        message: "This resource belongs to another user."
+      });
+    }
+    return json(200, await api.getUserPoemCollections(actor.user.id));
   }
 
   if (

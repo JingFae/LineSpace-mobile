@@ -12,7 +12,19 @@ const server = createServer(async (request, response) => {
 
   const origin = `http://${request.headers.host ?? "localhost"}`;
   const url = new URL(request.url ?? "/", origin);
-  const body = await readJsonBody(request);
+  let body: unknown;
+  try {
+    body = await readJsonBody(request);
+  } catch {
+    response.writeHead(400, {
+      "content-type": "application/json; charset=utf-8",
+      ...corsHeaders()
+    });
+    response.end(
+      JSON.stringify({ code: "INVALID_JSON", message: "Request body must be valid JSON." })
+    );
+    return;
+  }
   const result = await handleApiRequest(
     request.method ?? "GET",
     url.pathname,
@@ -25,7 +37,7 @@ const server = createServer(async (request, response) => {
     "content-type": "application/json; charset=utf-8",
     ...corsHeaders()
   });
-  response.end(JSON.stringify(result.body));
+  response.end(result.status === 204 ? undefined : JSON.stringify(result.body));
 });
 
 server.listen(port, () => {

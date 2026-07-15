@@ -2,16 +2,16 @@
 
 ## 当前部署边界
 
-当前 `vercel.json` 只构建并发布 Expo Web 静态前端：
+当前 `vercel.json` 构建并发布 Expo Web 静态前端，仓库根目录同时提供 API Function：
 
 ```text
 source: apps/mobile + workspace packages
 command: pnpm build:web
 output: apps/mobile/dist
-host: Vercel static hosting
+host: Vercel static hosting + `/api/*` Node Function
 ```
 
-`apps/api` 没有被配置为 Vercel Function，也没有包含在静态产物中。`pnpm dev:api` 启动的是本地 Node HTTP 服务。需要 HTTP 生产模式时，必须先为 API 选择独立运行环境、域名、HTTPS、持久数据库和密钥管理方案。
+`pnpm dev:api` 仍然启动本地 Node HTTP 服务；Vercel 部署时 `/api/v1/auth/*` 由仓库根目录的 `api/[...path].ts` Function 转发到认证路由。当前业务数据实现仍是 Mock，只有认证身份由 Supabase Auth 和 PostgreSQL 映射提供。
 
 ## 本地生产导出
 
@@ -61,14 +61,18 @@ EXPO_PUBLIC_CURRENT_USER_ID=user-lili
 
 ```env
 EXPO_PUBLIC_USE_MOCKS=false
-EXPO_PUBLIC_API_BASE_URL=https://api.example.com
+EXPO_PUBLIC_API_BASE_URL=/api
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_PUBLISHABLE_KEY=sb_publishable_example
+SUPABASE_SERVICE_ROLE_KEY=server-only-secret
+AUTH_EMAIL_REDIRECT_URL=https://your-domain.example/auth/confirm
 ```
 
-`EXPO_PUBLIC_*` 会进入客户端 Bundle，不能保存密钥。`OPENAI_API_KEY`、`DATABASE_URL`、`SUPABASE_SERVICE_ROLE_KEY` 等服务端变量不得设置为 Expo 公共变量，也不会被当前静态部署使用。
+`EXPO_PUBLIC_*` 会进入客户端 Bundle，不能保存密钥。`SUPABASE_SERVICE_ROLE_KEY`、`DATABASE_URL` 和 `OPENAI_API_KEY` 必须使用 Vercel Server-only 环境变量；它们不得改名为 `EXPO_PUBLIC_*`。
 
 ## API 上线前检查
 
-独立部署 `apps/api` 前至少需要：
+启用 Vercel Function 或独立部署 `apps/api` 前至少需要：
 
 - 生产启动与进程管理配置。
 - 正式数据库迁移和回滚流程。
