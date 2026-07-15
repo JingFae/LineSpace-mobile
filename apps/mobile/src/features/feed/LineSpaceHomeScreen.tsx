@@ -12,7 +12,6 @@ import {
 import {
   AppScreen,
   BottomNavigation,
-  CreateFlowSheet,
   EmptyState,
   PoemCard,
   SearchIcon,
@@ -39,7 +38,6 @@ const sectionTabs: SegmentTab<FeedSection>[] = [
 
 export function LineSpaceHomeScreen() {
   const [section, setSection] = useState<FeedSection>("latest");
-  const [createOpen, setCreateOpen] = useState(false);
   const engagement = usePoemEngagement();
   const profileQuery = useQuery({
     queryKey: ["user-profile", currentUserId],
@@ -133,24 +131,16 @@ export function LineSpaceHomeScreen() {
         value="post"
         onChange={(value) => {
           if (value === "compose") {
-            setCreateOpen(true);
+            router.push({
+              pathname: "/(tabs)/compose",
+              params: { type: "post", session: `${Date.now()}` }
+            } as Href);
             return;
           }
           router.push(tabRoutes[value]);
         }}
       />
 
-      <CreateFlowSheet
-        onClose={() => setCreateOpen(false)}
-        onDraftPress={() => {
-          setCreateOpen(false);
-          router.push({
-            pathname: "/(tabs)/compose",
-            params: { session: `${Date.now()}` }
-          } as Href);
-        }}
-        visible={createOpen}
-      />
     </AppScreen>
   );
 }
