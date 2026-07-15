@@ -47,6 +47,11 @@ async function main() {
 
     const profile = await httpApi.getUserProfile("user-lili");
     assert(profile, "The current mock user profile was not found over HTTP.");
+    const inboxSummary = await httpApi.getInboxActivitySummary(profile.id);
+    assert(
+      inboxSummary.unread.comments > 0 && inboxSummary.unread.likes > 0,
+      "Inbox summary did not return unread activity counts."
+    );
 
     const draft = await httpApi.createPoemDraft({ ownerId: profile.id, mode: "draft" });
     const loadedDraft = await httpApi.getPoemDraft(draft.id);

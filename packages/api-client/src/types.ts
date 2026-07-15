@@ -251,6 +251,34 @@ export type UserPoemCollections = {
   savedPoemIds: string[];
 };
 
+export type InboxActivityKind = "comments" | "likes" | "thread";
+
+export type InboxActivityCounts = Record<InboxActivityKind, number>;
+
+export type InboxActivityTargetKind = "post" | "comment" | "thread";
+
+export type InboxActivityPreview = {
+  id: string;
+  kind: InboxActivityKind;
+  actor: UserProfile;
+  target: {
+    kind: InboxActivityTargetKind;
+    title: string;
+    excerpt: string;
+    poemId?: string;
+    commentId?: string;
+  };
+  dateLabel: string;
+  unread?: boolean;
+};
+
+export type InboxActivitySummary = {
+  userId: string;
+  unread: InboxActivityCounts;
+  totals: InboxActivityCounts;
+  recent: Record<InboxActivityKind, InboxActivityPreview[]>;
+};
+
 export type PoemCreditPerson = {
   handle: string;
   displayName: string;

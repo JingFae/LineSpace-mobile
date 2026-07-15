@@ -1,5 +1,6 @@
 import {
   mockPoems,
+  mockInboxActivitySummaries,
   mockPoemDesignCatalog,
   mockUserConnections,
   mockUserProfileContent,
@@ -12,6 +13,7 @@ import type {
   DraftInvitation,
   DraftOperationInput,
   FeedQuery,
+  InboxActivitySummary,
   InviteDraftCollaboratorInput,
   PoemCollectionKind,
   PoemCreditPerson,
@@ -47,6 +49,7 @@ export interface LineSpaceApi {
   getPoem(id: string, viewerId?: string): Promise<PoemSummary | null>;
   setPoemCollection(input: UpdatePoemCollectionInput): Promise<PoemEngagementResult>;
   getUserPoemCollections(userId: string): Promise<UserPoemCollections>;
+  getInboxActivitySummary(userId: string): Promise<InboxActivitySummary>;
   getUserProfile(userId: string): Promise<UserProfileDetails | null>;
   updateUserProfile(input: UpdateUserProfileInput): Promise<UserProfileDetails>;
   listUserProfileContent(
@@ -303,6 +306,26 @@ export class MockLineSpaceApi implements LineSpaceApi {
     return this.snapshotCollections(userId, collections);
   }
 
+  async getInboxActivitySummary(userId: string): Promise<InboxActivitySummary> {
+    const profile = this.profiles.find((item) => item.id === userId);
+    const explicit = mockInboxActivitySummaries[userId];
+    const totals = explicit?.totals ?? this.deriveInboxTotals(userId);
+    const unread = explicit?.unread ?? totals;
+
+    return {
+      userId: profile?.id ?? userId,
+      unread: { ...unread },
+      totals: { ...totals },
+      recent: explicit
+        ? {
+            comments: explicit.recent.comments.map((item) => ({ ...item, actor: { ...item.actor }, target: { ...item.target } })),
+            likes: explicit.recent.likes.map((item) => ({ ...item, actor: { ...item.actor }, target: { ...item.target } })),
+            thread: explicit.recent.thread.map((item) => ({ ...item, actor: { ...item.actor }, target: { ...item.target } }))
+          }
+        : { comments: [], likes: [], thread: [] }
+    };
+  }
+
   async getUserProfile(userId: string): Promise<UserProfileDetails | null> {
     const profile = this.profiles.find((item) => item.id === userId);
     return profile ? cloneUserProfile(profile) : null;
@@ -463,6 +486,25 @@ export class MockLineSpaceApi implements LineSpaceApi {
       ...samples.filter((item) => item.poemId && savedIds.has(item.poemId)),
       ...dynamicItems
     ];
+  }
+
+  private deriveInboxTotals(userId: string): InboxActivitySummary["totals"] {
+    const profile = this.profiles.find((item) => item.id === userId);
+    const authoredPoems = this.poems.filter((poem) => poem.author.id === userId);
+    const comments = authoredPoems.reduce(
+      (total, poem) => total + (poem.metrics.comments ?? poem.comments?.length ?? 0),
+      profile?.contentCounts.comments ?? 0
+    );
+    const likes = authoredPoems.reduce(
+      (total, poem) => total + poem.metrics.likes,
+      profile?.stats.likesAndSaves ?? 0
+    );
+    const thread = authoredPoems.reduce(
+      (total, poem) => total + (poem.metrics.commentThreads ?? 0),
+      0
+    );
+
+    return { comments, likes, thread };
   }
 
   private withCurrentProfileSummary(item: UserConnectionPage["items"][number]) {

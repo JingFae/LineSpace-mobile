@@ -108,6 +108,11 @@ export async function handleApiRequest(
     return json(200, await api.getPoem(id, searchParams.get("viewerId") ?? undefined));
   }
 
+  const inboxSummaryUserId = parseInboxSummaryRoute(pathname);
+  if (method === "GET" && inboxSummaryUserId) {
+    return json(200, await api.getInboxActivitySummary(inboxSummaryUserId));
+  }
+
   const profileRoute = parseUserProfileRoute(pathname);
   if (profileRoute?.resource === "profile" && method === "PUT") {
     const changes = parseUserProfileChanges(body);
@@ -272,6 +277,17 @@ function parseInviteCandidatesRoute(pathname: string) {
     segments[1] === "users" &&
     segments[2] &&
     segments[3] === "invite-candidates"
+    ? segments[2]
+    : null;
+}
+
+function parseInboxSummaryRoute(pathname: string) {
+  const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  return segments.length === 4 &&
+    segments[0] === "v1" &&
+    segments[1] === "users" &&
+    segments[2] &&
+    segments[3] === "inbox-summary"
     ? segments[2]
     : null;
 }

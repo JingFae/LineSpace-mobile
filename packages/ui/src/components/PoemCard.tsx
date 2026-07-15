@@ -1,4 +1,4 @@
-import { Image, Pressable, StyleSheet, Text, View, type ImageSourcePropType } from "react-native";
+import { Pressable, StyleSheet, Text, View, type ImageSourcePropType } from "react-native";
 import { colors, radius } from "@linespace/tokens";
 import { PoemArtwork, type ArtworkTone } from "./PoemArtwork";
 import { PoemEngagementBar } from "./PoemEngagementBar";
@@ -12,11 +12,7 @@ export type PoemCardModel = {
     displayName: string;
     handle: string;
     avatarColor: string;
-<<<<<<< HEAD
     avatarUrl?: string;
-=======
-    avatarSource?: ImageSourcePropType;
->>>>>>> b32be5f845e8e6c89ad0496b46de0a750e3de28f
   };
   contributorsCount: number;
   tags: string[];
@@ -63,20 +59,12 @@ export function PoemCard({
       <Pressable onPress={() => onPress?.(poem.id)} style={styles.contentPressable}>
         <View style={styles.authorRow}>
           <View style={styles.authorIdentity}>
-<<<<<<< HEAD
             <Avatar
               color={poem.author.avatarColor}
               imageSource={poem.author.avatarUrl ? { uri: poem.author.avatarUrl } : undefined}
               label={poem.author.displayName}
               size={39}
             />
-=======
-            {poem.author.avatarSource ? (
-              <Image source={poem.author.avatarSource} style={styles.avatarImage} />
-            ) : (
-              <View style={[styles.avatarDot, { backgroundColor: poem.author.avatarColor }]} />
-            )}
->>>>>>> b32be5f845e8e6c89ad0496b46de0a750e3de28f
             <Text style={styles.authorName}>{poem.author.displayName}</Text>
           </View>
           <Text style={styles.timestamp}>{poem.postedAtLabel}</Text>
