@@ -8,6 +8,7 @@ import type {
   DraftInvitation,
   DraftOperationInput,
   FeedQuery,
+  InboxActivitySummary,
   InviteDraftCollaboratorInput,
   PoemDesignCatalog,
   PoemDraft,
@@ -131,6 +132,12 @@ export class HttpLineSpaceApi implements LineSpaceApi {
   async getUserPoemCollections(userId: string): Promise<UserPoemCollections> {
     return this.getJson<UserPoemCollections>(
       `/v1/users/${encodeURIComponent(userId)}/poem-collections`
+    );
+  }
+
+  async getInboxActivitySummary(userId: string): Promise<InboxActivitySummary> {
+    return this.getJson<InboxActivitySummary>(
+      `/v1/users/${encodeURIComponent(userId)}/inbox-summary`
     );
   }
 

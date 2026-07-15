@@ -2,6 +2,7 @@ export { createMockLineSpaceApi, MockLineSpaceApi, type LineSpaceApi } from "./c
 export { HttpLineSpaceApi } from "./http-client";
 export {
   mockPoems,
+  mockInboxActivitySummaries,
   mockPoemDesignCatalog,
   mockThreadContinuations,
   mockThreads,
@@ -25,6 +26,11 @@ export type {
   FeedFilter,
   FeedQuery,
   FeedSection,
+  InboxActivityCounts,
+  InboxActivityKind,
+  InboxActivityPreview,
+  InboxActivitySummary,
+  InboxActivityTargetKind,
   PoemComment,
   PoemCollectionKind,
   PoemBackgroundId,

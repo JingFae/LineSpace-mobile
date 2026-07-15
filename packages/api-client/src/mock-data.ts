@@ -1,5 +1,6 @@
 import type {
   PoemDesignCatalog,
+  InboxActivitySummary,
   PoemSummary,
   PoetryThread,
   ThreadContinuation,
@@ -150,6 +151,144 @@ export const mockUsers: UserProfile[] = [
     bio: "Collaborative poem drafts."
   }
 ];
+
+export const mockInboxActivitySummaries: Record<string, InboxActivitySummary> = {
+  "user-lili": {
+    userId: "user-lili",
+    unread: {
+      comments: 132,
+      likes: 99,
+      thread: 10
+    },
+    totals: {
+      comments: 132,
+      likes: 590,
+      thread: 10
+    },
+    recent: {
+      comments: [
+        {
+          id: "comment-jinghe-moon-image",
+          kind: "comments",
+          actor: {
+            id: "user-jinghe",
+            handle: "jinghe",
+            displayName: "Jinghe",
+            avatarColor: "#7AA0DD"
+          },
+          target: {
+            kind: "comment",
+            title: "light",
+            excerpt: "Can I quote the moon image in my reply?",
+            poemId: "poem-light",
+            commentId: "comment-jinghe-floors"
+          },
+          dateLabel: "Yesterday",
+          unread: true
+        },
+        {
+          id: "comment-zhihan-autofill",
+          kind: "comments",
+          actor: {
+            id: "user-zhihan",
+            handle: "zhihan",
+            displayName: "Zhihan",
+            avatarColor: "#0B75DE"
+          },
+          target: {
+            kind: "post",
+            title: "light",
+            excerpt: "Your draft feels warmer after the second stanza.",
+            poemId: "poem-light"
+          },
+          dateLabel: "12:10",
+          unread: true
+        }
+      ],
+      likes: [
+        {
+          id: "like-lili-summer",
+          kind: "likes",
+          actor: mockUsers[0]!,
+          target: {
+            kind: "post",
+            title: "summer",
+            excerpt: "summer folded into rain",
+            poemId: "poem-light"
+          },
+          dateLabel: "03/09",
+          unread: true
+        },
+        {
+          id: "like-zhihan-older",
+          kind: "likes",
+          actor: {
+            id: "user-zhihan",
+            handle: "zhihan",
+            displayName: "Zhihan",
+            avatarColor: "#0B75DE"
+          },
+          target: {
+            kind: "comment",
+            title: "older",
+            excerpt: "older light, softer room",
+            poemId: "poem-light",
+            commentId: "comment-zhihan-autofill"
+          },
+          dateLabel: "02/19"
+        }
+      ],
+      thread: [
+        {
+          id: "thread-ray-light",
+          kind: "thread",
+          actor: mockUsers[1]!,
+          target: {
+            kind: "thread",
+            title: "light",
+            excerpt: "Ray continued your relay with a new stanza.",
+            poemId: "poem-light",
+            threadId: "thread-rain-without-rain"
+          },
+          dateLabel: "14:28",
+          unread: true
+        },
+        {
+          id: "thread-lili-orbit",
+          kind: "thread",
+          actor: mockUsers[0]!,
+          target: {
+            kind: "thread",
+            title: "orbit",
+            excerpt: "Lili added a continuation to your shared thread.",
+            poemId: "poem-orbit",
+            threadId: "thread-unopened-letter"
+          },
+          dateLabel: "8/29",
+          unread: true
+        }
+      ]
+    }
+  },
+  "user-ray": {
+    userId: "user-ray",
+    unread: {
+      comments: 31,
+      likes: 18,
+      thread: 2
+    },
+    totals: {
+      comments: 31,
+      likes: 274,
+      thread: 2
+    },
+    recent: {
+      comments: [],
+      likes: [],
+      thread: []
+    }
+  }
+};
 
 export const mockUserProfileDetails: UserProfileDetails[] = [
   {

@@ -2,7 +2,11 @@ import { useLocalSearchParams } from "expo-router";
 import { PoemDetailScreen } from "@/features/poem/PoemDetailScreen";
 
 export default function PoemDetailRoute() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { commentId, id, targetKind } = useLocalSearchParams<{
+    commentId?: string;
+    id: string;
+    targetKind?: "post" | "comment";
+  }>();
 
-  return <PoemDetailScreen id={id} />;
+  return <PoemDetailScreen commentId={commentId} id={id} targetKind={targetKind} />;
 }
