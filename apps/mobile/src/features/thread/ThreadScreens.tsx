@@ -193,7 +193,9 @@ export function ThreadFeedScreen() {
                   isActive: !thread.viewer.liked
                 })
               }
-              onOpen={() => router.push({ pathname: "/thread/[id]", params: { id: thread.id } })}
+              onOpen={() =>
+                router.push({ pathname: "/thread/[id]", params: { id: thread.id } } as unknown as Href)
+              }
               onShare={() =>
                 shareMutation.mutate({
                   kind: "thread",
@@ -387,7 +389,7 @@ export function ThreadDetailScreen({ threadId }: { threadId?: string }) {
                     router.push({
                       pathname: "/thread/continue/[id]",
                       params: { id: target.id }
-                    })
+                    } as unknown as Href)
                   }
                   onShare={(target) =>
                     shareMutation.mutate({
@@ -584,7 +586,7 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
                     router.push({
                       pathname: "/thread/continue/[id]",
                       params: { id: target.id }
-                    })
+                    } as unknown as Href)
                   }
                   onShare={(target) =>
                     shareMutation.mutate({
@@ -1088,7 +1090,7 @@ function ContinuationPath({
         router.push({
           pathname: "/thread/continue/[id]",
           params: { id: continuation.id }
-        }),
+        } as unknown as Href),
       onContinue: () => onContinuationContinue(continuation),
       onLike: () => onContinuationLike(continuation),
       onShare: () => onContinuationShare(continuation)
@@ -1107,7 +1109,7 @@ function ContinuationPath({
           router.push({
             pathname: "/thread/[id]",
             params: { id: detail.thread.id }
-          }),
+          } as unknown as Href),
         onContinue: onThreadContinue,
         onLike: onThreadLike,
         onShare: onThreadShare
