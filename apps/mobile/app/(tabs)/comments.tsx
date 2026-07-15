@@ -5,7 +5,7 @@ export default function CommentsRoute() {
     <PlaceholderScreen
       activeTab="inbox"
       title="Inbox"
-      body="Messages, replies, and contribution updates will appear here."
+      body="Line notifications, replies, and contribution updates will appear here."
     />
   );
 }

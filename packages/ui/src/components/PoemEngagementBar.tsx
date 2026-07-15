@@ -119,20 +119,17 @@ function renderMetricIcon(kind: MetricKind, active: boolean) {
 
 const styles = StyleSheet.create({
   root: {
-    height: 64,
+    height: 68,
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-around",
     backgroundColor: colors.surface,
-    paddingTop: 8,
-    paddingBottom: 4
+    paddingTop: 9,
+    paddingBottom: 5
   },
   card: {
-    borderBottomLeftRadius: radius.md,
-    borderBottomRightRadius: radius.md,
-    marginTop: -1,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.line,
+    borderRadius: radius.md,
+    marginTop: 2,
     shadowColor: colors.black,
     shadowOpacity: 0.035,
     shadowRadius: 10,
@@ -145,7 +142,7 @@ const styles = StyleSheet.create({
   },
   metric: {
     minWidth: 58,
-    minHeight: 48,
+    minHeight: 52,
     alignItems: "center",
     justifyContent: "flex-start",
     borderRadius: radius.sm
@@ -154,15 +151,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfacePressed
   },
   iconSlot: {
-    width: 32,
-    height: 30,
+    width: 34,
+    height: 32,
     alignItems: "center",
     justifyContent: "center"
   },
   metricValue: {
-    marginTop: 0,
-    fontSize: 11,
-    lineHeight: 13,
+    marginTop: 1,
+    fontSize: 14,
+    lineHeight: 17,
     fontWeight: "400",
     color: colors.ink,
     fontVariant: ["tabular-nums"]

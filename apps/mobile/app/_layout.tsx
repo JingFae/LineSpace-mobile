@@ -6,7 +6,13 @@ import { Platform, StyleSheet, Text, useWindowDimensions, View } from "react-nat
 
 const screenInset = 12;
 const previewVerticalMargin = 44;
+const previewHorizontalMargin = 32;
+const previewMaxScale = 0.96;
+const previewScreenWidth = 460;
 const iphone17ProScreenRatio = 2622 / 1206;
+const previewScreenHeight = Math.round(previewScreenWidth * iphone17ProScreenRatio);
+const previewShellWidth = previewScreenWidth + screenInset * 2;
+const previewShellHeight = previewScreenHeight + screenInset * 2;
 
 export default function RootLayout() {
   const [queryClient] = useState(() => new QueryClient());
@@ -32,50 +38,62 @@ function WebDevicePreview({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
 
-  const maxWidthFromHeight =
-    ((height - previewVerticalMargin - screenInset * 2) / iphone17ProScreenRatio) +
-    screenInset * 2;
-  const shellWidth = Math.max(300, Math.min(426, width - 32, maxWidthFromHeight));
-  const shellHeight =
-    (shellWidth - screenInset * 2) * iphone17ProScreenRatio + screenInset * 2;
+  const previewScale = Math.min(
+    previewMaxScale,
+    (width - previewHorizontalMargin) / previewShellWidth,
+    (height - previewVerticalMargin) / previewShellHeight
+  );
 
   return (
     <View style={styles.previewRoot}>
       <View
         style={[
-          styles.phoneShell,
+          styles.previewStage,
           {
-            width: shellWidth,
-            height: shellHeight
+            width: previewShellWidth * previewScale,
+            height: previewShellHeight * previewScale
           }
         ]}
       >
-        <View style={[styles.sideButton, styles.leftButton]} />
-        <View style={[styles.sideButton, styles.rightButton]} />
-        <View style={styles.phoneScreen}>
-          {children}
-          <View pointerEvents="none" style={styles.statusBar}>
-            <Text style={styles.statusTime}>9:41</Text>
-            <View style={styles.statusIcons}>
-              <View style={styles.signalIcon}>
-                <View style={[styles.signalBar, styles.signalOne]} />
-                <View style={[styles.signalBar, styles.signalTwo]} />
-                <View style={[styles.signalBar, styles.signalThree]} />
-                <View style={[styles.signalBar, styles.signalFour]} />
+        <View
+          style={[
+            styles.phoneShell,
+            {
+              width: previewShellWidth,
+              height: previewShellHeight,
+              transform: [{ scale: previewScale }]
+            }
+          ]}
+        >
+          <View style={[styles.sideButton, styles.leftButton]} />
+          <View style={[styles.sideButton, styles.rightButton]} />
+          <View style={styles.phoneScreen}>
+            <View style={styles.appViewport}>{children}</View>
+            <View pointerEvents="none" style={styles.statusLayer}>
+              <View style={styles.statusLeft}>
+                <Text style={styles.statusTime}>9:41</Text>
               </View>
-              <View style={styles.wifiIcon}>
-                <View style={[styles.wifiArc, styles.wifiArcOne]} />
-                <View style={[styles.wifiArc, styles.wifiArcTwo]} />
-                <View style={styles.wifiDot} />
-              </View>
-              <View style={styles.batteryIcon}>
-                <View style={styles.batteryFill} />
-                <View style={styles.batteryCap} />
+              <View style={styles.dynamicIsland} />
+              <View style={styles.statusRight}>
+                <View style={styles.signalIcon}>
+                  <View style={[styles.signalBar, styles.signalOne]} />
+                  <View style={[styles.signalBar, styles.signalTwo]} />
+                  <View style={[styles.signalBar, styles.signalThree]} />
+                  <View style={[styles.signalBar, styles.signalFour]} />
+                </View>
+                <View style={styles.wifiIcon}>
+                  <View style={[styles.wifiArc, styles.wifiArcOne]} />
+                  <View style={[styles.wifiArc, styles.wifiArcTwo]} />
+                  <View style={styles.wifiDot} />
+                </View>
+                <View style={styles.batteryIcon}>
+                  <View style={styles.batteryFill} />
+                  <View style={styles.batteryCap} />
+                </View>
               </View>
             </View>
+            <View pointerEvents="none" style={styles.homeIndicator} />
           </View>
-          <View pointerEvents="none" style={styles.dynamicIsland} />
-          <View pointerEvents="none" style={styles.homeIndicator} />
         </View>
       </View>
     </View>
@@ -91,6 +109,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 22
   },
+  previewStage: {
+    alignItems: "center",
+    justifyContent: "center"
+  },
   phoneShell: {
     borderRadius: 58,
     backgroundColor: "#101010",
@@ -102,33 +124,49 @@ const styles = StyleSheet.create({
     elevation: 18
   },
   phoneScreen: {
-    flex: 1,
+    width: previewScreenWidth,
+    height: previewScreenHeight,
     overflow: "hidden",
     borderRadius: 46,
     backgroundColor: "#F4F2F0"
   },
-  statusBar: {
+  appViewport: {
+    flex: 1,
+    paddingTop: 10
+  },
+  statusLayer: {
     position: "absolute",
-    top: 7,
+    top: 0,
     left: 0,
     right: 0,
-    height: 33,
+    height: 50
+  },
+  statusLeft: {
+    position: "absolute",
+    top: 17,
+    left: 36,
+    width: 72,
+    height: 22,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingLeft: 35,
-    paddingRight: 28
+    justifyContent: "flex-start"
   },
   statusTime: {
     color: "#111111",
-    fontSize: 13,
-    lineHeight: 16,
+    fontSize: 15,
+    lineHeight: 18,
     fontWeight: "600"
   },
-  statusIcons: {
+  statusRight: {
+    position: "absolute",
+    top: 18,
+    right: 28,
+    width: 94,
+    height: 20,
     flexDirection: "row",
     alignItems: "center",
-    gap: 7
+    justifyContent: "flex-end",
+    gap: 8
   },
   signalIcon: {
     width: 18,
@@ -214,12 +252,12 @@ const styles = StyleSheet.create({
   },
   dynamicIsland: {
     position: "absolute",
-    top: 11,
+    top: 12,
     left: "50%",
-    width: 78,
-    height: 24,
-    marginLeft: -39,
-    borderRadius: 14,
+    width: 116,
+    height: 34,
+    marginLeft: -58,
+    borderRadius: 18,
     backgroundColor: "#050505"
   },
   homeIndicator: {
