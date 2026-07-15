@@ -62,7 +62,7 @@ export function PoemCard({
               color={poem.author.avatarColor}
               imageSource={poem.author.avatarUrl ? { uri: poem.author.avatarUrl } : undefined}
               label={poem.author.displayName}
-              size={39}
+              size={29}
             />
             <Text style={styles.authorName}>{poem.author.displayName}</Text>
           </View>

@@ -1,11 +1,5 @@
-import { PlaceholderScreen } from "@/screens/PlaceholderScreen";
+import { LineSpaceHomeScreen } from "@/features/feed/LineSpaceHomeScreen";
 
-export default function DiscoverRoute() {
-  return (
-    <PlaceholderScreen
-      activeTab="discover"
-      title="Post"
-      body="Published poems and post discovery will appear here."
-    />
-  );
+export default function PostRoute() {
+  return <LineSpaceHomeScreen />;
 }

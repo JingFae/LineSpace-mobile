@@ -137,7 +137,7 @@ export function LineSpaceHomeScreen() {
               }
             : undefined
         }
-        value="home"
+        value="post"
         onChange={(value) => {
           if (value === "compose") {
             setCreateOpen(true);

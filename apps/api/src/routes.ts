@@ -1,7 +1,9 @@
 import {
   createMockLineSpaceApi,
   type AiAssistRequest,
+  type CreateContinuationInput,
   type CreatePoemDraftInput,
+  type CreateThreadContinuationInput,
   type DraftOperationInput,
   type FeedFilter,
   type FeedSection,
@@ -9,6 +11,8 @@ import {
   type PoemCollectionKind,
   type PublishPoemDraftInput,
   type UpdatePoemDraftInput,
+  type UpdateContinuationLikeInput,
+  type UpdateThreadLikeInput,
   type UpdateUserProfileInput,
   type UserConnectionKind,
   type UserProfileContentSection
@@ -29,6 +33,125 @@ export async function handleApiRequest(
 ): Promise<ApiResponse> {
   if (method === "GET" && pathname === "/health") {
     return json(200, { ok: true, service: "linespace-api" });
+  }
+
+  if (method === "GET" && pathname === "/v1/threads") {
+    const sort = searchParams.get("sort");
+    return json(
+      200,
+      await api.listThreads({
+        sort: sort === "top" || sort === "latest" || sort === "following" ? sort : undefined,
+        viewerId: searchParams.get("viewerId") ?? undefined
+      })
+    );
+  }
+
+  const threadRoute = parseThreadRoute(pathname);
+  if (threadRoute) {
+    try {
+      if (threadRoute.resource === "thread" && method === "GET") {
+        return json(
+          200,
+          await api.getThread(threadRoute.threadId, searchParams.get("viewerId") ?? undefined)
+        );
+      }
+
+      if (threadRoute.resource === "continuations" && method === "POST") {
+        const request = body as Omit<CreateThreadContinuationInput, "threadId">;
+        if (!request?.userId || typeof request.content !== "string") {
+          return json(400, { code: "INVALID_THREAD_CONTINUATION" });
+        }
+        return json(
+          201,
+          await api.createThreadContinuation({ threadId: threadRoute.threadId, ...request })
+        );
+      }
+
+      if (threadRoute.resource === "like" && method === "PUT") {
+        const request = body as Omit<UpdateThreadLikeInput, "threadId">;
+        if (!request?.userId || typeof request.isActive !== "boolean") {
+          return json(400, { code: "INVALID_THREAD_LIKE" });
+        }
+        return json(200, await api.setThreadLike({ threadId: threadRoute.threadId, ...request }));
+      }
+
+      if (threadRoute.resource === "share" && method === "POST") {
+        const request = body as { userId?: unknown } | undefined;
+        if (typeof request?.userId !== "string") {
+          return json(400, { code: "INVALID_THREAD_SHARE" });
+        }
+        return json(
+          200,
+          await api.recordThreadShare({
+            kind: "thread",
+            threadId: threadRoute.threadId,
+            userId: request.userId
+          })
+        );
+      }
+    } catch {
+      return json(404, { code: "THREAD_NOT_FOUND" });
+    }
+  }
+
+  const continuationRoute = parseContinuationRoute(pathname);
+  if (continuationRoute) {
+    try {
+      if (continuationRoute.resource === "continuation" && method === "GET") {
+        return json(
+          200,
+          await api.getContinuationDetail(
+            continuationRoute.continuationId,
+            searchParams.get("viewerId") ?? undefined
+          )
+        );
+      }
+
+      if (continuationRoute.resource === "continuations" && method === "POST") {
+        const request = body as Omit<CreateContinuationInput, "continuationId">;
+        if (!request?.userId || typeof request.content !== "string") {
+          return json(400, { code: "INVALID_CONTINUATION_CREATE" });
+        }
+        return json(
+          201,
+          await api.createContinuation({
+            continuationId: continuationRoute.continuationId,
+            ...request
+          })
+        );
+      }
+
+      if (continuationRoute.resource === "like" && method === "PUT") {
+        const request = body as Omit<UpdateContinuationLikeInput, "continuationId">;
+        if (!request?.userId || typeof request.isActive !== "boolean") {
+          return json(400, { code: "INVALID_CONTINUATION_LIKE" });
+        }
+        return json(
+          200,
+          await api.setContinuationLike({
+            continuationId: continuationRoute.continuationId,
+            ...request
+          })
+        );
+      }
+
+      if (continuationRoute.resource === "share" && method === "POST") {
+        const request = body as { userId?: unknown } | undefined;
+        if (typeof request?.userId !== "string") {
+          return json(400, { code: "INVALID_CONTINUATION_SHARE" });
+        }
+        return json(
+          200,
+          await api.recordThreadShare({
+            kind: "continuation",
+            continuationId: continuationRoute.continuationId,
+            userId: request.userId
+          })
+        );
+      }
+    } catch {
+      return json(404, { code: "CONTINUATION_NOT_FOUND" });
+    }
   }
 
   if (method === "GET" && pathname === "/v1/compose/design-catalog") {
@@ -219,6 +342,50 @@ type ParsedCollectionRoute = {
   collection?: PoemCollectionKind;
   poemId?: string;
 };
+
+type ParsedThreadRoute = {
+  threadId: string;
+  resource: "thread" | "continuations" | "like" | "share";
+};
+
+function parseThreadRoute(pathname: string): ParsedThreadRoute | null {
+  const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  if (segments[0] !== "v1" || segments[1] !== "threads" || !segments[2]) {
+    return null;
+  }
+  if (segments.length === 3) return { threadId: segments[2], resource: "thread" };
+  const resource = segments[3];
+  if (
+    segments.length === 4 &&
+    (resource === "continuations" || resource === "like" || resource === "share")
+  ) {
+    return { threadId: segments[2], resource };
+  }
+  return null;
+}
+
+type ParsedContinuationRoute = {
+  continuationId: string;
+  resource: "continuation" | "continuations" | "like" | "share";
+};
+
+function parseContinuationRoute(pathname: string): ParsedContinuationRoute | null {
+  const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  if (segments[0] !== "v1" || segments[1] !== "continuations" || !segments[2]) {
+    return null;
+  }
+  if (segments.length === 3) {
+    return { continuationId: segments[2], resource: "continuation" };
+  }
+  const resource = segments[3];
+  if (
+    segments.length === 4 &&
+    (resource === "continuations" || resource === "like" || resource === "share")
+  ) {
+    return { continuationId: segments[2], resource };
+  }
+  return null;
+}
 
 function parsePoemCollectionRoute(pathname: string): ParsedCollectionRoute | null {
   const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
