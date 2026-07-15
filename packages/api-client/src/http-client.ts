@@ -1,6 +1,7 @@
 import type {
   AiAssistRequest,
   AiAssistResponse,
+  CreatePoemCommentInput,
   ContinuationDetail,
   CreateContinuationInput,
   CreatePoemDraftInput,
@@ -13,10 +14,14 @@ import type {
   PoemDesignCatalog,
   PoemDraft,
   PoemEngagementResult,
+  PoemComment,
+  PoemCommentEngagementResult,
   PoetryThread,
   PoemSummary,
   PublishPoemDraftInput,
   PublishPoemDraftResult,
+  SharePoemInput,
+  SharePoemResult,
   SavePoemDraftInput,
   ThreadContinuation,
   ThreadDetail,
@@ -35,6 +40,9 @@ import type {
   UserProfileContentQuery,
   UserProfileContentSection,
   UserProfileDetails,
+  UserSearchPage,
+  InboxConversationMessage,
+  UpdateCommentCollectionInput,
   UserDraftPage,
   UpdateUserProfileInput
 } from "./types";
@@ -152,6 +160,35 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     const query = params.size > 0 ? `?${params.toString()}` : "";
     return this.getJson<PoemSummary | null>(
       `/v1/poems/${encodeURIComponent(id)}${query}`
+    );
+  }
+
+  async createPoemComment(input: CreatePoemCommentInput): Promise<PoemComment> {
+    const { poemId, ...request } = input;
+    return this.postJson<PoemComment>(`/v1/poems/${encodeURIComponent(poemId)}/comments`, request);
+  }
+
+  async setCommentCollection(input: UpdateCommentCollectionInput): Promise<PoemCommentEngagementResult> {
+    return this.putJson<PoemCommentEngagementResult>(
+      `/v1/poems/${encodeURIComponent(input.poemId)}/comments/${encodeURIComponent(input.commentId)}/collections/${input.collection}`,
+      { userId: input.userId, isActive: input.isActive }
+    );
+  }
+
+  async searchUsers(query: string, viewerId: string): Promise<UserSearchPage> {
+    const params = new URLSearchParams({ query, viewerId });
+    return this.getJson<UserSearchPage>(`/v1/users/search?${params.toString()}`);
+  }
+
+  async sharePoem(input: SharePoemInput): Promise<SharePoemResult> {
+    const { poemId, ...request } = input;
+    return this.postJson<SharePoemResult>(`/v1/poems/${encodeURIComponent(poemId)}/share`, request);
+  }
+
+  async listInboxMessages(userId: string, contactId: string): Promise<InboxConversationMessage[]> {
+    const params = new URLSearchParams({ contactId });
+    return this.getJson<InboxConversationMessage[]>(
+      `/v1/users/${encodeURIComponent(userId)}/inbox/messages?${params.toString()}`
     );
   }
 

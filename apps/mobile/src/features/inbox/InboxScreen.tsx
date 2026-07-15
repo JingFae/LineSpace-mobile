@@ -24,6 +24,7 @@ import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
 type InboxPage = "home" | "comments" | "likes" | "thread" | "dm";
 
 type ActivityRow = {
+  userId?: string;
   name: string;
   info: string;
   date: string;
@@ -55,6 +56,7 @@ type DetailRow = {
 
 const homeRows: ActivityRow[] = [
   {
+    userId: "user-lili",
     name: "Lili",
     info: "I loved the line about rain becoming a window.",
     date: "14:28",
@@ -62,12 +64,14 @@ const homeRows: ActivityRow[] = [
     unread: 1
   },
   {
+    userId: "user-zhihan",
     name: "Zhihan",
     info: "Your draft feels warmer after the second stanza.",
     date: "12:10",
     color: "#0B75DE"
   },
   {
+    userId: "user-jinghe",
     name: "Jinghe",
     info: "Can I quote the moon image in my reply?",
     date: "Yesterday",
@@ -75,12 +79,14 @@ const homeRows: ActivityRow[] = [
     unread: 2
   },
   {
+    userId: "user-ray",
     name: "Ray",
     info: "The summer thread is ready whenever you are.",
     date: "Mon",
     color: "#8C7DE4"
   },
   {
+    userId: "user-roma",
     name: "Someone",
     info: "I found your poem through the relay page.",
     date: "03/09",
@@ -591,6 +597,7 @@ function openThreadTarget(row: DetailRow) {
 
 function mapActivityPreviewToActivityRow(activity: InboxActivityPreview): ActivityRow {
   return {
+    userId: activity.actor.id,
     name: activity.actor.displayName,
     info: formatActivityInfo(activity),
     date: activity.dateLabel,
@@ -765,6 +772,12 @@ function DmPage({
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
+  const inboxMessagesQuery = useQuery({
+    queryKey: ["inbox-messages", currentUserId, contact.userId],
+    enabled: Boolean(contact.userId),
+    queryFn: () => lineSpaceApi.listInboxMessages(currentUserId, contact.userId!)
+  });
+  const sharedMessages = (inboxMessagesQuery.data ?? []).filter((message) => message.kind === "shared-post");
   const searchableText = `${contact.name} ${contact.info} ${sentMessages
     .map((item) => item.text)
     .join(" ")}`.toLowerCase();
@@ -844,6 +857,15 @@ function DmPage({
         {contact.date} - {contact.info.replace("...", "")}
       </Text>
 
+      {sharedMessages.map((message, index) => message.sharedPost ? (
+        <Pressable key={message.id} onPress={() => router.push({ pathname: "/poem/[id]", params: { id: message.sharedPost!.id } })} style={[styles.sharedPostCard, { top: 292 + index * 112 }]}>
+          <View style={styles.sharedPostHeader}><Text style={styles.sharedPostLabel}>SHARED A POST</Text><Text style={styles.sharedPostTime}>{formatMessageTime(message.createdAt)}</Text></View>
+          <Text numberOfLines={1} style={styles.sharedPostTitle}>{message.sharedPost.title}</Text>
+          <Text numberOfLines={2} style={styles.sharedPostExcerpt}>{message.sharedPost.excerpt}</Text>
+          <Text style={styles.sharedPostOpen}>Open post ›</Text>
+        </Pressable>
+      ) : null)}
+
       <Text style={[styles.bubble, styles.incomingBubble]}>
         {contact.info}
       </Text>
@@ -858,7 +880,7 @@ function DmPage({
           accessibilityLabel="Message actions"
           accessibilityRole="button"
           onLongPress={() => setSelectedMessageId(message.id)}
-          style={[styles.sentBubbleWrap, { top: 382 + index * 58 }]}
+          style={[styles.sentBubbleWrap, { top: 382 + sharedMessages.length * 112 + index * 58 }]}
         >
           <Text style={[styles.bubble, styles.sentBubble, message.recalled && styles.recalledBubble]}>
             {message.text}
@@ -886,13 +908,13 @@ function DmPage({
 
       {!mutualFollow ? (
         <>
-          <Text style={[styles.dmRule, { top: 405 + sentMessages.length * 58 }]}>
+          <Text style={[styles.dmRule, { top: 405 + sharedMessages.length * 112 + sentMessages.length * 58 }]}>
             You can reply once. Follow back to continue freely.
           </Text>
           <Pressable
             accessibilityRole="button"
             onPress={onFollowBack}
-            style={[styles.followBack, { top: 486 + sentMessages.length * 58 }]}
+            style={[styles.followBack, { top: 486 + sharedMessages.length * 112 + sentMessages.length * 58 }]}
           >
             <Text style={styles.followBackText}>Follow back</Text>
           </Pressable>
@@ -925,6 +947,11 @@ function DmPage({
       </View>
     </View>
   );
+}
+
+function formatMessageTime(value: string) {
+  const date = new Date(value);
+  return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 }
 
 const styles = StyleSheet.create({
@@ -1355,6 +1382,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#F0F0F0",
     color: colors.black
   },
+  sharedPostCard: { position: "absolute", left: 32, right: 32, minHeight: 96, padding: 13, borderRadius: 16, backgroundColor: colors.black, shadowColor: colors.black, shadowOpacity: 0.12, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 4 },
+  sharedPostHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  sharedPostLabel: { color: "rgba(255,255,255,0.66)", fontSize: 9, letterSpacing: 1.1 },
+  sharedPostTime: { color: "rgba(255,255,255,0.55)", fontSize: 10 },
+  sharedPostTitle: { marginTop: 7, color: colors.white, fontSize: 16, fontWeight: "600" },
+  sharedPostExcerpt: { marginTop: 3, color: "rgba(255,255,255,0.72)", fontSize: 12, lineHeight: 16 },
+  sharedPostOpen: { marginTop: 6, color: colors.white, fontSize: 11 },
   outgoingBubble: {
     top: 318,
     right: 24,

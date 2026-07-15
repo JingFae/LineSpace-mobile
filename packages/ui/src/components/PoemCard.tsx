@@ -98,13 +98,7 @@ export function PoemCard({
 
           <Text style={styles.tags}>{poem.tags.map((tag) => `#${tag}`).join("  |  ")}</Text>
 
-          <View style={styles.status}>
-            <View style={styles.statusTitleRow}>
-              <View style={styles.sproutMark} />
-              <Text style={styles.statusTitle}>{poem.statusLabel}</Text>
-            </View>
-            <Text style={styles.statusMeta}>started from {poem.startedAtLabel}</Text>
-          </View>
+          <Text style={styles.startedMeta}>started {poem.startedAtLabel}</Text>
         </View>
       </Pressable>
 
@@ -234,6 +228,7 @@ const styles = StyleSheet.create({
     color: colors.muted,
     marginBottom: 11
   },
+  startedMeta: { marginTop: 15, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line, color: colors.muted, fontSize: 12, lineHeight: 16 },
   status: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderColor: colors.line,

@@ -21,7 +21,7 @@ import {
   type SegmentTab
 } from "@linespace/ui";
 import { colors, spacing } from "@linespace/tokens";
-import type { FeedFilter, FeedSection, PoemSummary } from "@linespace/api-client";
+import type { FeedSection, PoemSummary } from "@linespace/api-client";
 import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
 import { mainTabs, tabRoutes } from "@/navigation/tabs";
 import { usePoemEngagement } from "@/features/poem/usePoemEngagement";
@@ -37,16 +37,8 @@ const sectionTabs: SegmentTab<FeedSection>[] = [
   { value: "following", label: "follow" }
 ];
 
-const filterTabs: SegmentTab<FeedFilter>[] = [
-  { value: "all", label: "All" },
-  { value: "most-contributed", label: "Most Contributed" },
-  { value: "growing", label: "Growing" },
-  { value: "final", label: "Final" }
-];
-
 export function LineSpaceHomeScreen() {
   const [section, setSection] = useState<FeedSection>("latest");
-  const [filter, setFilter] = useState<FeedFilter>("all");
   const [createOpen, setCreateOpen] = useState(false);
   const engagement = usePoemEngagement();
   const profileQuery = useQuery({
@@ -55,8 +47,8 @@ export function LineSpaceHomeScreen() {
   });
 
   const feedQuery = useQuery({
-    queryKey: ["feed", section, filter, currentUserId],
-    queryFn: () => lineSpaceApi.listFeed({ section, filter, viewerId: currentUserId })
+    queryKey: ["feed", section, currentUserId],
+    queryFn: () => lineSpaceApi.listFeed({ section, viewerId: currentUserId })
   });
 
   const poems = useMemo(
@@ -79,9 +71,6 @@ export function LineSpaceHomeScreen() {
           <SearchButton />
         </View>
 
-        <View style={styles.filterWrap}>
-          <SegmentTabs tabs={filterTabs} value={filter} onChange={setFilter} variant="bar" />
-        </View>
       </View>
 
       <ScrollView
@@ -112,6 +101,9 @@ export function LineSpaceHomeScreen() {
               onAuthorPress={(userId) => router.push({ pathname: "/profile/[id]", params: { id: userId } } as unknown as Href)}
               onCommentPress={(id) =>
                 router.push({ pathname: "/poem/[id]", params: { id } })
+              }
+              onContributionPress={(id) =>
+                router.push({ pathname: "/poem/share/[id]", params: { id } } as unknown as Href)
               }
               onLikePress={(id, isLiked) =>
                 engagement.setCollection(id, "liked", isLiked)
@@ -187,7 +179,7 @@ function mapPoemToCard(poem: PoemSummary): PoemCardModel {
     tags: poem.tags,
     statusLabel: poem.status === "growing" ? "Poem Growing" : "Final Poem",
     startedAtLabel: formatPoemDate(poem.startedAt),
-    metrics: poem.metrics,
+    metrics: { ...poem.metrics, contributions: poem.metrics.shares ?? poem.metrics.contributions },
     viewer: poem.viewer,
     artworkTone: poem.artworkTone,
     artworkSource: poem.artworkTone === "water" ? waterArtwork : undefined

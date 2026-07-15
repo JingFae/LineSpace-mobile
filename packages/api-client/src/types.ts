@@ -312,6 +312,7 @@ export type PoemMetrics = {
   comments: number;
   commentThreads?: number;
   likes: number;
+  shares: number;
   contributions: number;
   contributionLines?: number;
   saves: number;
@@ -386,7 +387,14 @@ export type PoemComment = {
   body: string;
   badgeLabel?: string;
   badgeTone?: "dark" | "warm";
-  annotation?: string;
+  level?: number;
+  createdAt?: string;
+  parentCommentId?: string;
+  likes?: number;
+  viewer?: {
+    liked: boolean;
+    saved: boolean;
+  };
 };
 
 export type PoemSummary = {
@@ -398,11 +406,75 @@ export type PoemSummary = {
   tags: string[];
   status: PoemStatus;
   startedAt: string;
+  editedAt?: string;
+  artworkUrl?: string;
   metrics: PoemMetrics;
   viewer: PoemViewerEngagement;
   artworkTone: "water" | "paper" | "night";
   credits?: PoemCredits;
   comments?: PoemComment[];
+};
+
+export type CreatePoemCommentInput = {
+  poemId: string;
+  userId: string;
+  body: string;
+  parentCommentId?: string;
+};
+
+export type UpdateCommentCollectionInput = {
+  poemId: string;
+  commentId: string;
+  userId: string;
+  collection: PoemCollectionKind;
+  isActive: boolean;
+};
+
+export type PoemCommentEngagementResult = {
+  poem: PoemSummary;
+  comment: PoemComment;
+};
+
+export type UserSearchResult = UserProfile & {
+  isFriend: boolean;
+  hasRecentChat: boolean;
+};
+
+export type UserSearchPage = {
+  query: string;
+  recent: UserSearchResult[];
+  friends: UserSearchResult[];
+  results: UserSearchResult[];
+};
+
+export type SharePoemInput = {
+  poemId: string;
+  senderId: string;
+  recipientIds: string[];
+  note?: string;
+};
+
+export type SharePoemResult = {
+  poemId: string;
+  recipientIds: string[];
+  messages: InboxConversationMessage[];
+};
+
+export type InboxConversationMessage = {
+  id: string;
+  sender: UserProfile;
+  recipient: UserProfile;
+  createdAt: string;
+  kind: "text" | "shared-post";
+  text?: string;
+  sharedPost?: {
+    id: string;
+    title: string;
+    excerpt: string;
+    tags: string[];
+    author: UserProfile;
+    artworkUrl?: string;
+  };
 };
 
 export type FeedQuery = {

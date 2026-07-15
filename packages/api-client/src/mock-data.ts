@@ -1156,6 +1156,7 @@ export const mockPoems: PoemSummary[] = [
       comments: 322,
       commentThreads: 2,
       likes: 5234,
+      shares: 684,
       contributions: 1923,
       contributionLines: 4,
       saves: 111
@@ -1175,7 +1176,10 @@ export const mockPoems: PoemSummary[] = [
         body: "and asked me to choose a childhood.",
         badgeLabel: "🏮 Classical",
         badgeTone: "dark",
-        annotation: "Used in this poem ✅"
+        level: 12,
+        createdAt: "2026-09-02T11:00:00.000Z",
+        likes: 24,
+        viewer: { liked: false, saved: false }
       },
       {
         id: "comment-ray-loneliness",
@@ -1185,7 +1189,10 @@ export const mockPoems: PoemSummary[] = [
         },
         dateLabel: "8-09",
         body: "let the loneliness arrive quietly.",
-        annotation: "Inspired a revision 💡"
+        level: 8,
+        createdAt: "2026-09-02T11:08:00.000Z",
+        likes: 18,
+        viewer: { liked: false, saved: false }
       },
       {
         id: "comment-zhihan-autofill",
@@ -1197,7 +1204,10 @@ export const mockPoems: PoemSummary[] = [
         },
         dateLabel: "8-09",
         body: "It tapped from inside the autofill box.",
-        annotation: "Started a new version 🌱"
+        level: 6,
+        createdAt: "2026-09-02T11:16:00.000Z",
+        likes: 11,
+        viewer: { liked: false, saved: false }
       },
       {
         id: "comment-jinghe-floors",
@@ -1209,7 +1219,10 @@ export const mockPoems: PoemSummary[] = [
         },
         dateLabel: "8-09",
         body: "It stopped between floors",
-        annotation: "Pinned by author 📌"
+        level: 10,
+        createdAt: "2026-09-02T11:24:00.000Z",
+        likes: 9,
+        viewer: { liked: false, saved: false }
       },
       {
         id: "comment-roma-lonely",
@@ -1220,7 +1233,12 @@ export const mockPoems: PoemSummary[] = [
           avatarColor: "#FF0038"
         },
         dateLabel: "8-09",
-        body: "his feels funny at first, then suddenly lonely."
+        body: "his feels funny at first, then suddenly lonely.",
+        level: 4,
+        createdAt: "2026-09-02T11:31:00.000Z",
+        likes: 7,
+        viewer: { liked: false, saved: false },
+        parentCommentId: "comment-jinghe-floors"
       },
       {
         id: "comment-anna-quiet",
@@ -1231,7 +1249,11 @@ export const mockPoems: PoemSummary[] = [
           avatarColor: "#FF0038"
         },
         dateLabel: "8-09",
-        body: "I love how quiet this final version is."
+        body: "I love how quiet this final version is.",
+        level: 3,
+        createdAt: "2026-09-02T11:38:00.000Z",
+        likes: 3,
+        viewer: { liked: false, saved: false }
       }
     ]
   },
@@ -1252,6 +1274,7 @@ export const mockPoems: PoemSummary[] = [
       comments: 322,
       commentThreads: 2,
       likes: 5234,
+      shares: 417,
       contributions: 1923,
       contributionLines: 4,
       saves: 111
@@ -1269,7 +1292,10 @@ export const mockPoems: PoemSummary[] = [
         author: mockUsers[1]!,
         dateLabel: "8-09",
         body: "The maps insisted I had lived there once.",
-        annotation: "Used in this poem ✅"
+        level: 8,
+        createdAt: "2026-09-03T14:10:00.000Z",
+        likes: 12,
+        viewer: { liked: false, saved: false }
       }
     ]
   },
@@ -1290,6 +1316,7 @@ export const mockPoems: PoemSummary[] = [
       comments: 144,
       commentThreads: 1,
       likes: 2401,
+      shares: 186,
       contributions: 77,
       contributionLines: 3,
       saves: 220

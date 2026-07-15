@@ -1,13 +1,17 @@
 import { router } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
   type ImageSourcePropType
 } from "react-native";
@@ -37,7 +41,13 @@ type PoemDetailScreenProps = {
 };
 
 export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreenProps) {
+  const queryClient = useQueryClient();
   const [creditsOpen, setCreditsOpen] = useState(false);
+  const [commentComposerOpen, setCommentComposerOpen] = useState(false);
+  const [replyTarget, setReplyTarget] = useState<PoemComment | null>(null);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [commentBusy, setCommentBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const engagement = usePoemEngagement();
   const poemQuery = useQuery({
     queryKey: ["poem", id, currentUserId],
@@ -46,6 +56,46 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
   });
 
   const poem = poemQuery.data ?? undefined;
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), 2200);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  const updatePoemCache = (next: PoemSummary) => {
+    queryClient.setQueryData(["poem", id, currentUserId], next);
+  };
+
+  const submitComment = async () => {
+    const body = commentDraft.trim();
+    if (!body || !id || commentBusy) return;
+    setCommentBusy(true);
+    try {
+      await lineSpaceApi.createPoemComment({ poemId: id, userId: currentUserId, body, parentCommentId: replyTarget?.id });
+      const next = await lineSpaceApi.getPoem(id, currentUserId);
+      if (next) updatePoemCache(next);
+      setCommentDraft("");
+      setReplyTarget(null);
+      setCommentComposerOpen(false);
+      setNotice("Comment posted");
+    } catch {
+      setNotice("Could not post comment");
+    } finally {
+      setCommentBusy(false);
+    }
+  };
+
+  const updateCommentCollection = async (comment: PoemComment, collection: "liked" | "saved", isActive: boolean) => {
+    if (!id) return;
+    try {
+      const result = await lineSpaceApi.setCommentCollection({ poemId: id, commentId: comment.id, userId: currentUserId, collection, isActive });
+      updatePoemCache(result.poem);
+      if (collection === "saved" && isActive) setNotice("Comment saved to your profile");
+    } catch {
+      setNotice("Could not update comment");
+    }
+  };
 
   return (
     <AppScreen
@@ -73,7 +123,15 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
             />
           </View>
         ) : (
-          <PoemDetailContent commentId={commentId} poem={poem} targetKind={targetKind} />
+          <PoemDetailContent
+            commentId={commentId}
+            onCommentPress={() => { setReplyTarget(null); setCommentComposerOpen(true); }}
+            onCommentSave={(comment) => updateCommentCollection(comment, "saved", !(comment.viewer?.saved ?? false))}
+            onCommentLike={(comment) => updateCommentCollection(comment, "liked", !(comment.viewer?.liked ?? false))}
+            onReplyPress={(comment) => { setReplyTarget(comment); setCommentComposerOpen(true); }}
+            poem={poem}
+            targetKind={targetKind}
+          />
         )}
       </ScrollView>
 
@@ -93,10 +151,21 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
               engagement.setCollection(poem.id, "saved", isSaved)
             }
             disabled={engagement.isPending}
+            onSharePress={() => router.push({ pathname: "/poem/share/[id]", params: { id: poem.id } } as never)}
             poem={poem}
           />
         </>
       ) : null}
+      <CommentComposer
+        busy={commentBusy}
+        draft={commentDraft}
+        onChange={setCommentDraft}
+        onClose={() => { setCommentComposerOpen(false); setReplyTarget(null); }}
+        onSubmit={submitComment}
+        replyTarget={replyTarget}
+        visible={commentComposerOpen}
+      />
+      {notice ? <View pointerEvents="none" style={styles.notice}><Text style={styles.noticeText}>{notice}</Text></View> : null}
     </AppScreen>
   );
 }
@@ -134,11 +203,19 @@ function DetailHeader({ poem }: { poem?: PoemSummary }) {
 function PoemDetailContent({
   commentId,
   poem,
-  targetKind
+  targetKind,
+  onCommentPress,
+  onReplyPress,
+  onCommentLike,
+  onCommentSave
 }: {
   commentId?: string;
   poem: PoemSummary;
   targetKind?: "post" | "comment";
+  onCommentPress: () => void;
+  onReplyPress: (comment: PoemComment) => void;
+  onCommentLike: (comment: PoemComment) => void;
+  onCommentSave: (comment: PoemComment) => void;
 }) {
   return (
     <View>
@@ -157,11 +234,16 @@ function PoemDetailContent({
           ))}
         </View>
 
-        <Text style={styles.tags}>{poem.tags.map((tag) => `#${tag}`).join("  |  ")}</Text>
+        <View style={styles.tagRow}>{poem.tags.map((tag) => <Pressable key={tag} accessibilityRole="button" onPress={() => router.push({ pathname: "/(tabs)/discover", params: { tag } } as never)}><Text style={styles.tag}>#{tag}</Text></Pressable>)}</View>
 
         <View style={styles.divider} />
 
-        <View style={styles.statusBlock}>
+        <View style={styles.postMeta}>
+          <Text style={styles.postMetaTitle}>started by @{poem.author.handle}</Text>
+          <Text style={styles.postMetaDate}>started {formatPoemDate(poem.startedAt)} · edited {formatPoemDate(poem.editedAt ?? poem.startedAt)}</Text>
+        </View>
+
+        <View style={styles.statusBlockDeprecated}>
           <Text style={styles.statusTitle}>
             🌱{poem.status === "growing" ? "Poem Growing" : "Final Poem"}
           </Text>
@@ -172,13 +254,13 @@ function PoemDetailContent({
 
         <View style={styles.commentSummary}>
           <Text style={styles.commentCount}>{poem.metrics.comments} comments</Text>
-          <Text style={styles.commentSort}>newst</Text>
+          <Text style={styles.commentSort}>newest</Text>
         </View>
 
-        <View style={styles.commentInput}>
+        <Pressable accessibilityRole="button" onPress={onCommentPress} style={styles.commentInput}>
           <CommentIcon color="#9B9B9B" height={23} width={23} />
-          <Text style={styles.commentPlaceholder}>Comment a line...</Text>
-        </View>
+          <Text style={styles.commentPlaceholder}>Add a thoughtful comment…</Text>
+        </Pressable>
 
         <View style={styles.commentList}>
           {(poem.comments ?? []).map((comment) => (
@@ -186,6 +268,9 @@ function PoemDetailContent({
               highlighted={targetKind === "comment" && comment.id === commentId}
               key={comment.id}
               comment={comment}
+              onLike={() => onCommentLike(comment)}
+              onLongPress={() => onCommentSave(comment)}
+              onReply={() => onReplyPress(comment)}
             />
           ))}
         </View>
@@ -195,6 +280,9 @@ function PoemDetailContent({
 }
 
 function HeroArtwork({ poem }: { poem: PoemSummary }) {
+  if (poem.artworkUrl) {
+    return <Image source={{ uri: poem.artworkUrl }} resizeMode="cover" style={styles.heroImage} />;
+  }
   if (poem.artworkTone === "water") {
     return <Image source={waterArtwork} resizeMode="cover" style={styles.heroImage} />;
   }
@@ -208,18 +296,28 @@ function HeroArtwork({ poem }: { poem: PoemSummary }) {
   );
 }
 
+function CommentComposer({ visible, draft, replyTarget, busy, onChange, onClose, onSubmit }: { visible: boolean; draft: string; replyTarget: PoemComment | null; busy: boolean; onChange: (value: string) => void; onClose: () => void; onSubmit: () => void }) {
+  return <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}><KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.composerRoot}><Pressable accessibilityLabel="Close comment composer" onPress={onClose} style={styles.composerBackdrop} /><View style={styles.composerSheet}><View style={styles.composerHandle} /><View style={styles.composerHeader}><View><Text style={styles.composerEyebrow}>{replyTarget ? "REPLYING TO" : "NEW COMMENT"}</Text><Text numberOfLines={1} style={styles.composerTitle}>{replyTarget ? `@${replyTarget.author.handle}` : "Add your voice"}</Text></View><Pressable accessibilityRole="button" disabled={busy} onPress={onSubmit} style={styles.composerSend}><Text style={styles.composerSendText}>{busy ? "…" : "Post"}</Text></Pressable></View><TextInput autoFocus multiline onChangeText={onChange} placeholder={replyTarget ? "Write a thoughtful reply…" : "Write a thoughtful comment…"} placeholderTextColor={colors.profileMuted} style={styles.composerInput} textAlignVertical="top" value={draft} /><Text style={styles.composerHint}>Long press any comment to save it to your profile.</Text></View></KeyboardAvoidingView></Modal>;
+}
+
 function CommentRow({
   comment,
-  highlighted
+  highlighted,
+  onReply,
+  onLike,
+  onLongPress
 }: {
   comment: PoemComment;
   highlighted?: boolean;
+  onReply: () => void;
+  onLike: () => void;
+  onLongPress: () => void;
 }) {
   const avatarColor = comment.author.handle === "lili" ? figmaAccent : comment.author.avatarColor;
 
   return (
-    <View style={[styles.commentRow, highlighted && styles.targetHighlight]}>
-      <Pressable onPress={() => router.push({ pathname: "/profile/[id]", params: { id: comment.author.id } } as never)}>
+    <Pressable onLongPress={onLongPress} onPress={onReply} style={[styles.commentRow, highlighted && styles.targetHighlight, comment.parentCommentId && styles.replyRow]}>
+      <Pressable onPress={(event) => { event.stopPropagation(); router.push({ pathname: "/profile/[id]", params: { id: comment.author.id } } as never); }}>
         <Avatar
           color={avatarColor}
           imageSource={comment.author.avatarUrl ? { uri: comment.author.avatarUrl } : undefined}
@@ -230,26 +328,20 @@ function CommentRow({
       <View style={styles.commentBody}>
         <View style={styles.commentNameRow}>
           <Text style={styles.commentAuthor}>{comment.author.displayName}</Text>
-          {comment.badgeLabel ? (
-            <View
-              style={[
-                styles.commentBadge,
-                comment.badgeTone === "warm" && styles.commentBadgeWarm
-              ]}
-            >
-              <Text style={styles.commentBadgeText}>{comment.badgeLabel}</Text>
-            </View>
-          ) : null}
-          {comment.annotation ? (
-            <Text numberOfLines={1} style={styles.commentAnnotation}>
-              {comment.annotation}
-            </Text>
-          ) : null}
+          {comment.level ? <Text style={styles.commentLevel}>level.{comment.level}</Text> : null}
+          {comment.badgeLabel ? <Text style={styles.commentBadgeText}>{comment.badgeLabel}</Text> : null}
         </View>
-        <Text style={styles.commentDate}>{comment.dateLabel}</Text>
+        <Text style={styles.commentDate}>{comment.dateLabel} · tap to reply</Text>
         <Text style={styles.commentText}>{comment.body}</Text>
+        <View style={styles.commentActions}>
+          <Text style={styles.replyLabel}>Reply</Text>
+          <Pressable accessibilityLabel={comment.viewer?.liked ? "Unlike comment" : "Like comment"} onPress={(event) => { event.stopPropagation(); onLike(); }} style={styles.commentActionButton}>
+            <Text style={[styles.heart, comment.viewer?.liked && styles.heartActive]}>{comment.viewer?.liked ? "♥" : "♡"}</Text>
+            <Text style={styles.commentLikeCount}>{comment.likes ?? 0}</Text>
+          </Pressable>
+        </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -331,20 +423,23 @@ function MetricDock({
   poem,
   disabled,
   onLikePress,
-  onSavePress
+  onSavePress,
+  onSharePress
 }: {
   poem: PoemSummary;
   disabled: boolean;
   onLikePress: (isLiked: boolean) => void;
   onSavePress: (isSaved: boolean) => void;
+  onSharePress: () => void;
 }) {
   return (
     <View style={styles.metricDock}>
       <PoemEngagementBar
         disabled={disabled}
         liked={poem.viewer.liked}
-        metrics={poem.metrics}
+        metrics={{ ...poem.metrics, contributions: poem.metrics.shares ?? poem.metrics.contributions }}
         onLikePress={() => onLikePress(!poem.viewer.liked)}
+        onContributionPress={onSharePress}
         onSavePress={() => onSavePress(!poem.viewer.saved)}
         saved={poem.viewer.saved}
         variant="dock"
@@ -598,13 +693,8 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontWeight: "400"
   },
-  tags: {
-    fontSize: 20,
-    lineHeight: 24,
-    color: "#949494",
-    fontWeight: "400",
-    marginBottom: 10
-  },
+  tagRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 },
+  tag: { fontSize: 20, lineHeight: 24, color: colors.inkSoft, fontWeight: "400" },
   divider: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: "#D9D9D9"
@@ -613,6 +703,10 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 9
   },
+  statusBlockDeprecated: { display: "none" },
+  postMeta: { paddingTop: 8, paddingBottom: 9 },
+  postMetaTitle: { fontSize: 16, lineHeight: 20, color: colors.ink, fontWeight: "500" },
+  postMetaDate: { marginTop: 2, color: "#949494", fontSize: 14, lineHeight: 19 },
   statusTitle: {
     fontSize: 16,
     lineHeight: 20,
@@ -674,6 +768,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#E1E1E1"
   },
+  replyRow: { marginLeft: 28, paddingLeft: 10, borderLeftWidth: 2, borderLeftColor: colors.line },
   commentAvatar: {
     width: 29,
     height: 29,
@@ -697,6 +792,7 @@ const styles = StyleSheet.create({
     fontWeight: "400",
     marginRight: 4
   },
+  commentLevel: { marginLeft: 6, paddingHorizontal: 5, paddingVertical: 2, borderRadius: radius.pill, backgroundColor: colors.black, color: colors.white, fontSize: 9, lineHeight: 12 },
   commentBadge: {
     height: 10,
     borderRadius: 3,
@@ -709,11 +805,18 @@ const styles = StyleSheet.create({
     backgroundColor: "#8B6A44"
   },
   commentBadgeText: {
-    fontSize: 6,
-    lineHeight: 8,
-    color: colors.white,
+    marginLeft: 6,
+    fontSize: 10,
+    lineHeight: 14,
+    color: colors.profileMuted,
     fontWeight: "400"
   },
+  commentActions: { marginTop: 8, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  replyLabel: { color: colors.profileMuted, fontSize: 12 },
+  commentActionButton: { minWidth: 45, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 3 },
+  heart: { color: colors.ink, fontSize: 24, lineHeight: 24, fontWeight: "300" },
+  heartActive: { color: colors.liked },
+  commentLikeCount: { color: colors.profileMuted, fontSize: 11 },
   commentAnnotation: {
     flex: 1,
     textAlign: "right",
@@ -861,5 +964,18 @@ const styles = StyleSheet.create({
     bottom: 0,
     height: 68,
     zIndex: 30
-  }
+  },
+  composerRoot: { flex: 1, justifyContent: "flex-end" },
+  composerBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.28)" },
+  composerSheet: { minHeight: 310, paddingHorizontal: 20, paddingBottom: 28, borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: colors.surface },
+  composerHandle: { alignSelf: "center", width: 42, height: 4, marginTop: 9, borderRadius: radius.pill, backgroundColor: colors.faint },
+  composerHeader: { marginTop: 19, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  composerEyebrow: { color: colors.profileMuted, fontSize: 10, letterSpacing: 1.2 },
+  composerTitle: { maxWidth: 240, marginTop: 4, color: colors.ink, fontSize: 20, fontWeight: "500" },
+  composerSend: { minWidth: 58, minHeight: 34, borderRadius: radius.pill, backgroundColor: colors.black, alignItems: "center", justifyContent: "center" },
+  composerSendText: { color: colors.white, fontSize: 13, fontWeight: "600" },
+  composerInput: { minHeight: 120, marginTop: 18, padding: 14, borderRadius: 15, backgroundColor: colors.white, color: colors.ink, fontSize: 17, lineHeight: 24 },
+  composerHint: { marginTop: 9, color: colors.profileMuted, fontSize: 11 },
+  notice: { position: "absolute", left: 22, right: 22, bottom: 86, paddingVertical: 12, paddingHorizontal: 16, borderRadius: radius.pill, backgroundColor: colors.black, alignItems: "center" },
+  noticeText: { color: colors.white, fontSize: 13 }
 });

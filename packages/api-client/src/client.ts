@@ -4,6 +4,7 @@ import {
   mockPoemDesignCatalog,
   mockThreadContinuations,
   mockThreads,
+  mockUsers,
   mockUserConnections,
   mockUserProfileContent,
   mockUserProfileDetails
@@ -11,6 +12,7 @@ import {
 import type {
   AiAssistRequest,
   AiAssistResponse,
+  CreatePoemCommentInput,
   ContinuationDetail,
   CreateContinuationInput,
   CreatePoemDraftInput,
@@ -21,13 +23,17 @@ import type {
   InboxActivitySummary,
   InviteDraftCollaboratorInput,
   PoemCollectionKind,
+  PoemComment,
   PoemCreditPerson,
   PoemDesignCatalog,
   PoemDraft,
   PoemEngagementResult,
+  PoemCommentEngagementResult,
   PoetryThread,
   PublishPoemDraftInput,
   PublishPoemDraftResult,
+  SharePoemInput,
+  SharePoemResult,
   SavePoemDraftInput,
   PoemSummary,
   ThreadContinuation,
@@ -48,6 +54,9 @@ import type {
   UserProfileContentQuery,
   UserProfileContentSection,
   UserProfileDetails,
+  UserSearchPage,
+  InboxConversationMessage,
+  UpdateCommentCollectionInput,
   UserDraftPage,
   UpdateUserProfileInput
 } from "./types";
@@ -92,6 +101,11 @@ export interface LineSpaceApi {
   setContinuationLike(input: UpdateContinuationLikeInput): Promise<ThreadContinuation>;
   recordThreadShare(target: ThreadShareTarget): Promise<ThreadShareResult>;
   requestAiAssist(request: AiAssistRequest): Promise<AiAssistResponse>;
+  createPoemComment(input: CreatePoemCommentInput): Promise<PoemComment>;
+  setCommentCollection(input: UpdateCommentCollectionInput): Promise<PoemCommentEngagementResult>;
+  searchUsers(query: string, viewerId: string): Promise<UserSearchPage>;
+  sharePoem(input: SharePoemInput): Promise<SharePoemResult>;
+  listInboxMessages(userId: string, contactId: string): Promise<InboxConversationMessage[]>;
 }
 
 type MutableUserCollections = Record<PoemCollectionKind, Set<string>>;
@@ -106,8 +120,12 @@ export class MockLineSpaceApi implements LineSpaceApi {
   private readonly collectionsByUser = new Map<string, MutableUserCollections>();
   private readonly likedThreadsByUser = new Map<string, Set<string>>();
   private readonly likedContinuationsByUser = new Map<string, Set<string>>();
+  private readonly commentLikesByUser = new Map<string, Set<string>>();
+  private readonly commentSavesByUser = new Map<string, Set<string>>();
+  private readonly inboxMessages: InboxConversationMessage[] = [];
   private draftSequence = 0;
   private continuationSequence = 0;
+  private shareSequence = 0;
 
   async getPoemDesignCatalog(): Promise<PoemDesignCatalog> {
     return cloneDesignCatalog(mockPoemDesignCatalog);
@@ -245,7 +263,8 @@ export class MockLineSpaceApi implements LineSpaceApi {
       tags: [...draft.tags],
       status: "growing",
       startedAt: draft.createdAt,
-      metrics: { comments: 0, likes: 0, contributions: 0, saves: 0 },
+      editedAt: now,
+      metrics: { comments: 0, likes: 0, shares: 0, contributions: 0, saves: 0 },
       viewer: { liked: false, saved: false },
       artworkTone: draft.layout.backgroundId === "midnight" ? "night" : "paper",
       credits: {
@@ -324,6 +343,114 @@ export class MockLineSpaceApi implements LineSpaceApi {
   async getPoem(id: string, viewerId?: string): Promise<PoemSummary | null> {
     const poem = this.poems.find((item) => item.id === id);
     return poem ? this.withViewer(poem, viewerId) : null;
+  }
+
+  async createPoemComment(input: CreatePoemCommentInput): Promise<PoemComment> {
+    const poem = this.poems.find((item) => item.id === input.poemId);
+    const author = this.findAnyProfile(input.userId);
+    const body = input.body.trim();
+    if (!poem || !author || !body) throw new Error("Comment cannot be created");
+    const now = new Date().toISOString();
+    const comment: PoemComment = {
+      id: `comment-${input.poemId}-${Date.now()}`,
+      author: profileToUser(author),
+      dateLabel: "just now",
+      createdAt: now,
+      body,
+      level: author.level,
+      likes: 0,
+      viewer: { liked: false, saved: false },
+      parentCommentId: input.parentCommentId
+    };
+    poem.comments = [...(poem.comments ?? []), comment];
+    poem.metrics.comments += 1;
+    const profile = this.profiles.find((item) => item.id === input.userId);
+    if (profile) profile.contentCounts.comments += 1;
+    return cloneComment(comment);
+  }
+
+  async setCommentCollection(input: UpdateCommentCollectionInput): Promise<PoemCommentEngagementResult> {
+    const poem = this.poems.find((item) => item.id === input.poemId);
+    const comment = poem?.comments?.find((item) => item.id === input.commentId);
+    if (!poem || !comment) throw new Error(`Comment ${input.commentId} was not found`);
+    const store = input.collection === "liked" ? this.commentLikesByUser : this.commentSavesByUser;
+    const current = store.get(input.userId) ?? new Set<string>();
+    const key = `${input.poemId}:${input.commentId}`;
+    const wasActive = current.has(key);
+    if (wasActive !== input.isActive) {
+      input.isActive ? current.add(key) : current.delete(key);
+      store.set(input.userId, current);
+      if (input.collection === "liked") comment.likes = Math.max(0, (comment.likes ?? 0) + (input.isActive ? 1 : -1));
+      if (input.collection === "saved") {
+        const profile = this.profiles.find((item) => item.id === input.userId);
+        if (profile) profile.contentCounts.saves = Math.max(0, profile.contentCounts.saves + (input.isActive ? 1 : -1));
+      }
+    }
+    comment.viewer = {
+      liked: this.commentLikesByUser.get(input.userId)?.has(key) ?? false,
+      saved: this.commentSavesByUser.get(input.userId)?.has(key) ?? false
+    };
+    return { poem: this.withViewer(poem, input.userId), comment: cloneComment(comment) };
+  }
+
+  async searchUsers(query: string, viewerId: string): Promise<UserSearchPage> {
+    const normalized = query.trim().toLowerCase();
+    const all = this.getAllProfiles()
+      .filter((profile) => profile.id !== viewerId)
+      .map((profile) => ({
+        ...profileToUser(profile),
+        isFriend: profile.id === "user-ray" || profile.id === "user-lili",
+        hasRecentChat: this.inboxMessages.some((message) =>
+          (message.sender.id === viewerId && message.recipient.id === profile.id) ||
+          (message.recipient.id === viewerId && message.sender.id === profile.id)
+        )
+      }))
+      .filter((profile) => !normalized || `${profile.displayName} ${profile.handle}`.toLowerCase().includes(normalized));
+    return {
+      query,
+      recent: all.filter((profile) => profile.hasRecentChat).slice(0, 8),
+      friends: all.filter((profile) => profile.isFriend).slice(0, 8),
+      results: normalized ? all : []
+    };
+  }
+
+  async sharePoem(input: SharePoemInput): Promise<SharePoemResult> {
+    const poem = this.poems.find((item) => item.id === input.poemId);
+    const sender = this.findAnyProfile(input.senderId);
+    const recipients = [...new Set(input.recipientIds)].map((id) => this.findAnyProfile(id)).filter((profile): profile is UserProfileDetails => Boolean(profile));
+    if (!poem || !sender || recipients.length === 0) throw new Error("A post and at least one recipient are required");
+    poem.metrics.shares = (poem.metrics.shares ?? 0) + recipients.length;
+    const messages = recipients.map((recipient) => {
+      const message: InboxConversationMessage = {
+        id: `shared-${++this.shareSequence}`,
+        sender: profileToUser(sender),
+        recipient: profileToUser(recipient),
+        createdAt: new Date().toISOString(),
+        kind: "shared-post",
+        text: input.note?.trim() || undefined,
+        sharedPost: {
+          id: poem.id,
+          title: poem.title,
+          excerpt: poem.lines[0] ?? "",
+          tags: [...poem.tags],
+          author: profileToUser(this.findAnyProfile(poem.author.id) ?? poem.author),
+          artworkUrl: poem.artworkUrl
+        }
+      };
+      this.inboxMessages.unshift(message);
+      return cloneInboxMessage(message);
+    });
+    return { poemId: poem.id, recipientIds: recipients.map((recipient) => recipient.id), messages };
+  }
+
+  async listInboxMessages(userId: string, contactId: string): Promise<InboxConversationMessage[]> {
+    return this.inboxMessages
+      .filter((message) =>
+        (message.sender.id === userId && message.recipient.id === contactId) ||
+        (message.recipient.id === userId && message.sender.id === contactId)
+      )
+      .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt))
+      .map(cloneInboxMessage);
   }
 
   async setPoemCollection(
@@ -719,8 +846,19 @@ export class MockLineSpaceApi implements LineSpaceApi {
 
   private withViewer(poem: PoemSummary, viewerId?: string): PoemSummary {
     const collections = viewerId ? this.getOrCreateCollections(viewerId) : undefined;
+    const hydrated = hydratePoem(poem, this.profiles);
+    hydrated.comments = hydrated.comments?.map((comment) => {
+      const key = `${poem.id}:${comment.id}`;
+      return {
+        ...comment,
+        viewer: {
+          liked: viewerId ? this.commentLikesByUser.get(viewerId)?.has(key) ?? false : false,
+          saved: viewerId ? this.commentSavesByUser.get(viewerId)?.has(key) ?? false : false
+        }
+      };
+    });
     return {
-      ...hydratePoem(poem, this.profiles),
+      ...hydrated,
       viewer: {
         liked: collections?.liked.has(poem.id) ?? false,
         saved: collections?.saved.has(poem.id) ?? false
@@ -739,6 +877,30 @@ export class MockLineSpaceApi implements LineSpaceApi {
     const dynamicItems = this.poems
       .filter((poem) => savedIds.has(poem.id) && !samplePoemIds.has(poem.id))
       .map(profileContentFromPoem);
+    const commentKeys = collection === "liked"
+      ? this.commentLikesByUser.get(userId) ?? new Set<string>()
+      : this.commentSavesByUser.get(userId) ?? new Set<string>();
+    const dynamicComments = [...commentKeys].flatMap((key) => {
+      const separator = key.indexOf(":");
+      const poemId = key.slice(0, separator);
+      const commentId = key.slice(separator + 1);
+      const poem = this.poems.find((item) => item.id === poemId);
+      const comment = poem?.comments?.find((item) => item.id === commentId);
+      if (!poem || !comment) return [];
+      return [{
+        id: `${collection ?? "saved"}-${comment.id}`,
+        kind: "comment" as const,
+        poemId,
+        commentId,
+        title: `comment · ${poem.title}`,
+        excerpt: comment.body,
+        tags: [...poem.tags],
+        finishedAt: comment.createdAt ?? poem.startedAt,
+        highlightCount: comment.likes ?? 0,
+        collection: (collection ?? "saved") as "liked" | "saved",
+        reference: { kind: "post" as const, text: poem.title }
+      }];
+    });
 
     const items = [
       ...samples.filter((item) =>
@@ -746,7 +908,8 @@ export class MockLineSpaceApi implements LineSpaceApi {
           ? item.collection === "liked"
           : item.poemId && savedIds.has(item.poemId)
       ),
-      ...dynamicItems
+      ...dynamicItems,
+      ...dynamicComments
     ];
     return items.filter((item) => {
       if (collection && item.collection !== collection) return false;
@@ -874,6 +1037,33 @@ export class MockLineSpaceApi implements LineSpaceApi {
       viewer: { liked }
     };
   }
+
+  private getAllProfiles(): UserProfileDetails[] {
+    const identities: UserProfile[] = [
+      ...mockUsers,
+      ...this.poems.flatMap((poem) => [poem.author, ...(poem.comments ?? []).map((comment) => comment.author)]),
+      ...this.threads.map((thread) => thread.author),
+      ...this.continuations.map((continuation) => continuation.author)
+    ];
+    const result = [...this.profiles];
+    for (const identity of identities) {
+      if (result.some((profile) => profile.id === identity.id)) continue;
+      result.push({
+        ...identity,
+        linespaceId: `guest_${identity.id.replace(/[^a-z0-9]/gi, "").slice(-8)}`,
+        level: 1,
+        badges: [],
+        stats: { followers: 0, following: 0, likesAndSaves: 0 },
+        contentCounts: { posts: 0, threads: 0, comments: 0, saves: 0 },
+        visibility: { posts: true, threads: true, comments: true, saves: true }
+      });
+    }
+    return result;
+  }
+
+  private findAnyProfile(userId: string) {
+    return this.getAllProfiles().find((profile) => profile.id === userId);
+  }
 }
 
 function cloneThread(thread: PoetryThread): PoetryThread {
@@ -892,6 +1082,29 @@ function cloneContinuation(continuation: ThreadContinuation): ThreadContinuation
     author: { ...continuation.author },
     metrics: { ...continuation.metrics },
     viewer: { ...continuation.viewer }
+  };
+}
+
+function cloneComment(comment: PoemComment): PoemComment {
+  return {
+    ...comment,
+    author: { ...comment.author },
+    viewer: comment.viewer ? { ...comment.viewer } : undefined
+  };
+}
+
+function cloneInboxMessage(message: InboxConversationMessage): InboxConversationMessage {
+  return {
+    ...message,
+    sender: { ...message.sender },
+    recipient: { ...message.recipient },
+    sharedPost: message.sharedPost
+      ? {
+          ...message.sharedPost,
+          author: { ...message.sharedPost.author },
+          tags: [...message.sharedPost.tags]
+        }
+      : undefined
   };
 }
 
@@ -917,6 +1130,7 @@ function clonePoem(poem: PoemSummary): PoemSummary {
 
 function hydratePoem(poem: PoemSummary, profiles: UserProfileDetails[]) {
   const hydrated = clonePoem(poem);
+  hydrated.editedAt = hydrated.editedAt ?? hydrated.startedAt;
   hydrated.author = profileToUser(findProfile(profiles, poem.author));
   hydrated.comments = hydrated.comments?.map((comment) => ({
     ...comment,

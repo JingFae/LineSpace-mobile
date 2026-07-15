@@ -4,6 +4,7 @@ import {
   type AiAssistRequest,
   type CreateContinuationInput,
   type CreatePoemDraftInput,
+  type CreatePoemCommentInput,
   type CreateThreadContinuationInput,
   type DraftOperationInput,
   type FeedFilter,
@@ -14,6 +15,7 @@ import {
   type UpdatePoemDraftInput,
   type UpdateContinuationLikeInput,
   type UpdateThreadLikeInput,
+  type UpdateCommentCollectionInput,
   type UpdateUserProfileInput,
   type UserConnectionKind,
   type UserProfileContentSection
@@ -321,9 +323,52 @@ export async function handleApiRequest(
     return json(200, feed);
   }
 
-  if (method === "GET" && pathname.startsWith("/v1/poems/")) {
-    const id = decodeURIComponent(pathname.replace("/v1/poems/", ""));
-    return json(200, await api.getPoem(id, searchParams.get("viewerId") ?? undefined));
+  if (method === "GET" && pathname === "/v1/users/search") {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
+    return json(200, await api.searchUsers(searchParams.get("query") ?? "", actor.user.id));
+  }
+
+  const poemRoute = parsePoemRoute(pathname);
+  if (poemRoute) {
+    try {
+      if (method === "GET" && poemRoute.resource === "poem") {
+        return json(200, await api.getPoem(poemRoute.poemId, searchParams.get("viewerId") ?? undefined));
+      }
+      if (method === "POST" && poemRoute.resource === "comments") {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        const request = body as Omit<CreatePoemCommentInput, "poemId" | "userId">;
+        if (typeof request?.body !== "string" || !request.body.trim()) return json(400, { code: "INVALID_COMMENT" });
+        return json(201, await api.createPoemComment({ poemId: poemRoute.poemId, userId: actor.user.id, body: request.body, parentCommentId: request.parentCommentId }));
+      }
+      if (method === "POST" && poemRoute.resource === "share") {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        const request = body as { recipientIds?: unknown; note?: unknown };
+        if (!Array.isArray(request?.recipientIds) || !request.recipientIds.every((id) => typeof id === "string")) return json(400, { code: "INVALID_SHARE_RECIPIENTS" });
+        return json(201, await api.sharePoem({ poemId: poemRoute.poemId, senderId: actor.user.id, recipientIds: request.recipientIds, note: typeof request.note === "string" ? request.note : undefined }));
+      }
+      if (method === "PUT" && poemRoute.resource === "comment-collection") {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        const request = body as Omit<UpdateCommentCollectionInput, "poemId" | "commentId" | "userId" | "collection">;
+        if (typeof request?.isActive !== "boolean") return json(400, { code: "INVALID_COMMENT_COLLECTION" });
+        return json(200, await api.setCommentCollection({ poemId: poemRoute.poemId, commentId: poemRoute.commentId, collection: poemRoute.collection, userId: actor.user.id, isActive: request.isActive }));
+      }
+    } catch {
+      return json(404, { code: "POST_OR_COMMENT_NOT_FOUND" });
+    }
+  }
+
+  const inboxMessagesUserId = parseInboxMessagesRoute(pathname);
+  if (method === "GET" && inboxMessagesUserId) {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
+    if (actor.user.id !== inboxMessagesUserId) return json(403, { code: "FORBIDDEN" });
+    const contactId = searchParams.get("contactId");
+    if (!contactId) return json(400, { code: "CONTACT_REQUIRED" });
+    return json(200, await api.listInboxMessages(actor.user.id, contactId));
   }
 
   const inboxSummaryUserId = parseInboxSummaryRoute(pathname);
@@ -602,6 +647,36 @@ function parseInboxSummaryRoute(pathname: string) {
 
 function isPoemCollectionKind(value: string | undefined): value is PoemCollectionKind {
   return value === "liked" || value === "saved";
+}
+
+type ParsedPoemRoute =
+  | { poemId: string; resource: "poem" | "comments" | "share" }
+  | { poemId: string; resource: "comment-collection"; commentId: string; collection: PoemCollectionKind };
+
+function parsePoemRoute(pathname: string): ParsedPoemRoute | null {
+  const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  if (segments[0] !== "v1" || segments[1] !== "poems" || !segments[2]) return null;
+  if (segments.length === 3) return { poemId: segments[2], resource: "poem" };
+  if (segments.length === 4 && (segments[3] === "comments" || segments[3] === "share")) {
+    return { poemId: segments[2], resource: segments[3] };
+  }
+  if (
+    segments.length === 7 &&
+    segments[3] === "comments" &&
+    segments[5] === "collections" &&
+    segments[4] &&
+    isPoemCollectionKind(segments[6])
+  ) {
+    return { poemId: segments[2], resource: "comment-collection", commentId: segments[4], collection: segments[6] };
+  }
+  return null;
+}
+
+function parseInboxMessagesRoute(pathname: string): string | null {
+  const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  return segments.length === 5 && segments[0] === "v1" && segments[1] === "users" && segments[3] === "inbox" && segments[4] === "messages"
+    ? segments[2] ?? null
+    : null;
 }
 
 type ParsedUserProfileRoute =
