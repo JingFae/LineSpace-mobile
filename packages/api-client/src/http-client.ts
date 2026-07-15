@@ -42,13 +42,29 @@ import type { LineSpaceApi } from "./client";
 
 export type HttpLineSpaceApiOptions = {
   getAccessToken?: () => Promise<string | null | undefined> | string | null | undefined;
+  /** Refreshes the current session when a protected request receives one 401. */
+  refreshAccessToken?: () => Promise<string | null | undefined>;
+  onRefreshFailure?: () => Promise<void> | void;
 };
+
+export class HttpLineSpaceApiError extends Error {
+  constructor(
+    readonly method: string,
+    readonly path: string,
+    readonly status: number
+  ) {
+    super(`LineSpace API request failed with ${status}.`);
+    this.name = "HttpLineSpaceApiError";
+  }
+}
 
 export class HttpLineSpaceApi implements LineSpaceApi {
   constructor(
     private readonly baseUrl: string,
     private readonly options: HttpLineSpaceApiOptions = {}
   ) {}
+
+  private refreshPromise?: Promise<string | null | undefined>;
 
   async getPoemDesignCatalog(): Promise<PoemDesignCatalog> {
     return this.getJson<PoemDesignCatalog>("/v1/compose/design-catalog");
@@ -298,13 +314,7 @@ export class HttpLineSpaceApi implements LineSpaceApi {
   }
 
   private async getJson<T>(path: string): Promise<T> {
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      headers: await this.requestHeaders()
-    });
-    if (!response.ok) {
-      throw new Error(`LineSpace API GET ${path} failed with ${response.status}`);
-    }
-    return (await response.json()) as T;
+    return this.requestJson<T>("GET", path);
   }
 
   private async postJson<T>(path: string, body: unknown): Promise<T> {
@@ -316,28 +326,66 @@ export class HttpLineSpaceApi implements LineSpaceApi {
   }
 
   private async sendJson<T>(method: "POST" | "PUT", path: string, body: unknown): Promise<T> {
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers: await this.requestHeaders(true),
-      body: JSON.stringify(body)
-    });
+    return this.requestJson<T>(method, path, body);
+  }
 
-    if (!response.ok) {
-      throw new Error(`LineSpace API ${method} ${path} failed with ${response.status}`);
+  private async requestJson<T>(
+    method: "GET" | "POST" | "PUT",
+    path: string,
+    body?: unknown
+  ): Promise<T> {
+    let response = await this.performRequest(method, path, body);
+    if (response.status === 401 && this.options.refreshAccessToken) {
+      const refreshedToken = await this.refreshAccessTokenOnce();
+      if (refreshedToken) {
+        response = await this.performRequest(method, path, body, refreshedToken);
+      } else {
+        await this.options.onRefreshFailure?.();
+      }
     }
 
+    if (!response.ok) {
+      throw new HttpLineSpaceApiError(method, path, response.status);
+    }
     return (await response.json()) as T;
   }
 
-  private async requestHeaders(hasJsonBody = false): Promise<Record<string, string>> {
+  private async performRequest(
+    method: "GET" | "POST" | "PUT",
+    path: string,
+    body?: unknown,
+    accessTokenOverride?: string
+  ) {
+    const accessToken = accessTokenOverride ?? (await this.options.getAccessToken?.());
+    return fetch(`${this.baseUrl}${path}`, {
+      method,
+      headers: await this.requestHeaders(body !== undefined, accessToken),
+      body: body === undefined ? undefined : JSON.stringify(body)
+    });
+  }
+
+  private async refreshAccessTokenOnce() {
+    if (!this.options.refreshAccessToken) return null;
+    if (!this.refreshPromise) {
+      this.refreshPromise = this.options.refreshAccessToken().finally(() => {
+        this.refreshPromise = undefined;
+      });
+    }
+    return this.refreshPromise;
+  }
+
+  private async requestHeaders(
+    hasJsonBody = false,
+    accessToken?: string | null
+  ): Promise<Record<string, string>> {
     const headers: Record<string, string> = {};
     if (hasJsonBody) {
       headers["content-type"] = "application/json";
     }
 
-    const accessToken = await this.options.getAccessToken?.();
-    if (accessToken) {
-      headers.authorization = `Bearer ${accessToken}`;
+    const token = accessToken ?? (await this.options.getAccessToken?.());
+    if (token) {
+      headers.authorization = `Bearer ${token}`;
     }
 
     return headers;

@@ -1,5 +1,7 @@
 import {
+  AuthClientError,
   createMockLineSpaceApi,
+  HttpAuthClient,
   HttpLineSpaceApi,
   type AuthUser
 } from "@linespace/api-client";
@@ -201,12 +203,141 @@ async function main() {
     }
     assert(aiBoundaryRejected, "The unconfigured AI boundary should reject HTTP requests.");
 
+    await verifyRefreshSingleFlight();
+    await verifyAuthClientContract();
+
     process.stdout.write(
-      "API smoke check passed: health, Auth, Inbox privacy, Mock mode, HTTP contract, drafts, feed, poem, profile, collections, collaboration, and AI boundary.\n"
+      "API smoke check passed: health, Auth, Inbox privacy, Mock mode, HTTP contract, bearer headers, single-flight refresh, drafts, feed, poem, profile, collections, collaboration, and AI boundary.\n"
     );
   } finally {
     globalThis.fetch = originalFetch;
   }
+}
+
+async function verifyRefreshSingleFlight() {
+  let accessToken = "expired-token";
+  let refreshCalls = 0;
+  let sawRefreshedAuthorization = false;
+
+  globalThis.fetch = async (input, init) => {
+    const headers = new Headers(init?.headers);
+    const authorization = headers.get("authorization");
+    if (authorization === "Bearer smoke-token") {
+      sawRefreshedAuthorization = true;
+      return routeAdapter(input, init);
+    }
+    return new Response(JSON.stringify({ code: "INVALID_TOKEN" }), {
+      status: 401,
+      headers: { "content-type": "application/json" }
+    });
+  };
+
+  const refreshingApi = new HttpLineSpaceApi(baseUrl, {
+    getAccessToken: () => accessToken,
+    refreshAccessToken: async () => {
+      refreshCalls += 1;
+      await Promise.resolve();
+      accessToken = "smoke-token";
+      return accessToken;
+    }
+  });
+
+  await Promise.all([
+    refreshingApi.getInboxActivitySummary(smokeUser.id),
+    refreshingApi.getUserPoemCollections(smokeUser.id)
+  ]);
+  assert(refreshCalls === 1, "Concurrent 401 responses must share one refresh request.");
+  assert(
+    sawRefreshedAuthorization,
+    "The refreshed Access Token was not attached to the retried request."
+  );
+}
+
+async function verifyAuthClientContract() {
+  const requests: Array<{ path: string; method: string; authorization?: string }> = [];
+  const client = new HttpAuthClient(baseUrl, {
+    fetch: async (input, init) => {
+      const requestUrl =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+      const url = new URL(requestUrl);
+      const headers = new Headers(init?.headers);
+      requests.push({
+        path: url.pathname,
+        method: init?.method ?? "GET",
+        authorization: headers.get("authorization") ?? undefined
+      });
+      if (url.pathname === "/v1/auth/logout") return new Response(null, { status: 204 });
+      if (url.pathname === "/v1/auth/me") return jsonResponse(smokeUser);
+      if (url.pathname === "/v1/auth/refresh") return jsonResponse(sessionResultBody());
+      if (url.pathname === "/v1/auth/login") return jsonResponse(sessionResultBody());
+      return jsonResponse(
+        {
+          user: smokeUser,
+          session: sessionResultBody().session,
+          emailConfirmationRequired: false
+        },
+        201
+      );
+    }
+  });
+
+  const registered = await client.register({
+    username: "new-poet",
+    email: "new-poet@example.com",
+    password: "ValidPass123",
+    confirmPassword: "ValidPass123"
+  });
+  assert(registered.user.id === smokeUser.id, "Auth client did not decode registration data.");
+  await client.login({ username: "lili", password: "ValidPass123" });
+  await client.refresh("refresh-token");
+  await client.me("access-token");
+  await client.logout("access-token");
+  assert(
+    requests.map((request) => request.path).join(",") ===
+      "/v1/auth/register,/v1/auth/login,/v1/auth/refresh,/v1/auth/me,/v1/auth/logout",
+    "Auth client called an unexpected endpoint sequence."
+  );
+  assert(requests.at(-1)?.authorization === "Bearer access-token", "Logout did not use Bearer auth.");
+
+  const invalidClient = new HttpAuthClient(baseUrl, {
+    fetch: async () => jsonResponse({ code: "INVALID_CREDENTIALS", message: "server detail" }, 401)
+  });
+  let safeError: unknown;
+  try {
+    await invalidClient.login({ username: "lili", password: "NeverLogThis123" });
+  } catch (error) {
+    safeError = error;
+  }
+  assert(safeError instanceof AuthClientError, "Auth client did not return a typed error.");
+  assert(
+    (safeError as Error).message === "Invalid username or password." &&
+      !(safeError as Error).message.includes("NeverLogThis123"),
+    "Auth client exposed unsafe login details."
+  );
+}
+
+function sessionResultBody() {
+  return {
+    user: smokeUser,
+    session: {
+      accessToken: "access-token",
+      refreshToken: "refresh-token",
+      expiresAt: 1_900_000_000,
+      expiresIn: 3600,
+      tokenType: "bearer"
+    }
+  };
+}
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" }
+  });
 }
 
 await main();

@@ -215,7 +215,10 @@ export function getServerAuthService(): AuthService {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
-      detectSessionInUrl: false
+      detectSessionInUrl: false,
+      // Email confirmation callbacks are consumed by the Expo client, which
+      // immediately removes the documented token fragment before validating /me.
+      flowType: "implicit"
     }
   } as const;
 

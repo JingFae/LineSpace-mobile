@@ -70,6 +70,8 @@ AUTH_EMAIL_REDIRECT_URL=https://your-domain.example/auth/confirm
 
 `EXPO_PUBLIC_*` 会进入客户端 Bundle，不能保存密钥。`SUPABASE_SERVICE_ROLE_KEY`、`DATABASE_URL` 和 `OPENAI_API_KEY` 必须使用 Vercel Server-only 环境变量；它们不得改名为 `EXPO_PUBLIC_*`。
 
+Supabase Dashboard 的 Redirect URLs 还需要包含 `https://your-domain.example/auth/confirm`。Native 构建使用同一个后端时，将 `AUTH_EMAIL_REDIRECT_URL` 配为 `linespace://auth/confirm`，并在 Supabase 允许列表中加入该自定义 scheme；Web 与 Native 不应混用错误的回跳地址。
+
 ## API 上线前检查
 
 启用 Vercel Function 或独立部署 `apps/api` 前至少需要：

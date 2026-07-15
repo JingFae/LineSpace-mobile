@@ -3,14 +3,28 @@ import {
   createMockLineSpaceApi,
   type LineSpaceApi
 } from "@linespace/api-client";
+import { getAccessToken, refreshAccessToken, setAccessToken } from "@/auth/session-store";
 
-const useMocks = process.env.EXPO_PUBLIC_USE_MOCKS !== "false";
 const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
+export const useMocks = process.env.EXPO_PUBLIC_USE_MOCKS !== "false" || !apiBaseUrl;
 
-// Replaced by the authenticated session user once auth is connected.
-export const currentUserId = process.env.EXPO_PUBLIC_CURRENT_USER_ID ?? "user-lili";
+// Mock mode keeps its existing development identity. HTTP mode is populated only
+// from the authenticated session and never from EXPO_PUBLIC_CURRENT_USER_ID.
+export let currentUserId = useMocks
+  ? process.env.EXPO_PUBLIC_CURRENT_USER_ID ?? "user-lili"
+  : "";
+
+export function setCurrentUserId(userId: string | null) {
+  currentUserId = useMocks
+    ? process.env.EXPO_PUBLIC_CURRENT_USER_ID ?? "user-lili"
+    : userId ?? "";
+}
 
 export const lineSpaceApi: LineSpaceApi =
   useMocks || !apiBaseUrl
     ? createMockLineSpaceApi()
-    : new HttpLineSpaceApi(apiBaseUrl.replace(/\/$/, ""));
+    : new HttpLineSpaceApi(apiBaseUrl.replace(/\/$/, ""), {
+        getAccessToken,
+        refreshAccessToken,
+        onRefreshFailure: () => setAccessToken(null)
+      });

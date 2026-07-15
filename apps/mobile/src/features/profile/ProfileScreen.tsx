@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Modal,
   Pressable,
@@ -33,6 +34,7 @@ import type {
 } from "@linespace/api-client";
 import { mainTabs, tabRoutes } from "@/navigation/tabs";
 import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
+import { useAuth } from "@/auth/AuthSessionProvider";
 
 declare const require: (path: string) => ImageSourcePropType;
 
@@ -50,6 +52,7 @@ const contentTabs: Array<{ value: UserProfileContentSection; label: string }> = 
 ];
 
 export function ProfileScreen({ userId = currentUserId }: ProfileScreenProps) {
+  const { logout } = useAuth();
   const isOwner = userId === currentUserId;
   const [section, setSection] = useState<UserProfileContentSection>("posts");
   const [threadRelation, setThreadRelation] = useState<UserThreadRelation>("started");
@@ -97,6 +100,12 @@ export function ProfileScreen({ userId = currentUserId }: ProfileScreenProps) {
               isOwner={isOwner}
               onConnectionsPress={setConnectionKind}
               onLikesAndSavesPress={() => setSection("saves")}
+              onLogoutPress={() =>
+                Alert.alert("Log out of LineSpace?", "Your local poems and mock data will stay on this device.", [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Log out", style: "destructive", onPress: () => void logout() }
+                ])
+              }
               profile={profileQuery.data}
             />
             <View style={styles.contentPanel}>
@@ -139,13 +148,13 @@ export function ProfileScreen({ userId = currentUserId }: ProfileScreenProps) {
   );
 }
 
-function ProfileHero({ profile, isOwner, onConnectionsPress, onLikesAndSavesPress }: { profile: UserProfileDetails; isOwner: boolean; onConnectionsPress: (kind: UserConnectionKind) => void; onLikesAndSavesPress: () => void }) {
+function ProfileHero({ profile, isOwner, onConnectionsPress, onLikesAndSavesPress, onLogoutPress }: { profile: UserProfileDetails; isOwner: boolean; onConnectionsPress: (kind: UserConnectionKind) => void; onLikesAndSavesPress: () => void; onLogoutPress: () => void }) {
   const avatarSource = profile.avatarUrl ? { uri: profile.avatarUrl } : profileAvatarArtwork;
   return (
     <View style={styles.hero}>
       <Image resizeMode="cover" source={profileHeaderArtwork} style={styles.heroBackground} />
       <View style={styles.heroActions}>
-        <Pressable accessibilityLabel="Open profile menu" hitSlop={12} style={styles.iconButton}><MenuIcon /></Pressable>
+        <Pressable accessibilityLabel={isOwner ? "Log out" : "Open profile menu"} hitSlop={12} onPress={isOwner ? onLogoutPress : undefined} style={styles.iconButton}><MenuIcon /></Pressable>
         <View style={styles.heroActionsRight}>
           <Pressable accessibilityLabel="Search" hitSlop={12} style={styles.iconButton}><SearchIcon height={22} width={22} /></Pressable>
           {isOwner ? <Pressable accessibilityLabel="Profile settings" hitSlop={12} onPress={() => router.push("/profile/edit" as Href)} style={styles.iconButton}><SettingsIcon /></Pressable> : null}
