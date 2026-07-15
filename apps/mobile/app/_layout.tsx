@@ -1,7 +1,7 @@
 import { Stack } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState } from "react";
 import type { ReactNode } from "react";
+import { useState } from "react";
 import { Platform, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 
 const screenInset = 12;
