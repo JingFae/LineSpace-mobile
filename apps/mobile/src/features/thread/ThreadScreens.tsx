@@ -1,11 +1,13 @@
 import { router, type Href, useFocusEffect } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import type { QueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Modal,
+  Animated,
+  BackHandler,
+  Easing,
   Platform,
   Pressable,
   ScrollView,
@@ -145,7 +147,11 @@ export function ThreadFeedScreen() {
     <AppScreen scroll={false} padded={false} style={styles.safeArea} contentContainerStyle={styles.screen}>
       <ThreadTopBar />
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.feedContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.feedContent, composerTarget && styles.composerOpenContentInset]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.sortRow}>
           {sortTabs.map((item) => (
             <Pressable
@@ -215,9 +221,9 @@ export function ThreadFeedScreen() {
 
       <ContinueComposer
         onClose={() => setComposerTarget(null)}
-        onSubmitted={() => {
+        onSubmitted={(continuation, submittedTarget) => {
           setComposerTarget(null);
-          void queryClient.invalidateQueries({ queryKey: ["threads"] });
+          updateThreadListCaches(queryClient, continuation);
         }}
         target={composerTarget}
       />
@@ -318,7 +324,11 @@ export function ThreadDetailScreen({ threadId }: { threadId?: string }) {
           })
         }
       />
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.detailContent, composerTarget && styles.composerOpenContentInset]}
+        showsVerticalScrollIndicator={false}
+      >
         {detailQuery.isLoading ? (
           <ThreadListState title="Loading thread" />
         ) : detailQuery.isError || !detail ? (
@@ -397,14 +407,18 @@ export function ThreadDetailScreen({ threadId }: { threadId?: string }) {
         <FixedComposerButton
           label="Continue this thread..."
           onPress={() => setComposerTarget({ kind: "thread", thread: detail.thread })}
+          hidden={Boolean(composerTarget)}
         />
       ) : null}
       <ContinueComposer
         onClose={() => setComposerTarget(null)}
-        onSubmitted={() => {
+        onSubmitted={(continuation, submittedTarget) => {
           setComposerTarget(null);
-          void queryClient.invalidateQueries({ queryKey: ["thread-detail", threadId] });
-          void queryClient.invalidateQueries({ queryKey: ["threads"] });
+          updateThreadListCaches(queryClient, continuation);
+          updateThreadDetailCache(queryClient, threadId, continuation, submittedTarget);
+          if (submittedTarget.kind === "continuation") {
+            setExpandedDescendants((current) => appendExpandedDescendant(current, submittedTarget.continuation.id, continuation));
+          }
         }}
         target={composerTarget}
       />
@@ -417,6 +431,10 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
   const queryClient = useQueryClient();
   const [composerTarget, setComposerTarget] = useState<ComposerTarget | null>(null);
   const [shareNotice, setShareNotice] = useState<ShareNotice | null>(null);
+  const [continuationOrder, setContinuationOrder] = useState<ContinuationOrder>("top");
+  const [expandedRootIds, setExpandedRootIds] = useState<Set<string>>(() => new Set());
+  const [expandedDescendants, setExpandedDescendants] = useState<Record<string, FlattenedDescendantRow[]>>({});
+  const [loadingRootIds, setLoadingRootIds] = useState<Set<string>>(() => new Set());
   const detailQuery = useQuery({
     queryKey: ["continuation-detail", continuationId, currentUserId],
     enabled: Boolean(continuationId),
@@ -426,6 +444,68 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
   const continuationLikeMutation = useContinuationLikeMutation();
   const shareMutation = useShareMutation((notice) => setShareNotice(notice));
   const detail = detailQuery.data ?? undefined;
+  const sortedChildren = useMemo(() => {
+    return sortContinuationItems(detail?.children ?? [], continuationOrder);
+  }, [continuationOrder, detail?.children]);
+  const visibleContinuationGroups = useMemo(
+    () =>
+      buildVisibleContinuationGroups(
+        sortedChildren,
+        expandedDescendants,
+        expandedRootIds,
+        loadingRootIds
+      ),
+    [expandedDescendants, expandedRootIds, loadingRootIds, sortedChildren]
+  );
+  const resetExpandedContinuations = useCallback(() => {
+    setExpandedRootIds(new Set());
+    setExpandedDescendants({});
+    setLoadingRootIds(new Set());
+  }, []);
+  const handleContinuationOrderChange = useCallback(
+    (value: ContinuationOrder) => {
+      setContinuationOrder(value);
+      resetExpandedContinuations();
+    },
+    [resetExpandedContinuations]
+  );
+  const handleShowContinuations = useCallback(
+    (continuation: ThreadContinuation) => {
+      const rootId = continuation.id;
+      if (expandedRootIds.has(rootId)) return;
+      setExpandedRootIds((current) => new Set(current).add(rootId));
+      if (expandedDescendants[rootId]) return;
+      setLoadingRootIds((current) => new Set(current).add(rootId));
+      void getDescendantsDepthFirst(continuation, continuationOrder, currentUserId)
+        .then((descendants) => {
+          setExpandedDescendants((current) => ({
+            ...current,
+            [rootId]: descendants
+          }));
+        })
+        .catch(() => {
+          setExpandedDescendants((current) => ({
+            ...current,
+            [rootId]: []
+          }));
+        })
+        .finally(() => {
+          setLoadingRootIds((current) => {
+            const next = new Set(current);
+            next.delete(rootId);
+            return next;
+          });
+        });
+    },
+    [continuationOrder, expandedDescendants, expandedRootIds]
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      resetExpandedContinuations();
+      return resetExpandedContinuations;
+    }, [continuationId, resetExpandedContinuations])
+  );
 
   return (
     <AppScreen scroll={false} padded={false} style={styles.safeArea} contentContainerStyle={styles.screen}>
@@ -439,7 +519,11 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
           })
         }
       />
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.detailContent, composerTarget && styles.composerOpenContentInset]}
+        showsVerticalScrollIndicator={false}
+      >
         {detailQuery.isLoading ? (
           <ThreadListState title="Loading continuation" />
         ) : detailQuery.isError || !detail ? (
@@ -479,15 +563,15 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
                 })
               }
             />
-            <ContinueDetailSectionHeader count={detail.children.length} />
-            {detail.children.length === 0 ? (
+            <ContinuationHeader order={continuationOrder} onChange={handleContinuationOrderChange} />
+            {sortedChildren.length === 0 ? (
               <LightContinuationEmptyState />
             ) : (
-              detail.children.map((child) => (
-                <ContinuationCard
-                  key={child.id}
-                  actionOrder="like-first"
-                  row={createStandaloneContinuationRow(child)}
+              visibleContinuationGroups.map((group) => (
+                <ExpandedContinuationGroup
+                  key={group.rootRow.rootGroupId}
+                  group={group}
+                  order={continuationOrder}
                   onContinue={(target) => setComposerTarget({ kind: "continuation", continuation: target })}
                   onLike={(target) =>
                     continuationLikeMutation.mutate({
@@ -509,6 +593,7 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
                       userId: currentUserId
                     })
                   }
+                  onShowContinuations={handleShowContinuations}
                 />
               ))
             )}
@@ -519,15 +604,18 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
         <FixedComposerButton
           label="Continue from here..."
           onPress={() => setComposerTarget({ kind: "continuation", continuation: detail.current })}
+          hidden={Boolean(composerTarget)}
         />
       ) : null}
       <ContinueComposer
         onClose={() => setComposerTarget(null)}
-        onSubmitted={() => {
+        onSubmitted={(continuation, submittedTarget) => {
           setComposerTarget(null);
-          void queryClient.invalidateQueries({ queryKey: ["continuation-detail"] });
-          void queryClient.invalidateQueries({ queryKey: ["thread-detail"] });
-          void queryClient.invalidateQueries({ queryKey: ["threads"] });
+          updateThreadListCaches(queryClient, continuation);
+          updateContinuationDetailCache(queryClient, continuationId, continuation, submittedTarget);
+          if (submittedTarget.kind === "continuation") {
+            setExpandedDescendants((current) => appendExpandedDescendant(current, submittedTarget.continuation.id, continuation));
+          }
         }}
         target={composerTarget}
       />
@@ -1015,7 +1103,6 @@ function ContinuationPath({
         metrics: detail.thread.metrics,
         liked: detail.thread.viewer.liked,
         avatarSize: pathRootAvatarSize,
-        meta: detail.thread.community,
         onOpen: () =>
           router.push({
             pathname: "/thread/[id]",
@@ -1136,17 +1223,6 @@ function ContinuationPathNode({
           onShare={node.onShare}
         />
       </View>
-    </View>
-  );
-}
-
-function ContinueDetailSectionHeader({ count }: { count: number }) {
-  return (
-    <View style={styles.continueDetailSectionHeader}>
-      <Text style={styles.continueDetailSectionTitle}>Continues from here</Text>
-      <Text style={styles.continueDetailSectionMeta}>
-        {count === 1 ? "1 continuation" : `${count} continuations`}
-      </Text>
     </View>
   );
 }
@@ -1290,9 +1366,15 @@ function ContinueComposer({
 }: {
   target: ComposerTarget | null;
   onClose: () => void;
-  onSubmitted: () => void;
+  onSubmitted: (continuation: ThreadContinuation, target: ComposerTarget) => void;
 }) {
   const [content, setContent] = useState("");
+  const [draftByTarget, setDraftByTarget] = useState<Record<string, string>>({});
+  const translateY = useRef(new Animated.Value(340)).current;
+  const targetKey = target ? composerTargetKey(target) : null;
+  const targetAuthor = target?.kind === "thread" ? target.thread.author.handle : target?.continuation.author.handle;
+  const preview = target?.kind === "thread" ? target.thread.content : target?.continuation.content;
+  const trimmedContent = content.trim();
   const createThreadMutation = useMutation({
     mutationFn: () => {
       if (!target || target.kind !== "thread") throw new Error("Missing thread target");
@@ -1302,9 +1384,13 @@ function ContinueComposer({
         content
       });
     },
-    onSuccess: () => {
+    onSuccess: (continuation) => {
+      if (!target) return;
       setContent("");
-      onSubmitted();
+      if (targetKey) {
+        setDraftByTarget((current) => ({ ...current, [targetKey]: "" }));
+      }
+      onSubmitted(continuation, target);
     }
   });
   const createContinuationMutation = useMutation({
@@ -1316,60 +1402,170 @@ function ContinueComposer({
         content
       });
     },
-    onSuccess: () => {
+    onSuccess: (continuation) => {
+      if (!target) return;
       setContent("");
-      onSubmitted();
+      if (targetKey) {
+        setDraftByTarget((current) => ({ ...current, [targetKey]: "" }));
+      }
+      onSubmitted(continuation, target);
     }
   });
 
   const isPending = createThreadMutation.isPending || createContinuationMutation.isPending;
   const isError = createThreadMutation.isError || createContinuationMutation.isError;
-  const preview = target?.kind === "thread" ? target.thread.content : target?.continuation.content;
+  const canSubmit = trimmedContent.length > 0 && !isPending;
+
+  useEffect(() => {
+    Animated.timing(translateY, {
+      toValue: target ? 0 : 340,
+      duration: target ? 220 : 170,
+      easing: target ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
+      useNativeDriver: true
+    }).start();
+  }, [target, translateY]);
+
+  useEffect(() => {
+    if (!targetKey) return;
+    setContent(draftByTarget[targetKey] ?? "");
+  }, [draftByTarget, targetKey]);
+
+  useEffect(() => {
+    if (Platform.OS !== "web" || !target) return undefined;
+    const styleId = "linespace-inline-composer-focus-reset";
+    if (!document.getElementById(styleId)) {
+      const styleElement = document.createElement("style");
+      styleElement.id = styleId;
+      styleElement.textContent = "textarea:focus,input:focus{outline:none!important;}";
+      document.head.appendChild(styleElement);
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !isPending) {
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isPending, onClose, target]);
+
+  useEffect(() => {
+    if (Platform.OS !== "android" || !target) return undefined;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (isPending) return true;
+      onClose();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [isPending, onClose, target]);
+
+  if (!target) return null;
+
+  const handleChangeText = (value: string) => {
+    setContent(value);
+    if (!targetKey) return;
+    setDraftByTarget((current) => ({ ...current, [targetKey]: value }));
+  };
+  const handleSubmit = () => {
+    if (!canSubmit) return;
+    if (target.kind === "thread") createThreadMutation.mutate();
+    if (target.kind === "continuation") createContinuationMutation.mutate();
+  };
 
   return (
-    <Modal animationType="slide" onRequestClose={onClose} transparent visible={Boolean(target)}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.modalRoot}>
-        <Pressable style={styles.modalScrim} onPress={isPending ? undefined : onClose} />
-        <View style={styles.composerSheet}>
-          <View style={styles.composerHandle} />
-          <Text style={styles.composerTitle}>
-            {target?.kind === "thread" ? "Continue this thread" : "Continue from this line"}
-          </Text>
-          <Text numberOfLines={2} style={styles.composerPreview}>{preview}</Text>
+    <View pointerEvents="box-none" style={styles.inlineComposerRoot}>
+      <Pressable
+        accessibilityLabel="Close continue composer"
+        disabled={isPending}
+        onPress={onClose}
+        style={styles.inlineComposerDismissLayer}
+      />
+      <Animated.View style={[styles.inlineComposerPanel, { transform: [{ translateY }] }]}>
+        <ComposerContextPreview author={targetAuthor ?? "writer"} text={preview ?? ""} />
+        <View style={styles.inlineInputRow}>
           <TextInput
             autoFocus
             multiline
-            onChangeText={setContent}
-            placeholder={target?.kind === "thread" ? "Add your poetic continuation..." : "Continue from this line..."}
+            onChangeText={handleChangeText}
+            onSubmitEditing={Platform.OS === "web" ? handleSubmit : undefined}
+            placeholder="Write the next line..."
             placeholderTextColor={colors.profileMuted}
-            style={styles.composerInput}
-            textAlignVertical="top"
+            scrollEnabled
+            style={styles.inlineComposerInput}
+            textAlignVertical="center"
             value={content}
           />
-          <Text style={styles.composerGuidance}>Creative continuations only</Text>
-          {isError ? <Text style={styles.composerError}>This continuation could not be published. Try again.</Text> : null}
-          <View style={styles.composerActions}>
-            <Pressable disabled={isPending} onPress={onClose} style={styles.cancelButton}>
-              <Text style={styles.cancelText}>Cancel</Text>
-            </Pressable>
-            <Pressable
-              disabled={isPending || content.trim().length === 0}
-              onPress={() => {
-                if (target?.kind === "thread") createThreadMutation.mutate();
-                if (target?.kind === "continuation") createContinuationMutation.mutate();
-              }}
-              style={[styles.publishButton, (isPending || content.trim().length === 0) && styles.publishButtonDisabled]}
-            >
-              {isPending ? <ActivityIndicator color={colors.white} /> : <Text style={styles.publishText}>Continue</Text>}
-            </Pressable>
-          </View>
+          <Pressable
+            accessibilityLabel="Send continuation"
+            accessibilityRole="button"
+            disabled={!canSubmit}
+            onPress={handleSubmit}
+            style={[styles.inlineSendButton, !canSubmit && styles.inlineSendButtonDisabled]}
+          >
+            {isPending ? (
+              <ActivityIndicator color={colors.white} size="small" />
+            ) : (
+              <ShareIcon color={canSubmit ? colors.white : colors.profileMuted} width={19} height={19} />
+            )}
+          </Pressable>
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+        {isError ? <Text style={styles.inlineComposerError}>This continuation could not be published. Try again.</Text> : null}
+        {Platform.OS === "web" ? <KeyboardPlaceholder onDismiss={onClose} /> : null}
+      </Animated.View>
+    </View>
   );
 }
 
-function FixedComposerButton({ label, onPress }: { label: string; onPress: () => void }) {
+function ComposerContextPreview({ author, text }: { author: string; text: string }) {
+  return (
+    <View style={styles.composerContext}>
+      <Text style={styles.composerContextLabel}>
+        Continuing from <Text style={styles.composerContextAuthor}>@{author}</Text>
+      </Text>
+      <Text numberOfLines={3} style={styles.composerContextText}>{text}</Text>
+    </View>
+  );
+}
+
+function KeyboardPlaceholder({ onDismiss }: { onDismiss: () => void }) {
+  const rows = [
+    ["", "", "", "", "", "", "", "", "", ""],
+    ["", "", "", "", "", "", "", "", ""],
+    ["wide", "", "", "", "", "", "", "wide"],
+    ["globe", "space", "return"]
+  ];
+
+  return (
+    <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.keyboardPlaceholder}>
+      <View style={styles.keyboardSuggestionRow}>
+        {Array.from({ length: 7 }).map((_, index) => (
+          <View key={`suggestion-${index}`} style={styles.keyboardSuggestionKey} />
+        ))}
+        <Pressable accessibilityLabel="Hide keyboard" accessibilityRole="button" onPress={onDismiss} style={styles.keyboardDismissKey}>
+          <View style={styles.keyboardDismissMark} />
+        </Pressable>
+      </View>
+      {rows.map((row, rowIndex) => (
+        <View key={`keyboard-row-${rowIndex}`} style={styles.keyboardRow}>
+          {row.map((kind, index) => (
+            <View
+              key={`${rowIndex}-${index}`}
+              style={[
+                styles.keyboardKey,
+                kind === "wide" && styles.keyboardWideKey,
+                kind === "globe" && styles.keyboardGlobeKey,
+                kind === "space" && styles.keyboardSpaceKey,
+                kind === "return" && styles.keyboardReturnKey
+              ]}
+            />
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function FixedComposerButton({ label, onPress, hidden = false }: { label: string; onPress: () => void; hidden?: boolean }) {
+  if (hidden) return null;
   return (
     <View style={styles.fixedComposer}>
       <Pressable accessibilityRole="button" onPress={onPress} style={styles.fixedComposerButton}>
@@ -1538,6 +1734,105 @@ function buildVisibleContinuationGroups(
   });
 }
 
+function composerTargetKey(target: ComposerTarget) {
+  return target.kind === "thread" ? `thread:${target.thread.id}` : `continuation:${target.continuation.id}`;
+}
+
+function addContinuationMetric<T extends PoetryThread | ThreadContinuation>(item: T): T {
+  return {
+    ...item,
+    metrics: {
+      ...item.metrics,
+      continuations: item.metrics.continuations + 1
+    }
+  };
+}
+
+function updateThreadListCaches(
+  queryClient: QueryClient,
+  continuation: ThreadContinuation
+) {
+  queryClient.setQueriesData<PoetryThread[]>({ queryKey: ["threads"] }, (threads) => {
+    if (!threads) return threads;
+    return threads.map((thread) =>
+      thread.id === continuation.threadId ? addContinuationMetric(thread) : thread
+    );
+  });
+}
+
+function updateThreadDetailCache(
+  queryClient: QueryClient,
+  threadId: string | undefined,
+  continuation: ThreadContinuation,
+  target: ComposerTarget
+) {
+  if (!threadId) return;
+  queryClient.setQueryData<ThreadDetail>(["thread-detail", threadId, currentUserId], (detail) => {
+    if (!detail) return detail;
+    if (target.kind === "thread") {
+      return {
+        thread: addContinuationMetric(detail.thread),
+        continuations: [continuation, ...detail.continuations]
+      };
+    }
+
+    return {
+      thread: addContinuationMetric(detail.thread),
+      continuations: detail.continuations.map((item) =>
+        item.id === target.continuation.id ? addContinuationMetric(item) : item
+      )
+    };
+  });
+}
+
+function updateContinuationDetailCache(
+  queryClient: QueryClient,
+  continuationId: string | undefined,
+  continuation: ThreadContinuation,
+  target: ComposerTarget
+) {
+  if (!continuationId) return;
+  queryClient.setQueryData<ContinuationDetail>(["continuation-detail", continuationId, currentUserId], (detail) => {
+    if (!detail) return detail;
+    if (target.kind === "thread") {
+      return {
+        ...detail,
+        thread: addContinuationMetric(detail.thread)
+      };
+    }
+
+    const isCurrentTarget = detail.current.id === target.continuation.id;
+    return {
+      ...detail,
+      thread: addContinuationMetric(detail.thread),
+      current: isCurrentTarget ? addContinuationMetric(detail.current) : detail.current,
+      path: detail.path.map((item) =>
+        item.id === target.continuation.id ? addContinuationMetric(item) : item
+      ),
+      children: isCurrentTarget
+        ? [continuation, ...detail.children]
+        : detail.children.map((item) =>
+            item.id === target.continuation.id ? addContinuationMetric(item) : item
+          )
+    };
+  });
+}
+
+function appendExpandedDescendant(
+  current: Record<string, FlattenedDescendantRow[]>,
+  parentId: string,
+  continuation: ThreadContinuation
+) {
+  if (!current[parentId]) return current;
+  return {
+    ...current,
+    [parentId]: [
+      { continuation, actualDepth: 1 },
+      ...current[parentId]
+    ]
+  };
+}
+
 function createStandaloneContinuationRow(continuation: ThreadContinuation): ContinuationVisibleRow {
   return {
     continuation,
@@ -1622,6 +1917,7 @@ const styles = StyleSheet.create({
   backGlyph: { fontSize: 35, lineHeight: 38, color: colors.ink },
   feedContent: { paddingBottom: 96 },
   detailContent: { paddingBottom: 86 },
+  composerOpenContentInset: { paddingBottom: 390 },
   sortRow: {
     flexDirection: "row",
     justifyContent: "center",
@@ -1739,14 +2035,14 @@ const styles = StyleSheet.create({
   },
   groupLayer: {
     position: "relative",
-    zIndex: 1
+    zIndex: 2
   },
   parentChildConnectorVertical: {
     position: "absolute",
     left: level0ConnectorX,
     width: connectorWidth,
     backgroundColor: connectorColor,
-    zIndex: 0
+    zIndex: 1
   },
   parentChildConnectorHorizontal: {
     position: "absolute",
@@ -1754,12 +2050,11 @@ const styles = StyleSheet.create({
     width: level1ConnectorX - level0ConnectorX,
     height: connectorWidth,
     backgroundColor: connectorColor,
-    zIndex: 0
+    zIndex: 1
   },
   childContinuationGroup: {
     position: "relative",
-    overflow: "visible",
-    backgroundColor: colors.surface
+    overflow: "visible"
   },
   childVerticalSpine: {
     position: "absolute",
@@ -1844,19 +2139,6 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontSize: 18, lineHeight: 22, fontWeight: "700", color: colors.ink },
   sectionMeta: { fontSize: 14, lineHeight: 18, color: colors.profileMuted },
-  continueDetailSectionHeader: {
-    minHeight: 52,
-    paddingHorizontal: pathHorizontalPadding,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.line,
-    backgroundColor: colors.surface
-  },
-  continueDetailSectionTitle: { fontSize: 17, lineHeight: 22, fontWeight: "700", color: colors.ink },
-  continueDetailSectionMeta: { fontSize: 14, lineHeight: 18, color: colors.profileMuted },
   pathChain: {
     position: "relative",
     overflow: "visible",
@@ -1927,37 +2209,125 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted
   },
   fixedComposerText: { fontSize: 15, lineHeight: 21, color: colors.profileMuted },
-  modalRoot: { flex: 1, justifyContent: "flex-end" },
-  modalScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.22)" },
-  composerSheet: {
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    paddingHorizontal: 18,
-    paddingTop: 10,
-    paddingBottom: 24,
-    backgroundColor: colors.surface
+  inlineComposerRoot: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "flex-end",
+    zIndex: 30
   },
-  composerHandle: { alignSelf: "center", width: 42, height: 4, borderRadius: 2, backgroundColor: colors.faint, marginBottom: 14 },
-  composerTitle: { fontSize: 19, lineHeight: 24, fontWeight: "700", color: colors.ink },
-  composerPreview: { marginTop: 8, fontSize: 14, lineHeight: 19, color: colors.profileMuted },
-  composerInput: {
-    minHeight: 128,
-    marginTop: 14,
-    borderRadius: radius.md,
-    padding: 14,
-    backgroundColor: colors.surfaceMuted,
-    fontSize: 17,
-    lineHeight: 24,
+  inlineComposerDismissLayer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "transparent"
+  },
+  inlineComposerPanel: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line,
+    backgroundColor: colors.surface,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: -3 },
+    elevation: 8
+  },
+  composerContext: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: 10,
+    paddingBottom: 8
+  },
+  composerContextLabel: { fontSize: 12, lineHeight: 16, color: colors.profileMuted },
+  composerContextAuthor: { color: colors.inkSoft, fontWeight: "600" },
+  composerContextText: { marginTop: 3, fontSize: 14, lineHeight: 19, color: colors.inkSoft },
+  inlineInputRow: {
+    minHeight: 50,
+    marginHorizontal: spacing.lg,
+    marginBottom: 9,
+    borderRadius: 25,
+    paddingLeft: 15,
+    paddingRight: 5,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    backgroundColor: colors.surfaceMuted
+  },
+  inlineComposerInput: {
+    flex: 1,
+    minHeight: 44,
+    maxHeight: 96,
+    paddingTop: 11,
+    paddingBottom: 10,
+    paddingRight: 9,
+    fontSize: 16,
+    lineHeight: 21,
     color: colors.ink
   },
-  composerGuidance: { marginTop: 8, fontSize: 12, lineHeight: 16, color: colors.profileMuted },
-  composerError: { marginTop: 8, fontSize: 13, lineHeight: 17, color: colors.accent },
-  composerActions: { marginTop: 16, flexDirection: "row", justifyContent: "flex-end", gap: 10 },
-  cancelButton: { minHeight: 44, paddingHorizontal: 16, justifyContent: "center" },
-  cancelText: { fontSize: 16, color: colors.inkSoft },
-  publishButton: { minHeight: 44, minWidth: 104, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: colors.ink },
-  publishButtonDisabled: { opacity: 0.45 },
-  publishText: { fontSize: 16, color: colors.white, fontWeight: "700" },
+  inlineSendButton: {
+    width: 40,
+    height: 40,
+    marginBottom: 5,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.ink
+  },
+  inlineSendButtonDisabled: {
+    backgroundColor: colors.faint
+  },
+  inlineComposerError: {
+    marginHorizontal: spacing.lg,
+    marginTop: -3,
+    marginBottom: 7,
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.accent
+  },
+  keyboardPlaceholder: {
+    paddingHorizontal: 8,
+    paddingTop: 7,
+    paddingBottom: 13,
+    backgroundColor: "#D8D9DD"
+  },
+  keyboardSuggestionRow: {
+    height: 35,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between"
+  },
+  keyboardSuggestionKey: {
+    width: 34,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: "rgba(255,255,255,0.74)"
+  },
+  keyboardDismissKey: {
+    width: 34,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.42)"
+  },
+  keyboardDismissMark: {
+    width: 14,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.inkSoft
+  },
+  keyboardRow: {
+    minHeight: 44,
+    marginTop: 7,
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 6
+  },
+  keyboardKey: {
+    flex: 1,
+    maxWidth: 37,
+    height: 42,
+    borderRadius: 8,
+    backgroundColor: colors.surface
+  },
+  keyboardWideKey: { flex: 1.35, maxWidth: 52, backgroundColor: "#EEF0F3" },
+  keyboardGlobeKey: { flex: 0.92, maxWidth: 43, backgroundColor: "#EEF0F3" },
+  keyboardSpaceKey: { flex: 4.2, maxWidth: 210 },
+  keyboardReturnKey: { flex: 1.8, maxWidth: 78, backgroundColor: "#EEF0F3" },
   emptyContinuation: { paddingHorizontal: 24, paddingVertical: 28, alignItems: "center" },
   emptyTitle: { textAlign: "center", fontSize: 16, lineHeight: 22, color: colors.profileMuted },
   emptyButton: { marginTop: 14, minHeight: 42, borderRadius: 21, paddingHorizontal: 18, justifyContent: "center", backgroundColor: colors.ink },
