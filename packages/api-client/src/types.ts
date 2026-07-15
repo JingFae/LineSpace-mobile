@@ -51,6 +51,8 @@ export type PoemStatus = "growing" | "final" | "draft";
 
 export type ComposeMode = "draft" | "relay";
 
+export type DraftVisibility = "public" | "include" | "exclude";
+
 export type PoemDraftStatus = "editing" | "ready" | "published";
 
 export type PoemTypographyId = "literary-serif" | "handwritten" | "clean-sans";
@@ -100,8 +102,11 @@ export type PoemDraftMedia = {
 export type PoemDraftSettings = {
   declareOriginal: boolean;
   isPublic: boolean;
+  visibility: DraftVisibility;
+  audienceUserIds: string[];
   allowComments: boolean;
   allowQuotes: boolean;
+  allowSharing: boolean;
   allowSave: boolean;
 };
 
@@ -122,6 +127,7 @@ export type PoemDraft = {
   body: string;
   byline: string;
   tags: string[];
+  mentions: string[];
   media?: PoemDraftMedia;
   settings: PoemDraftSettings;
   layout: PoemLayoutConfig;
@@ -143,6 +149,7 @@ export type UpdatePoemDraftInput = {
   body?: string;
   byline?: string;
   tags?: string[];
+  mentions?: string[];
   media?: PoemDraftMedia | null;
   settings?: Partial<PoemDraftSettings>;
   layout?: PoemLayoutConfig;
@@ -179,6 +186,16 @@ export type PublishPoemDraftInput = {
 export type PublishPoemDraftResult = {
   draft: PoemDraft;
   poem: PoemSummary;
+};
+
+export type PublishThreadDraftInput = {
+  draftId: string;
+  userId: string;
+};
+
+export type PublishThreadDraftResult = {
+  draft: PoemDraft;
+  thread: PoetryThread;
 };
 
 export type SavePoemDraftInput = {
@@ -404,6 +421,12 @@ export type PoemSummary = {
   author: UserProfile;
   contributorsCount: number;
   tags: string[];
+  mentions?: string[];
+  visibility?: DraftVisibility;
+  audienceUserIds?: string[];
+  declareOriginal?: boolean;
+  allowComments?: boolean;
+  allowSharing?: boolean;
   status: PoemStatus;
   startedAt: string;
   editedAt?: string;
@@ -504,7 +527,13 @@ export type ThreadMetrics = {
 export type PoetryThread = {
   id: string;
   author: UserProfile;
+  title?: string;
   content: string;
+  rules?: string;
+  tags?: string[];
+  mentions?: string[];
+  visibility?: DraftVisibility;
+  audienceUserIds?: string[];
   createdAt: string;
   community?: string;
   topic?: string;

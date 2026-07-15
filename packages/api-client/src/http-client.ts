@@ -20,6 +20,8 @@ import type {
   PoemSummary,
   PublishPoemDraftInput,
   PublishPoemDraftResult,
+  PublishThreadDraftInput,
+  PublishThreadDraftResult,
   SharePoemInput,
   SharePoemResult,
   SavePoemDraftInput,
@@ -119,6 +121,14 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     const { draftId, ...request } = input;
     return this.postJson<PublishPoemDraftResult>(
       `/v1/drafts/${encodeURIComponent(draftId)}/publish`,
+      request
+    );
+  }
+
+  async publishThreadDraft(input: PublishThreadDraftInput): Promise<PublishThreadDraftResult> {
+    const { draftId, ...request } = input;
+    return this.postJson<PublishThreadDraftResult>(
+      `/v1/drafts/${encodeURIComponent(draftId)}/thread-publish`,
       request
     );
   }

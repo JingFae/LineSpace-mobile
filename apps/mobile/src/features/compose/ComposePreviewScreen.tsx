@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Modal,
   Pressable,
+  Share,
   ScrollView,
   StyleSheet,
   Text,
@@ -25,9 +26,11 @@ import type {
   PoemDesignCatalog,
   PoemDraft,
   PoemLayoutConfig,
-  PoemTypographyId
+  PoemTypographyId,
+  PoemDraftSettings
 } from "@linespace/api-client";
 import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
+import { VisibilityAudienceSheet } from "./VisibilityAudienceSheet";
 
 type SearchParamValue = string | string[] | undefined;
 
@@ -43,6 +46,9 @@ export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
   const [activeTool, setActiveTool] = useState<LayoutTool>("template");
   const [layout, setLayout] = useState<PoemLayoutConfig | null>(null);
   const [finishOpen, setFinishOpen] = useState(false);
+  const [audienceOpen, setAudienceOpen] = useState(false);
+  const [step, setStep] = useState<2 | 3>(2);
+  const [settings, setSettings] = useState<PoemDraftSettings | null>(null);
 
   const draftQuery = useQuery({
     queryKey: ["compose-draft", draftId],
@@ -67,17 +73,21 @@ export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
       if (layout) {
         await lineSpaceApi.updatePoemDraft({ draftId, userId: currentUserId, layout });
       }
+      if (draftQuery.data?.mode === "relay") return lineSpaceApi.publishThreadDraft({ draftId, userId: currentUserId });
       return lineSpaceApi.publishPoemDraft({ draftId, userId: currentUserId });
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["feed"] });
-      router.replace("/(tabs)/discover" as Href);
+      router.replace(draftQuery.data?.mode === "relay" ? "/" : "/(tabs)/discover" as Href);
     }
   });
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (layout) {
         await lineSpaceApi.updatePoemDraft({ draftId, userId: currentUserId, layout });
+      }
+      if (settings) {
+        await lineSpaceApi.updatePoemDraft({ draftId, userId: currentUserId, settings });
       }
       return lineSpaceApi.savePoemDraft({ draftId, userId: currentUserId });
     },
@@ -91,7 +101,8 @@ export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
 
   useEffect(() => {
     if (draftQuery.data && !layout) setLayout(draftQuery.data.layout);
-  }, [draftQuery.data, layout]);
+    if (draftQuery.data && !settings) setSettings(draftQuery.data.settings);
+  }, [draftQuery.data, layout, settings]);
 
   const selectLayout = (nextLayout: PoemLayoutConfig) => {
     setLayout(nextLayout);
@@ -105,11 +116,11 @@ export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
           <Text style={styles.closeGlyph}>×</Text>
         </Pressable>
         <View style={styles.headerCopy}>
-          <Text style={styles.headerTitle}>layout</Text>
-          <Text style={styles.headerSubtitle}>make the poem feel like yours</Text>
+          <Text style={styles.headerTitle}>{step === 2 ? "layout" : "post settings"}</Text>
+          <Text style={styles.headerSubtitle}>{step === 2 ? "02 · make the poem feel like yours" : "03 · set the audience and permissions"}</Text>
         </View>
-        <Pressable accessibilityRole="button" disabled={!draftId || publishMutation.isPending || saveMutation.isPending} onPress={() => setFinishOpen(true)} style={styles.doneButton}>
-          {publishMutation.isPending || saveMutation.isPending ? <ActivityIndicator color={colors.profileMuted} /> : <Text style={styles.doneText}>done</Text>}
+        <Pressable accessibilityRole="button" disabled={!draftId || publishMutation.isPending || saveMutation.isPending} onPress={() => { if (step === 2) setStep(3); else setFinishOpen(true); }} style={styles.doneButton}>
+          {publishMutation.isPending || saveMutation.isPending ? <ActivityIndicator color={colors.profileMuted} /> : <Text style={styles.doneText}>{step === 2 ? "next" : "finish"}</Text>}
         </Pressable>
       </View>
 
@@ -117,6 +128,8 @@ export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
         <View style={styles.centerState}>
           {draftQuery.isLoading ? <ActivityIndicator color={colors.ink} /> : <Text style={styles.errorText}>The draft could not be opened.</Text>}
         </View>
+      ) : step === 3 && settings ? (
+        <PrivacySettingsStage mode={draftQuery.data.mode} settings={settings} onAudience={() => setAudienceOpen(true)} onChange={setSettings} onNext={() => setFinishOpen(true)} />
       ) : !catalogQuery.data || !layout ? (
         <View style={styles.centerState}><ActivityIndicator color={colors.ink} /></View>
       ) : (
@@ -140,12 +153,27 @@ export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
         onSave={() => saveMutation.mutate()}
         visible={finishOpen}
       />
+      {settings ? <VisibilityAudienceSheet onChange={setSettings} onClose={() => setAudienceOpen(false)} settings={settings} visible={audienceOpen} /> : null}
     </AppScreen>
   );
 }
 
+function PrivacySettingsStage({ mode, settings, onChange, onAudience, onNext }: { mode: "draft" | "relay"; settings: PoemDraftSettings; onChange: (settings: PoemDraftSettings) => void; onAudience: () => void; onNext: () => void }) {
+  const toggle = (key: "declareOriginal" | "allowComments" | "allowSharing") => onChange({ ...settings, [key]: !settings[key] });
+  return <ScrollView contentContainerStyle={styles.settingsStage} showsVerticalScrollIndicator={false}><Text style={styles.stageEyebrow}>03 · POST SETTINGS</Text><Text style={styles.stageTitle}>Choose how this {mode === "relay" ? "relay" : "post"} meets the world.</Text><Text style={styles.stageHint}>These choices are saved with your draft and can be changed before publishing.</Text><Pressable onPress={onAudience} style={styles.audienceSetting}><View><Text style={styles.settingLabel}>Visibility</Text><Text style={styles.settingValue}>{settings.visibility === "public" ? "Everyone" : settings.visibility === "include" ? `Only ${settings.audienceUserIds.length || "selected"} people` : `Everyone except ${settings.audienceUserIds.length || "selected"}`}</Text></View><Text style={styles.settingChevron}>›</Text></Pressable><SettingToggle label="Declare as original" value={settings.declareOriginal} onPress={() => toggle("declareOriginal")} /><SettingToggle label="Allow comments" value={settings.allowComments} onPress={() => toggle("allowComments")} /><SettingToggle label="Allow sharing" value={settings.allowSharing} onPress={() => toggle("allowSharing")} /><Pressable onPress={onNext} style={styles.settingsNext}><Text style={styles.settingsNextText}>Continue to finish</Text><Text style={styles.settingsNextArrow}>→</Text></Pressable></ScrollView>;
+}
+
+function SettingToggle({ label, value, onPress }: { label: string; value: boolean; onPress: () => void }) {
+  return <Pressable accessibilityRole="switch" accessibilityState={{ checked: value }} onPress={onPress} style={styles.settingToggle}><Text style={styles.settingLabel}>{label}</Text><View style={[styles.switchTrack, value && styles.switchTrackOn]}><View style={[styles.switchThumb, value && styles.switchThumbOn]} /></View></Pressable>;
+}
+
 function FinishDraftSheet({ visible, isBusy, onClose, onPublish, onSave }: { visible: boolean; isBusy: boolean; onClose: () => void; onPublish: () => void; onSave: () => void }) {
-  return <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}><View style={styles.finishRoot}><Pressable accessibilityLabel="Close publish choices" onPress={onClose} style={styles.finishBackdrop} /><View style={styles.finishSheet}><View style={styles.finishHandle} /><Text style={styles.finishEyebrow}>ONE LAST CHOICE</Text><Text style={styles.finishTitle}>What would you like to do with this line?</Text><Text style={styles.finishHint}>You can keep editing a saved draft or make it visible to the community.</Text><Pressable accessibilityRole="button" disabled={isBusy} onPress={onPublish} style={styles.publishChoice}><Text style={styles.publishChoiceTitle}>Publish</Text><Text style={styles.publishChoiceHint}>Share this post now</Text></Pressable><Pressable accessibilityRole="button" disabled={isBusy} onPress={onSave} style={styles.saveChoice}><Text style={styles.saveChoiceTitle}>Save to draft</Text><Text style={styles.saveChoiceHint}>Keep it private and return later</Text></Pressable><Pressable accessibilityRole="button" disabled={isBusy} onPress={onClose} style={styles.cancelChoice}><Text style={styles.cancelText}>Not yet</Text></Pressable></View></View></Modal>;
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportDraft = async (format: "PDF" | "JPG") => {
+    setExportOpen(false);
+    await Share.share({ message: `LineSpace ${format} export\n\nYour finished composition is ready to export from the rendered layout.` });
+  };
+  return <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}><View style={styles.finishRoot}><Pressable accessibilityLabel="Close publish choices" onPress={onClose} style={styles.finishBackdrop} /><View style={styles.finishSheet}><View style={styles.finishHandle} /><Text style={styles.finishEyebrow}>04 · FINISH</Text><Text style={styles.finishTitle}>How would you like to carry it forward?</Text><Text style={styles.finishHint}>Publish to LineSpace, keep a private draft, or export this layout for elsewhere.</Text><Pressable accessibilityRole="button" disabled={isBusy} onPress={onPublish} style={styles.publishChoice}><Text style={styles.publishChoiceTitle}>Publish</Text><Text style={styles.publishChoiceHint}>Make this {"post"} visible now</Text></Pressable><Pressable accessibilityRole="button" disabled={isBusy} onPress={onSave} style={styles.saveChoice}><Text style={styles.saveChoiceTitle}>Save to draft</Text><Text style={styles.saveChoiceHint}>Keep editing privately</Text></Pressable><Pressable accessibilityRole="button" disabled={isBusy} onPress={() => setExportOpen((value) => !value)} style={styles.exportChoice}><Text style={styles.exportChoiceTitle}>Export</Text><Text style={styles.exportChoiceHint}>Use the designed layout as PDF or JPG</Text></Pressable>{exportOpen ? <View style={styles.exportRow}><Pressable onPress={() => void exportDraft("PDF")} style={styles.exportButton}><Text style={styles.exportButtonText}>PDF</Text></Pressable><Pressable onPress={() => void exportDraft("JPG")} style={styles.exportButton}><Text style={styles.exportButtonText}>JPG</Text></Pressable></View> : null}<Pressable accessibilityRole="button" disabled={isBusy} onPress={onClose} style={styles.cancelChoice}><Text style={styles.cancelText}>Not yet</Text></Pressable></View></View></Modal>;
 }
 
 function LayoutWorkspace({
@@ -302,5 +330,6 @@ const styles = StyleSheet.create({
   centerState: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 20 },
   errorText: { color: colors.accent, fontSize: 13, lineHeight: 18 },
   floatingError: { position: "absolute", left: 20, right: 20, bottom: 215, padding: 10, borderRadius: radius.md, overflow: "hidden", backgroundColor: "rgba(255,255,255,0.94)", color: colors.accent, fontSize: 11, lineHeight: 15, textAlign: "center" },
-  finishRoot: { flex: 1, justifyContent: "flex-end" }, finishBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.3)" }, finishSheet: { paddingHorizontal: 20, paddingBottom: 28, borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: colors.surface }, finishHandle: { alignSelf: "center", width: 42, height: 4, marginTop: 9, borderRadius: radius.pill, backgroundColor: colors.faint }, finishEyebrow: { marginTop: 20, color: colors.profileMuted, fontSize: 10, letterSpacing: 1.2 }, finishTitle: { marginTop: 8, color: colors.ink, fontSize: 24, lineHeight: 30 }, finishHint: { marginTop: 8, color: colors.profileMuted, fontSize: 13, lineHeight: 18 }, publishChoice: { marginTop: 22, padding: 16, borderRadius: 14, backgroundColor: colors.black }, publishChoiceTitle: { color: colors.white, fontSize: 18 }, publishChoiceHint: { marginTop: 3, color: "rgba(255,255,255,0.65)", fontSize: 12 }, saveChoice: { marginTop: 10, padding: 16, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white }, saveChoiceTitle: { color: colors.ink, fontSize: 18 }, saveChoiceHint: { marginTop: 3, color: colors.profileMuted, fontSize: 12 }, cancelChoice: { marginTop: 10, alignItems: "center", padding: 13 }, cancelText: { color: colors.profileMuted, fontSize: 14 }
+  settingsStage: { padding: 20, paddingBottom: 36 }, stageEyebrow: { color: colors.profileMuted, fontSize: 10, letterSpacing: 1.4 }, stageTitle: { marginTop: 9, color: colors.ink, fontSize: 27, lineHeight: 34, fontWeight: "600" }, stageHint: { marginTop: 9, color: colors.profileMuted, fontSize: 13, lineHeight: 19 }, audienceSetting: { minHeight: 76, marginTop: 24, padding: 16, borderRadius: 16, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, settingLabel: { color: colors.ink, fontSize: 16, lineHeight: 21 }, settingValue: { marginTop: 4, color: colors.profileMuted, fontSize: 12, lineHeight: 16 }, settingChevron: { color: colors.ink, fontSize: 28 }, settingToggle: { minHeight: 62, paddingHorizontal: 16, marginTop: 10, borderRadius: 16, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, switchTrack: { width: 50, height: 29, paddingHorizontal: 1, borderRadius: radius.pill, backgroundColor: "#D9D9D9", justifyContent: "center" }, switchTrackOn: { backgroundColor: "#50B973" }, switchThumb: { width: 27, height: 27, borderRadius: 14, backgroundColor: colors.white, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.faint }, switchThumbOn: { alignSelf: "flex-end" }, settingsNext: { minHeight: 56, marginTop: 24, paddingHorizontal: 18, borderRadius: 16, backgroundColor: colors.ink, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, settingsNextText: { color: colors.white, fontSize: 16, fontWeight: "600" }, settingsNextArrow: { color: colors.white, fontSize: 22 },
+  finishRoot: { flex: 1, justifyContent: "flex-end" }, finishBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.3)" }, finishSheet: { paddingHorizontal: 20, paddingBottom: 28, borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: colors.surface }, finishHandle: { alignSelf: "center", width: 42, height: 4, marginTop: 9, borderRadius: radius.pill, backgroundColor: colors.faint }, finishEyebrow: { marginTop: 20, color: colors.profileMuted, fontSize: 10, letterSpacing: 1.2 }, finishTitle: { marginTop: 8, color: colors.ink, fontSize: 24, lineHeight: 30 }, finishHint: { marginTop: 8, color: colors.profileMuted, fontSize: 13, lineHeight: 18 }, publishChoice: { marginTop: 22, padding: 16, borderRadius: 14, backgroundColor: colors.black }, publishChoiceTitle: { color: colors.white, fontSize: 18 }, publishChoiceHint: { marginTop: 3, color: "rgba(255,255,255,0.65)", fontSize: 12 }, saveChoice: { marginTop: 10, padding: 16, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white }, saveChoiceTitle: { color: colors.ink, fontSize: 18 }, saveChoiceHint: { marginTop: 3, color: colors.profileMuted, fontSize: 12 }, exportChoice: { marginTop: 10, padding: 16, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surfaceWarm }, exportChoiceTitle: { color: colors.ink, fontSize: 18 }, exportChoiceHint: { marginTop: 3, color: colors.profileMuted, fontSize: 12 }, exportRow: { marginTop: 8, flexDirection: "row", gap: 8 }, exportButton: { flex: 1, padding: 12, borderRadius: 12, backgroundColor: colors.white, alignItems: "center", borderWidth: 1, borderColor: colors.line }, exportButtonText: { color: colors.ink, fontSize: 13, fontWeight: "600" }, cancelChoice: { marginTop: 10, alignItems: "center", padding: 13 }, cancelText: { color: colors.profileMuted, fontSize: 14 }
 });

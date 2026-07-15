@@ -24,7 +24,11 @@ create table if not exists poem_drafts (
   media_url text,
   media_kind varchar(16) check (media_kind in ('image', 'video')),
   media_name text,
-  settings jsonb not null default '{"declareOriginal":false,"isPublic":true,"allowComments":true,"allowQuotes":true,"allowSave":true}'::jsonb,
+  mentions jsonb not null default '[]'::jsonb,
+  visibility varchar(16) not null default 'public' check (visibility in ('public', 'include', 'exclude')),
+  audience_user_ids jsonb not null default '[]'::jsonb,
+  allow_sharing boolean not null default true,
+  settings jsonb not null default '{"declareOriginal":false,"isPublic":true,"visibility":"public","audienceUserIds":[],"allowComments":true,"allowQuotes":true,"allowSharing":true,"allowSave":true}'::jsonb,
   template_id text references poem_design_templates(id),
   typography_id text not null default 'literary-serif',
   background_id text not null default 'letter-paper',
@@ -80,7 +84,8 @@ create or replace function touch_poem_draft()
 returns trigger language plpgsql as $$
 begin
   new.updated_at = now();
-  if row(new.title, new.body, new.byline, new.tags, new.settings, new.template_id,
+  if row(new.title, new.body, new.byline, new.tags, new.mentions, new.visibility,
+         new.audience_user_ids, new.allow_sharing, new.settings, new.template_id,
          new.typography_id, new.background_id, new.sticker_ids)
      is distinct from
      row(old.title, old.body, old.byline, old.tags, old.settings, old.template_id,

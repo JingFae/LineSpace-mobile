@@ -724,6 +724,7 @@ function ThreadCard({
         <View style={styles.threadBody}>
           <Pressable accessibilityRole="button" onPress={onOpen} style={styles.threadOpenArea}>
             <CompactAuthorLine author={thread.author} createdAt={thread.createdAt} meta={showFullMeta ? thread.community : undefined} />
+            {thread.title ? <Text numberOfLines={2} style={styles.threadTitle}>{thread.title}</Text> : null}
             <Text numberOfLines={showFullMeta ? undefined : 20} style={styles.threadContent}>{creativeThread.writingPrompt}</Text>
           </Pressable>
           <StartingContentCard
@@ -788,6 +789,7 @@ function ThreadDetailHero({
           </Text>
         </Pressable>
       </View>
+      {thread.title ? <Text style={styles.detailHeroTitle}>{thread.title}</Text> : null}
       <Text style={styles.detailHeroContent}>{creativeThread.writingPrompt}</Text>
       <StartingContentCard
         contributors={contributors}
@@ -2116,7 +2118,8 @@ const styles = StyleSheet.create({
   compactAuthorName: { maxWidth: "58%", fontSize: 15, lineHeight: 19, fontWeight: "700", color: colors.ink },
   compactMetaText: { flexShrink: 1, maxWidth: "34%", marginLeft: 6, fontSize: 14, lineHeight: 18, color: colors.inkSoft },
   compactTimeText: { marginLeft: 6, fontSize: 14, lineHeight: 18, color: colors.profileMuted },
-  threadContent: { marginTop: 2, maxWidth: "100%", fontSize: 15, lineHeight: 21, color: colors.ink },
+  threadTitle: { marginTop: 8, color: colors.ink, fontFamily: "Georgia", fontSize: 18, lineHeight: 23, fontWeight: "600" },
+  threadContent: { marginTop: 3, maxWidth: "100%", fontSize: 15, lineHeight: 21, color: colors.ink },
   topicText: { marginTop: 5, fontSize: 13, lineHeight: 17, color: colors.profileMuted },
   startingContentCard: {
     position: "relative",
@@ -2247,6 +2250,7 @@ const styles = StyleSheet.create({
   followingButton: { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.profileMuted, backgroundColor: colors.surface },
   followButtonText: { fontSize: 13, lineHeight: 17, fontWeight: "600", color: colors.white },
   followingButtonText: { color: colors.profileMuted },
+  detailHeroTitle: { marginTop: 14, color: colors.ink, fontFamily: "Georgia", fontSize: 24, lineHeight: 30, fontWeight: "600" },
   detailHeroContent: { marginTop: 10, fontSize: 15, lineHeight: 21, color: colors.ink },
   detailHeroTag: { marginTop: 5, fontSize: 13, lineHeight: 17, color: colors.profileMuted },
   continuationHeader: {

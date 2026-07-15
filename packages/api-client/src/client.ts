@@ -32,6 +32,8 @@ import type {
   PoetryThread,
   PublishPoemDraftInput,
   PublishPoemDraftResult,
+  PublishThreadDraftInput,
+  PublishThreadDraftResult,
   SharePoemInput,
   SharePoemResult,
   SavePoemDraftInput,
@@ -70,6 +72,7 @@ export interface LineSpaceApi {
   listDraftInviteCandidates(userId: string): Promise<UserConnectionPage["items"]>;
   inviteDraftCollaborator(input: InviteDraftCollaboratorInput): Promise<DraftInvitation>;
   publishPoemDraft(input: PublishPoemDraftInput): Promise<PublishPoemDraftResult>;
+  publishThreadDraft(input: PublishThreadDraftInput): Promise<PublishThreadDraftResult>;
   savePoemDraft(input: SavePoemDraftInput): Promise<PoemDraft>;
   listUserDrafts(userId: string): Promise<UserDraftPage>;
   listFeed(query?: FeedQuery): Promise<PoemSummary[]>;
@@ -126,6 +129,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
   private draftSequence = 0;
   private continuationSequence = 0;
   private shareSequence = 0;
+  private threadSequence = 0;
 
   async getPoemDesignCatalog(): Promise<PoemDesignCatalog> {
     return cloneDesignCatalog(mockPoemDesignCatalog);
@@ -147,11 +151,15 @@ export class MockLineSpaceApi implements LineSpaceApi {
       body: "",
       byline: owner.displayName,
       tags: [],
+      mentions: [],
       settings: {
         declareOriginal: false,
         isPublic: true,
+        visibility: "public",
+        audienceUserIds: [],
         allowComments: true,
         allowQuotes: true,
+        allowSharing: true,
         allowSave: true
       },
       layout: cloneLayout(mockPoemDesignCatalog.templates[0]!.layout),
@@ -183,6 +191,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
     if (input.body !== undefined) draft.body = input.body;
     if (input.byline !== undefined) draft.byline = input.byline;
     if (input.tags !== undefined) draft.tags = [...input.tags];
+    if (input.mentions !== undefined) draft.mentions = [...input.mentions];
     if (input.media !== undefined) draft.media = input.media ? { ...input.media } : undefined;
     if (input.settings) draft.settings = { ...draft.settings, ...input.settings };
     if (input.layout) draft.layout = cloneLayout(input.layout);
@@ -252,6 +261,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
 
   async publishPoemDraft(input: PublishPoemDraftInput): Promise<PublishPoemDraftResult> {
     const draft = this.requireEditableDraft(input.draftId, input.userId);
+    if (draft.mode === "relay") throw new Error("Relay drafts must be published as threads");
     const owner = this.profiles.find((profile) => profile.id === draft.ownerId)!;
     const now = new Date().toISOString();
     const poem: PoemSummary = {
@@ -261,6 +271,12 @@ export class MockLineSpaceApi implements LineSpaceApi {
       author: profileToUser(owner),
       contributorsCount: draft.collaborators.length,
       tags: [...draft.tags],
+      mentions: [...draft.mentions],
+      visibility: draft.settings.visibility,
+      audienceUserIds: [...draft.settings.audienceUserIds],
+      declareOriginal: draft.settings.declareOriginal,
+      allowComments: draft.settings.allowComments,
+      allowSharing: draft.settings.allowSharing,
       status: "growing",
       startedAt: draft.createdAt,
       editedAt: now,
@@ -299,6 +315,51 @@ export class MockLineSpaceApi implements LineSpaceApi {
     return { draft: cloneDraft(draft), poem: clonePoem(poem) };
   }
 
+  async publishThreadDraft(input: PublishThreadDraftInput): Promise<PublishThreadDraftResult> {
+    const draft = this.requireEditableDraft(input.draftId, input.userId);
+    if (draft.mode !== "relay") throw new Error("Post drafts must be published as posts");
+    const owner = this.profiles.find((profile) => profile.id === draft.ownerId);
+    if (!owner) throw new Error("Thread owner was not found");
+    const now = new Date().toISOString();
+    const thread: PoetryThread = {
+      id: `thread-draft-${++this.threadSequence}`,
+      author: profileToUser(owner),
+      title: draft.title.trim() || undefined,
+      content: draft.body.trim() || "A new poem relay is waiting for its first line.",
+      rules: draft.body.trim() || undefined,
+      tags: [...draft.tags],
+      mentions: [...draft.mentions],
+      visibility: draft.settings.visibility,
+      audienceUserIds: [...draft.settings.audienceUserIds],
+      createdAt: now,
+      topic: draft.tags[0],
+      status: "open",
+      cover: { tone: draft.layout.backgroundId === "midnight" ? "night" : "paper" },
+      metrics: { likes: 0, continuations: 0, shares: 0 },
+      viewer: { liked: false }
+    };
+    draft.status = "published";
+    draft.updatedAt = now;
+    draft.version += 1;
+    this.threads.unshift(thread);
+    const profileContent = mockUserProfileContent[owner.id];
+    if (profileContent) {
+      profileContent.threads.unshift({
+        id: `profile-${thread.id}`,
+        kind: "thread",
+        threadId: thread.id,
+        title: thread.title ?? "Untitled poem relay",
+        excerpt: thread.content,
+        tags: [...thread.tags ?? []],
+        finishedAt: now,
+        highlightCount: 0,
+        threadRelation: "started"
+      });
+      owner.contentCounts.threads += 1;
+    }
+    return { draft: cloneDraft(draft), thread: cloneThread(thread) };
+  }
+
   async savePoemDraft(input: SavePoemDraftInput): Promise<PoemDraft> {
     const draft = this.requireEditableDraft(input.draftId, input.userId);
     if (draft.status === "published") {
@@ -325,7 +386,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
 
   async listFeed(query: FeedQuery = {}): Promise<PoemSummary[]> {
     const { filter, viewerId } = query;
-    let poems = this.poems;
+    let poems = this.poems.filter((poem) => canViewContent(poem.visibility, poem.audienceUserIds, poem.author.id, viewerId));
 
     if (filter === "final") {
       poems = poems.filter((poem) => poem.status === "final");
@@ -342,7 +403,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
 
   async getPoem(id: string, viewerId?: string): Promise<PoemSummary | null> {
     const poem = this.poems.find((item) => item.id === id);
-    return poem ? this.withViewer(poem, viewerId) : null;
+    return poem && canViewContent(poem.visibility, poem.audienceUserIds, poem.author.id, viewerId) ? this.withViewer(poem, viewerId) : null;
   }
 
   async createPoemComment(input: CreatePoemCommentInput): Promise<PoemComment> {
@@ -663,7 +724,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
 
   async listThreads(query: ThreadFeedQuery = {}): Promise<PoetryThread[]> {
     const viewerId = query.viewerId;
-    let threads = this.threads;
+    let threads = this.threads.filter((thread) => canViewContent(thread.visibility, thread.audienceUserIds, thread.author.id, viewerId));
 
     if (query.sort === "latest") {
       threads = [...threads].sort(
@@ -685,7 +746,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
 
   async getThread(threadId: string, viewerId?: string): Promise<ThreadDetail | null> {
     const thread = this.threads.find((item) => item.id === threadId);
-    if (!thread) return null;
+    if (!thread || !canViewContent(thread.visibility, thread.audienceUserIds, thread.author.id, viewerId)) return null;
     return {
       thread: this.withThreadViewer(thread, viewerId),
       continuations: this.continuations
@@ -701,7 +762,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
     const current = this.continuations.find((item) => item.id === continuationId);
     if (!current) return null;
     const thread = this.threads.find((item) => item.id === current.threadId);
-    if (!thread) return null;
+    if (!thread || !canViewContent(thread.visibility, thread.audienceUserIds, thread.author.id, viewerId)) return null;
 
     return {
       thread: this.withThreadViewer(thread, viewerId),
@@ -721,7 +782,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
     const thread = this.threads.find((item) => item.id === input.threadId);
     const author = this.profiles.find((profile) => profile.id === input.userId);
     const content = input.content.trim();
-    if (!thread || !author || content.length === 0) {
+    if (!thread || !author || !canViewContent(thread.visibility, thread.audienceUserIds, thread.author.id, input.userId) || content.length === 0) {
       throw new Error("Thread continuation cannot be created");
     }
 
@@ -1070,6 +1131,9 @@ function cloneThread(thread: PoetryThread): PoetryThread {
   return {
     ...thread,
     author: { ...thread.author },
+    tags: thread.tags ? [...thread.tags] : undefined,
+    mentions: thread.mentions ? [...thread.mentions] : undefined,
+    audienceUserIds: thread.audienceUserIds ? [...thread.audienceUserIds] : undefined,
     cover: thread.cover ? { ...thread.cover } : undefined,
     metrics: { ...thread.metrics },
     viewer: { ...thread.viewer }
@@ -1112,6 +1176,9 @@ function clonePoem(poem: PoemSummary): PoemSummary {
   return {
     ...poem,
     author: { ...poem.author },
+    tags: [...poem.tags],
+    mentions: poem.mentions ? [...poem.mentions] : undefined,
+    audienceUserIds: poem.audienceUserIds ? [...poem.audienceUserIds] : undefined,
     metrics: { ...poem.metrics },
     viewer: { ...poem.viewer },
     credits: poem.credits
@@ -1227,12 +1294,20 @@ function cloneLayout(layout: PoemDraft["layout"]): PoemDraft["layout"] {
   return { ...layout, stickerIds: [...layout.stickerIds] };
 }
 
+function canViewContent(visibility: PoemSummary["visibility"], audienceUserIds: string[] | undefined, ownerId: string, viewerId: string | undefined) {
+  if (!visibility || visibility === "public") return true;
+  if (viewerId === ownerId) return true;
+  const selected = audienceUserIds ?? [];
+  return visibility === "include" ? Boolean(viewerId && selected.includes(viewerId)) : Boolean(!viewerId || !selected.includes(viewerId));
+}
+
 function cloneDraft(draft: PoemDraft): PoemDraft {
   return {
     ...draft,
     tags: [...draft.tags],
+    mentions: [...draft.mentions],
     media: draft.media ? { ...draft.media } : undefined,
-    settings: { ...draft.settings },
+    settings: { ...draft.settings, audienceUserIds: [...draft.settings.audienceUserIds] },
     layout: cloneLayout(draft.layout),
     collaborators: draft.collaborators.map((item) => ({
       ...item,

@@ -12,6 +12,7 @@ import {
   type InviteDraftCollaboratorInput,
   type PoemCollectionKind,
   type PublishPoemDraftInput,
+  type PublishThreadDraftInput,
   type UpdatePoemDraftInput,
   type UpdateContinuationLikeInput,
   type UpdateThreadLikeInput,
@@ -280,6 +281,20 @@ export async function handleApiRequest(
           200,
           await api.publishPoemDraft({
             draftId: draftRoute.draftId,
+            userId: actor.user.id
+          })
+        );
+      }
+
+      if (method === "POST" && draftRoute.resource === "thread-publish") {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        const request = body as Omit<PublishThreadDraftInput, "draftId" | "userId">;
+        return json(
+          200,
+          await api.publishThreadDraft({
+            draftId: draftRoute.draftId,
+            ...request,
             userId: actor.user.id
           })
         );
@@ -604,7 +619,7 @@ function parsePoemCollectionRoute(pathname: string): ParsedCollectionRoute | nul
 
 type ParsedDraftRoute = {
   draftId: string;
-  resource: "draft" | "operations" | "invitations" | "publish" | "save";
+  resource: "draft" | "operations" | "invitations" | "publish" | "thread-publish" | "save";
 };
 
 function parseDraftRoute(pathname: string): ParsedDraftRoute | null {
@@ -616,7 +631,7 @@ function parseDraftRoute(pathname: string): ParsedDraftRoute | null {
   const resource = segments[3];
   if (
     segments.length === 4 &&
-    (resource === "operations" || resource === "invitations" || resource === "publish" || resource === "save")
+    (resource === "operations" || resource === "invitations" || resource === "publish" || resource === "thread-publish" || resource === "save")
   ) {
     return { draftId: segments[2], resource };
   }
