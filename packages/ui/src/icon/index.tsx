@@ -99,6 +99,36 @@ export function SearchIcon({ width = 22, height = 22, color = "#000000" }: Figma
   return <Svg width={width} height={height} viewBox="0 0 22 22"><Path d={searchPath} fill={color} /></Svg>;
 }
 
+export function LineSpaceLogoIcon({ width = 75, height = 44, color = "#000000" }: FigmaIconProps) {
+  return (
+    <Svg width={width} height={height} viewBox="0 0 341 198">
+      <Path
+        d="M27.2838 0.310405V166.663L123.414 166.679C124.262 166.713 125.051 166.299 125.882 166.253C132.889 165.86 139.012 165.405 145.837 163.468C171.248 156.264 180.161 133.603 211.467 135.193C243.823 136.835 250.636 172.845 285.411 168.699C306.92 166.133 322.951 141.309 307.548 123.018C296.329 109.698 280.777 113.716 265.671 111.556C231.418 106.66 207.102 76.8988 216.647 41.9316C227.255 3.07053 277.226 -10.6267 310.165 8.66528C326.982 18.514 338.801 37.6611 338.561 57.4165H311.69C311.463 51.0686 308.59 45.0725 304.654 40.2516C294.944 28.3627 276.333 25.5736 262.286 30.5104C240.285 38.2446 233.766 65.7714 255.093 78.6947C267.279 86.0771 279.495 83.3998 292.815 85.2123C328.524 90.0704 350.152 125.642 337.217 159.732C322.806 197.72 269.95 209.252 239.566 183.203C230.19 175.163 230.115 164.838 215.113 163.402C194.307 161.412 186.283 175.158 169.905 183.844C147.875 195.526 122.484 194.914 98.1932 195.237C65.4731 195.667 32.7117 194.873 -0.00842285 195.216V0.310405H27.2755H27.2838Z"
+        fill={color}
+      />
+    </Svg>
+  );
+}
+
+export function BellIcon({ width = 22, height = 22, color = "#000000" }: FigmaIconProps) {
+  return (
+    <Svg width={width} height={height} viewBox="0 0 24 24" fill="none">
+      <Path d="M6.4 10.2C6.4 6.9 8.55 4.4 12 4.4C15.45 4.4 17.6 6.9 17.6 10.2V13.9L19.35 16.6H4.65L6.4 13.9V10.2Z" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M9.7 18.2C10.15 19.05 10.9 19.55 12 19.55C13.1 19.55 13.85 19.05 14.3 18.2" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function MoreIcon({ width = 22, height = 22, color = "#000000" }: FigmaIconProps) {
+  return (
+    <Svg width={width} height={height} viewBox="0 0 24 24">
+      <Circle cx={6.5} cy={12} r={1.45} fill={color} />
+      <Circle cx={12} cy={12} r={1.45} fill={color} />
+      <Circle cx={17.5} cy={12} r={1.45} fill={color} />
+    </Svg>
+  );
+}
+
 export function ShareIcon({ width = 28, height = 28, color = "#000000" }: FigmaIconProps) {
   return <Svg width={width} height={height} viewBox="0 0 28 28"><Path d={sharePath} fill={color} /></Svg>;
 }

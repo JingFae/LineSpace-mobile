@@ -357,7 +357,7 @@ export const mockThreads: PoetryThread[] = [
     community: "Poetry Threads",
     topic: "prompt",
     status: "open",
-    metrics: { likes: 42, continuations: 5, shares: 8, views: 1800 },
+    metrics: { likes: 42, continuations: 6, shares: 8, views: 1800 },
     viewer: { liked: false }
   },
   {
@@ -434,7 +434,17 @@ export const mockThreadContinuations: ThreadContinuation[] = [
     author: threadUsers.roma,
     content: "The rooftops lowered their voices and waited for the sky to confess.",
     createdAt: "2026-07-14T09:20:00.000Z",
-    metrics: { likes: 7, continuations: 0, shares: 0 },
+    metrics: { likes: 7, continuations: 1, shares: 0 },
+    viewer: { liked: false }
+  },
+  {
+    id: "continue-rain-rooftop-child",
+    threadId: "thread-rain-without-rain",
+    parentContinuationId: "continue-rain-rooftop",
+    author: threadUsers.zhihan,
+    content: "Under every eave, a bucket kept practicing the sky.",
+    createdAt: "2026-07-14T09:34:00.000Z",
+    metrics: { likes: 5, continuations: 0, shares: 0 },
     viewer: { liked: false }
   },
   {
