@@ -9,6 +9,7 @@ export type PoemCardModel = {
   title: string;
   lines: string[];
   author: {
+    id: string;
     displayName: string;
     handle: string;
     avatarColor: string;
@@ -38,6 +39,7 @@ type PoemCardProps = {
   poem: PoemCardModel;
   interactionsDisabled?: boolean;
   onPress?: (id: string) => void;
+  onAuthorPress?: (userId: string) => void;
   onCommentPress?: (id: string) => void;
   onContributionPress?: (id: string) => void;
   onLikePress?: (id: string, isLiked: boolean) => void;
@@ -48,6 +50,7 @@ export function PoemCard({
   poem,
   interactionsDisabled,
   onPress,
+  onAuthorPress,
   onCommentPress,
   onContributionPress,
   onLikePress,
@@ -57,7 +60,7 @@ export function PoemCard({
     <View style={styles.root}>
       <Pressable onPress={() => onPress?.(poem.id)} style={styles.contentPressable}>
         <View style={styles.authorRow}>
-          <View style={styles.authorIdentity}>
+          <Pressable accessibilityRole="button" onPress={() => onAuthorPress?.(poem.author.id)} style={styles.authorIdentity}>
             <Avatar
               color={poem.author.avatarColor}
               imageSource={poem.author.avatarUrl ? { uri: poem.author.avatarUrl } : undefined}
@@ -65,7 +68,7 @@ export function PoemCard({
               size={29}
             />
             <Text style={styles.authorName}>{poem.author.displayName}</Text>
-          </View>
+          </Pressable>
           <Text style={styles.contributors}>with {poem.contributorsCount} contributors</Text>
         </View>
 

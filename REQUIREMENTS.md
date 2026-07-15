@@ -35,8 +35,8 @@
 
 | 服务 | 当前状态 | 未来用途 |
 | --- | --- | --- |
-| PostgreSQL | Schema 草案已存在，未接入运行时 | 用户、诗歌、草稿、互动与操作日志持久化 |
-| Supabase | 未接入 | 托管 Postgres、认证、对象存储、Realtime |
+| PostgreSQL | Auth identity 迁移已接入；Feed/社区持久化仍未接入 | 用户、诗歌、草稿、互动与操作日志持久化 |
+| Supabase | Auth 已接入，其他能力未接入 | 托管 Postgres、认证、对象存储、Realtime |
 | OpenAI API | 仅保留 `501` 路由边界 | 写作辅助、标题/标签建议、审核预检 |
 | Redis / Valkey | 未接入 | 分布式限流、队列与后台任务（只有需求出现时再引入） |
 

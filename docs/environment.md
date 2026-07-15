@@ -15,10 +15,19 @@
 | `SUPABASE_PUBLISHABLE_KEY` | 认证 API 必需 | `apps/api` | 服务端调用公开 Auth API 的首选 Publishable Key |
 | `SUPABASE_ANON_KEY` | 兼容可选 | `apps/api` | 旧项目的公开 Anon Key；仅在未设置 Publishable Key 时作为回退 |
 | `SUPABASE_SERVICE_ROLE_KEY` | 认证 API 必需 | 只能由 `apps/api` 读取 | 解析 username 到 Auth 用户及撤销 Session；严禁进入客户端 |
-| `AUTH_EMAIL_REDIRECT_URL` | 可选 | `apps/api` | 注册确认邮件完成后返回 LineSpace 的地址，必须加入 Supabase Redirect URLs |
+| `AUTH_EMAIL_REDIRECT_URL` | 可选 | `apps/api` | 注册确认邮件完成后返回 LineSpace 的地址，必须加入 Supabase Redirect URLs；Web 与 Native 应按部署环境分别配置 |
 | `OPENAI_API_KEY` | 未来可选 | 只能由 `apps/api` 读取 | AI 写作与审核；当前路由固定返回 501 |
 
-所有 `EXPO_PUBLIC_*` 变量都会进入客户端产物，只能放公开配置。不要给 Service Role Key 或数据库连接串添加这个前缀。当前认证后端只读取普通服务端变量；前端 Session 接入将在后续阶段完成。
+所有 `EXPO_PUBLIC_*` 变量都会进入客户端产物，只能放公开配置。不要给 Service Role Key 或数据库连接串添加这个前缀。认证后端只读取普通服务端变量。前端由 `AuthSessionProvider` 恢复和刷新 Session：Native Refresh Token 写入 Expo SecureStore，Web 写入 `sessionStorage`，Access Token 仅驻留内存。Web 存储仍可能被 XSS 读取，生产环境应配置 CSP 并避免在 URL、日志或错误中暴露 Token。
+
+## 邮箱确认回跳
+
+Supabase Dashboard → Authentication → URL Configuration → Redirect URLs 至少加入当前环境的两类地址：
+
+- Web 本地：`http://localhost:8081/auth/confirm`；生产：`https://<web-domain>/auth/confirm`。
+- Native：`linespace://auth/confirm`（若使用 Expo Go/开发客户端，也把实际 dev scheme 地址加入允许列表）。
+
+`AUTH_EMAIL_REDIRECT_URL` 是后端注册时传给 Supabase `signUp` 的单一回跳地址。Web 部署使用 Web 地址，Native 独立构建使用 `linespace://auth/confirm`；切换环境后重启 API，使变量生效。当前服务端 Supabase JS 客户端使用 implicit flow：确认回跳页读取 fragment 中的短期 Session、立即从 Web 地址栏清除 fragment，再调用 LineSpace `/v1/auth/me` 验证并建立本地 Session。失败或过期链接只显示通用错误，并提供返回登录/重新注册入口。
 
 ## Mock 模式
 
@@ -54,7 +63,7 @@ pnpm dev:api
 pnpm dev:web
 ```
 
-或将第二条替换为 `pnpm dev`。如果关闭 Mock 却遗漏 `EXPO_PUBLIC_API_BASE_URL`，选择器会回退到 Mock，避免构造无效 HTTP 客户端。HTTP 写接口现在要求 `Authorization: Bearer <access-token>`；当前前端尚未实现登录页面和 Session Provider，因此本阶段主要通过 API 测试和直接 HTTP 请求验证。
+或将第二条替换为 `pnpm dev`。如果关闭 Mock 却遗漏 `EXPO_PUBLIC_API_BASE_URL`，选择器会回退到 Mock，避免构造无效 HTTP 客户端。HTTP 模式会先进入登录页；登录、注册、Session 恢复和 401 Refresh 都通过 LineSpace `/v1/auth/*` 后端完成，业务写请求自动附加 `Authorization: Bearer <access-token>`。
 
 ## Supabase Auth 数据库准备
 

@@ -28,6 +28,7 @@ import type {
   PoetryThread,
   PublishPoemDraftInput,
   PublishPoemDraftResult,
+  SavePoemDraftInput,
   PoemSummary,
   ThreadContinuation,
   ThreadDetail,
@@ -44,8 +45,10 @@ import type {
   UserPoemCollections,
   UserProfile,
   UserProfileContentPage,
+  UserProfileContentQuery,
   UserProfileContentSection,
   UserProfileDetails,
+  UserDraftPage,
   UpdateUserProfileInput
 } from "./types";
 
@@ -58,6 +61,8 @@ export interface LineSpaceApi {
   listDraftInviteCandidates(userId: string): Promise<UserConnectionPage["items"]>;
   inviteDraftCollaborator(input: InviteDraftCollaboratorInput): Promise<DraftInvitation>;
   publishPoemDraft(input: PublishPoemDraftInput): Promise<PublishPoemDraftResult>;
+  savePoemDraft(input: SavePoemDraftInput): Promise<PoemDraft>;
+  listUserDrafts(userId: string): Promise<UserDraftPage>;
   listFeed(query?: FeedQuery): Promise<PoemSummary[]>;
   getPoem(id: string, viewerId?: string): Promise<PoemSummary | null>;
   setPoemCollection(input: UpdatePoemCollectionInput): Promise<PoemEngagementResult>;
@@ -67,7 +72,8 @@ export interface LineSpaceApi {
   updateUserProfile(input: UpdateUserProfileInput): Promise<UserProfileDetails>;
   listUserProfileContent(
     userId: string,
-    section: UserProfileContentSection
+    section: UserProfileContentSection,
+    query?: UserProfileContentQuery
   ): Promise<UserProfileContentPage>;
   listUserConnections(
     userId: string,
@@ -257,7 +263,45 @@ export class MockLineSpaceApi implements LineSpaceApi {
     draft.updatedAt = now;
     draft.version += 1;
     this.poems.unshift(poem);
+    const profileContent = mockUserProfileContent[owner.id];
+    if (profileContent) {
+      profileContent.posts.unshift({
+        id: `profile-${poem.id}`,
+        kind: "post",
+        poemId: poem.id,
+        title: poem.title,
+        excerpt: poem.lines[0] ?? "",
+        tags: [...poem.tags],
+        finishedAt: now,
+        highlightCount: 0
+      });
+      owner.contentCounts.posts += 1;
+    }
     return { draft: cloneDraft(draft), poem: clonePoem(poem) };
+  }
+
+  async savePoemDraft(input: SavePoemDraftInput): Promise<PoemDraft> {
+    const draft = this.requireEditableDraft(input.draftId, input.userId);
+    if (draft.status === "published") {
+      throw new Error("A published draft cannot be saved again");
+    }
+    draft.status = "ready";
+    draft.updatedAt = new Date().toISOString();
+    draft.version += 1;
+    return cloneDraft(draft);
+  }
+
+  async listUserDrafts(userId: string): Promise<UserDraftPage> {
+    const items = [...this.drafts.values()]
+      .filter(
+        (draft) =>
+          draft.ownerId === userId &&
+          draft.status !== "published" &&
+          draft.collaborators.some((collaborator) => collaborator.user.id === userId)
+      )
+      .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
+      .map(cloneDraft);
+    return { userId, total: items.length, items };
   }
 
   async listFeed(query: FeedQuery = {}): Promise<PoemSummary[]> {
@@ -357,7 +401,21 @@ export class MockLineSpaceApi implements LineSpaceApi {
 
   async getUserProfile(userId: string): Promise<UserProfileDetails | null> {
     const profile = this.profiles.find((item) => item.id === userId);
-    return profile ? cloneUserProfile(profile) : null;
+    if (profile) return cloneUserProfile(profile);
+    const identity = [
+      ...this.threads.map((thread) => thread.author),
+      ...this.continuations.map((continuation) => continuation.author)
+    ].find((user) => user.id === userId);
+    if (!identity) return null;
+    return {
+      ...identity,
+      linespaceId: `guest_${identity.id.replace(/[^a-z0-9]/gi, "").slice(-8)}`,
+      level: 1,
+      badges: [],
+      stats: { followers: 0, following: 0, likesAndSaves: 0 },
+      contentCounts: { posts: 0, threads: 0, comments: 0, saves: 0 },
+      visibility: { posts: true, threads: true, comments: true, saves: true }
+    };
   }
 
   async updateUserProfile(input: UpdateUserProfileInput): Promise<UserProfileDetails> {
@@ -387,6 +445,9 @@ export class MockLineSpaceApi implements LineSpaceApi {
     if (input.avatarUrl !== undefined) {
       profile.avatarUrl = input.avatarUrl;
     }
+    if (input.visibility) {
+      profile.visibility = { ...profile.visibility, ...input.visibility };
+    }
 
     this.poems.forEach((poem) => {
       if (poem.author.id !== profile.id) {
@@ -412,19 +473,44 @@ export class MockLineSpaceApi implements LineSpaceApi {
 
   async listUserProfileContent(
     userId: string,
-    section: UserProfileContentSection
+    section: UserProfileContentSection,
+    query: UserProfileContentQuery = {}
   ): Promise<UserProfileContentPage> {
     const profile = this.profiles.find((item) => item.id === userId);
-    const items =
-      section === "saves"
-        ? this.listSavedProfileContent(userId)
-        : (mockUserProfileContent[userId]?.[section] ?? []);
+    const visible = profile?.visibility[section] ?? true;
+    const isOwner = !query.viewerId || query.viewerId === userId;
+    if (!isOwner && !visible) {
+      return { userId, section, total: 0, items: [], visible: false };
+    }
+    let items = mockUserProfileContent[userId]?.[section] ?? [];
+    if (section === "threads") {
+      const dynamicThreads = this.threads
+        .filter((thread) => thread.author.id === userId)
+        .map((thread) => profileContentFromThread(thread, "started"));
+      const dynamicParticipations = this.continuations
+        .filter((continuation) => continuation.author.id === userId)
+        .map((continuation) => profileContentFromThread(this.threads.find((thread) => thread.id === continuation.threadId), "participated", continuation.content));
+      items = [...items, ...dynamicThreads, ...dynamicParticipations];
+    }
+    if (section === "saves") {
+      items = this.listSavedProfileContent(userId, query.collection, query.contentKind);
+    }
+    if (section === "threads" && query.threadRelation) {
+      items = items.filter((item) => item.threadRelation === query.threadRelation);
+    }
+    if (section === "saves" && query.collection) {
+      items = items.filter((item) => item.collection === query.collection);
+    }
+    if (section === "saves" && query.contentKind) {
+      items = items.filter((item) => item.kind === query.contentKind);
+    }
 
     return {
       userId,
       section,
       total: profile?.contentCounts[section] ?? items.length,
-      items: items.map((item) => ({ ...item, tags: [...item.tags] }))
+      items: items.map((item) => ({ ...item, tags: [...item.tags], reference: item.reference ? { ...item.reference } : undefined })),
+      visible: true
     };
   }
 
@@ -611,6 +697,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
       liked: new Set<string>(),
       saved: new Set(
         (mockUserProfileContent[userId]?.saves ?? [])
+          .filter((item) => item.collection !== "liked")
           .map((item) => item.poemId)
           .filter((poemId): poemId is string => Boolean(poemId))
       )
@@ -641,7 +728,11 @@ export class MockLineSpaceApi implements LineSpaceApi {
     };
   }
 
-  private listSavedProfileContent(userId: string) {
+  private listSavedProfileContent(
+    userId: string,
+    collection?: "liked" | "saved",
+    contentKind?: "post" | "thread" | "comment"
+  ) {
     const savedIds = this.getOrCreateCollections(userId).saved;
     const samples = mockUserProfileContent[userId]?.saves ?? [];
     const samplePoemIds = new Set(samples.map((item) => item.poemId));
@@ -649,10 +740,19 @@ export class MockLineSpaceApi implements LineSpaceApi {
       .filter((poem) => savedIds.has(poem.id) && !samplePoemIds.has(poem.id))
       .map(profileContentFromPoem);
 
-    return [
-      ...samples.filter((item) => item.poemId && savedIds.has(item.poemId)),
+    const items = [
+      ...samples.filter((item) =>
+        collection === "liked"
+          ? item.collection === "liked"
+          : item.poemId && savedIds.has(item.poemId)
+      ),
       ...dynamicItems
     ];
+    return items.filter((item) => {
+      if (collection && item.collection !== collection) return false;
+      if (contentKind && item.kind !== contentKind) return false;
+      return true;
+    });
   }
 
   private deriveInboxTotals(userId: string): InboxActivitySummary["totals"] {
@@ -852,19 +952,40 @@ function cloneUserProfile(profile: UserProfileDetails): UserProfileDetails {
     ...profile,
     badges: profile.badges.map((badge) => ({ ...badge })),
     stats: { ...profile.stats },
-    contentCounts: { ...profile.contentCounts }
+    contentCounts: { ...profile.contentCounts },
+    visibility: { ...profile.visibility }
   };
 }
 
 function profileContentFromPoem(poem: PoemSummary) {
   return {
     id: `saved-${poem.id}`,
+    kind: "post" as const,
     poemId: poem.id,
     title: poem.title,
     excerpt: poem.lines[0] ?? "",
     tags: [...poem.tags],
     finishedAt: poem.startedAt,
-    highlightCount: poem.metrics.likes
+    highlightCount: poem.metrics.likes,
+    collection: "saved" as const
+  };
+}
+
+function profileContentFromThread(
+  thread: PoetryThread | undefined,
+  relation: "started" | "participated",
+  excerpt?: string
+) {
+  return {
+    id: `profile-${relation}-${thread?.id ?? "thread"}-${excerpt ? excerpt.slice(0, 8) : "root"}`,
+    kind: "thread" as const,
+    threadId: thread?.id,
+    title: thread?.content.slice(0, 52) ?? "Untitled thread",
+    excerpt: excerpt ?? thread?.content ?? "",
+    tags: thread?.topic ? [thread.topic] : [],
+    finishedAt: thread?.createdAt ?? new Date().toISOString(),
+    highlightCount: thread?.metrics.likes ?? 0,
+    threadRelation: relation
   };
 }
 

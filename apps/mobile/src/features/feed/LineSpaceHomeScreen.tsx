@@ -109,6 +109,7 @@ export function LineSpaceHomeScreen() {
               key={poem.id}
               interactionsDisabled={engagement.isPending}
               poem={poem}
+              onAuthorPress={(userId) => router.push({ pathname: "/profile/[id]", params: { id: userId } } as unknown as Href)}
               onCommentPress={(id) =>
                 router.push({ pathname: "/poem/[id]", params: { id } })
               }
@@ -176,6 +177,7 @@ function mapPoemToCard(poem: PoemSummary): PoemCardModel {
     title: poem.title,
     lines: poem.lines,
     author: {
+      id: poem.author.id,
       displayName: poem.author.displayName,
       handle: poem.author.handle,
       avatarColor: poem.author.avatarColor,

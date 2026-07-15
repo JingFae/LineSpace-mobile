@@ -17,6 +17,7 @@
     "android": {},
     "plugins": [
       "expo-router",
+      "expo-secure-store",
       [
         "expo-image-picker",
         {

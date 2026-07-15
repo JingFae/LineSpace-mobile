@@ -1,5 +1,15 @@
 export { createMockLineSpaceApi, MockLineSpaceApi, type LineSpaceApi } from "./client";
-export { HttpLineSpaceApi, type HttpLineSpaceApiOptions } from "./http-client";
+export {
+  HttpLineSpaceApi,
+  HttpLineSpaceApiError,
+  type HttpLineSpaceApiOptions
+} from "./http-client";
+export {
+  AuthClientError,
+  HttpAuthClient,
+  type AuthClientErrorCode,
+  type AuthClientOptions
+} from "./auth-client";
 export {
   mockPoems,
   mockInboxActivitySummaries,
@@ -66,6 +76,7 @@ export type {
   LoginAuthInput,
   PublishPoemDraftInput,
   PublishPoemDraftResult,
+  SavePoemDraftInput,
   RefreshAuthInput,
   RegisterAuthInput,
   ThreadContinuation,
@@ -85,8 +96,14 @@ export type {
   UserPoemCollections,
   UserProfile,
   UserProfileContentItem,
+  UserProfileContentKind,
   UserProfileContentPage,
+  UserProfileContentQuery,
   UserProfileContentSection,
   UserProfileDetails,
+  UserProfileVisibility,
+  UserDraftPage,
+  UserCollectionKind,
+  UserThreadRelation,
   UserProfileStats
 } from "./types";

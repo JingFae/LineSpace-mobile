@@ -31,7 +31,7 @@ packages/tokens ──> packages/ui ──> apps/mobile
 | `/poem/[id]` | `app/poem/[id].tsx` | 读取诗歌 `id`，渲染 `PoemDetailScreen` |
 | `/profile/edit` | `app/profile/edit.tsx` | `ProfileEditScreen` |
 
-`app/_layout.tsx` 提供 `QueryClientProvider` 和根 Stack；`app/(tabs)/_layout.tsx` 提供隐藏原生 Tab Bar 的 Expo Tabs，实际底部导航由共享 UI 组件渲染。
+`app/_layout.tsx` 提供 `QueryClientProvider`、`AuthSessionProvider`、会话初始化加载态和根 Stack；`app/(tabs)/_layout.tsx` 提供隐藏原生 Tab Bar 的 Expo Tabs，实际底部导航由共享 UI 组件渲染。
 
 ## 4. `lineSpaceApi` 的 Mock / HTTP 选择
 
@@ -44,7 +44,9 @@ EXPO_PUBLIC_USE_MOCKS === "false"
   + API 地址缺失                 ──> createMockLineSpaceApi()
 ```
 
-Screen 只依赖 `LineSpaceApi`，不直接调用 `fetch`。`EXPO_PUBLIC_CURRENT_USER_ID` 在认证接入前提供开发用户，默认是 `user-lili`。
+Screen 只依赖 `LineSpaceApi`，不直接调用 `fetch`。Mock 模式继续用 `EXPO_PUBLIC_CURRENT_USER_ID`（默认 `user-lili`）；HTTP 模式的 `currentUserId` 由 `AuthSessionProvider` 在登录或刷新成功后写入，不能由环境变量提供。
+
+认证流由 `packages/api-client/src/auth-client.ts` 访问 `/v1/auth/*`，移动端 `AuthSessionProvider` 只在内存保存 Access Token。Native 使用 Expo SecureStore 保存 Refresh Token，Web 只使用 `sessionStorage`（会话范围有限但仍有 XSS 风险）。`HttpLineSpaceApi` 通过 `getAccessToken` 自动附加 Bearer Token，401 时调用单飞 Refresh 并最多重试原请求一次。
 
 Mock 流：
 
