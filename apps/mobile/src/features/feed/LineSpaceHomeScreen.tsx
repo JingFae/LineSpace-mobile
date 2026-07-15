@@ -21,7 +21,7 @@ import {
   type SegmentTab
 } from "@linespace/ui";
 import { colors, spacing } from "@linespace/tokens";
-import type { FeedFilter, FeedSection, PoemSummary } from "@linespace/api-client";
+import type { FeedSection, PoemSummary } from "@linespace/api-client";
 import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
 import { mainTabs, tabRoutes } from "@/navigation/tabs";
 import { usePoemEngagement } from "@/features/poem/usePoemEngagement";
@@ -29,24 +29,17 @@ import { usePoemEngagement } from "@/features/poem/usePoemEngagement";
 declare const require: (path: string) => ImageSourcePropType;
 
 const waterArtwork = require("../../../assets/preview-water.png");
+const currentUserAvatar = require("../../../assets/profile/profile-avatar-water.png");
 const homeBackground = "#F6F7F7";
 
 const sectionTabs: SegmentTab<FeedSection>[] = [
   { value: "latest", label: "Latest" },
   { value: "popular", label: "Popular" },
-  { value: "following", label: "follow" }
-];
-
-const filterTabs: SegmentTab<FeedFilter>[] = [
-  { value: "all", label: "All" },
-  { value: "most-contributed", label: "Most Contributed" },
-  { value: "growing", label: "Growing" },
-  { value: "final", label: "Final" }
+  { value: "following", label: "Follow" }
 ];
 
 export function LineSpaceHomeScreen() {
   const [section, setSection] = useState<FeedSection>("latest");
-  const [filter, setFilter] = useState<FeedFilter>("all");
   const [createOpen, setCreateOpen] = useState(false);
   const engagement = usePoemEngagement();
   const profileQuery = useQuery({
@@ -55,8 +48,8 @@ export function LineSpaceHomeScreen() {
   });
 
   const feedQuery = useQuery({
-    queryKey: ["feed", section, filter, currentUserId],
-    queryFn: () => lineSpaceApi.listFeed({ section, filter, viewerId: currentUserId })
+    queryKey: ["feed", section, currentUserId],
+    queryFn: () => lineSpaceApi.listFeed({ section, viewerId: currentUserId })
   });
 
   const poems = useMemo(
@@ -77,10 +70,6 @@ export function LineSpaceHomeScreen() {
             <SegmentTabs tabs={sectionTabs} value={section} onChange={setSection} />
           </View>
           <SearchButton />
-        </View>
-
-        <View style={styles.filterWrap}>
-          <SegmentTabs tabs={filterTabs} value={filter} onChange={setFilter} variant="bar" />
         </View>
       </View>
 
@@ -126,6 +115,7 @@ export function LineSpaceHomeScreen() {
 
       <BottomNavigation
         items={mainTabs}
+<<<<<<< HEAD
         profileAvatar={
           profileQuery.data
             ? {
@@ -138,6 +128,9 @@ export function LineSpaceHomeScreen() {
             : undefined
         }
         value="home"
+=======
+        value="post"
+>>>>>>> b32be5f845e8e6c89ad0496b46de0a750e3de28f
         onChange={(value) => {
           if (value === "compose") {
             setCreateOpen(true);
@@ -179,12 +172,17 @@ function mapPoemToCard(poem: PoemSummary): PoemCardModel {
       displayName: poem.author.displayName,
       handle: poem.author.handle,
       avatarColor: poem.author.avatarColor,
+<<<<<<< HEAD
       avatarUrl: poem.author.avatarUrl
+=======
+      avatarSource: currentUserAvatar
+>>>>>>> b32be5f845e8e6c89ad0496b46de0a750e3de28f
     },
     contributorsCount: poem.contributorsCount,
     tags: poem.tags,
     statusLabel: poem.status === "growing" ? "Poem Growing" : "Final Poem",
     startedAtLabel: formatPoemDate(poem.startedAt),
+    postedAtLabel: formatPostTimestamp(poem.startedAt),
     metrics: poem.metrics,
     viewer: poem.viewer,
     artworkTone: poem.artworkTone,
@@ -202,6 +200,11 @@ function formatPoemDate(value: string) {
   return `${year}/${month}/${day} ${weekday}.`;
 }
 
+function formatPostTimestamp(value: string) {
+  const date = new Date(value);
+  return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()} 21:09`;
+}
+
 const styles = StyleSheet.create({
   safeArea: {
     backgroundColor: homeBackground
@@ -210,35 +213,28 @@ const styles = StyleSheet.create({
     backgroundColor: homeBackground
   },
   topChrome: {
-    height: 144,
+    height: 101,
     backgroundColor: colors.surface
   },
   header: {
     height: 101,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingLeft: 73,
-    paddingRight: 28,
+    justifyContent: "center",
     paddingTop: 44,
     backgroundColor: colors.surface
   },
   sectionTabs: {
-    flex: 1,
-    paddingRight: 12
+    width: 252
   },
   searchButton: {
+    position: "absolute",
+    right: 16,
+    top: 52,
     width: 46,
     height: 46,
     alignItems: "center",
     justifyContent: "center"
-  },
-  filterWrap: {
-    backgroundColor: colors.surface,
-    height: 43,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#F8F8F8",
-    paddingHorizontal: 25
   },
   feed: {
     flex: 1,

@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import { Pressable, StyleSheet, View, type ImageSourcePropType } from "react-native";
+=======
+import { Pressable, StyleSheet, Text, View } from "react-native";
+>>>>>>> b32be5f845e8e6c89ad0496b46de0a750e3de28f
 import { colors, spacing } from "@linespace/tokens";
 import { ActivityIcon, CreateIcon, MessagesIcon, ReadPostIcon } from "../icon";
 import { Avatar } from "./Avatar";
@@ -36,14 +40,24 @@ export function BottomNavigation<TValue extends string>({
             accessibilityLabel={item.label}
             accessibilityRole="button"
             accessibilityState={{ selected: item.value === value }}
+            accessibilityLabel={item.label}
             onPress={() => onChange(item.value)}
             style={[styles.item, isCreate && styles.createItem]}
           >
+<<<<<<< HEAD
             <NavIcon
               profileAvatar={profileAvatar}
               selected={item.value === value}
               value={item.value}
             />
+=======
+            <NavIcon selected={item.value === value} value={item.value} />
+            {isCreate ? null : (
+              <Text style={[styles.label, item.value === value && styles.labelSelected]}>
+                {item.label}
+              </Text>
+            )}
+>>>>>>> b32be5f845e8e6c89ad0496b46de0a750e3de28f
           </Pressable>
         );
       })}
@@ -66,11 +80,11 @@ function NavIcon({
     return <CreateIcon />;
   }
 
-  if (value === "discover") {
+  if (value === "post") {
     return <ReadPostIcon color={color} />;
   }
 
-  if (value === "comments") {
+  if (value === "inbox") {
     return <MessagesIcon color={color} />;
   }
 
@@ -112,6 +126,7 @@ const styles = StyleSheet.create({
   },
   item: {
     minWidth: 58,
+    minHeight: 48,
     alignItems: "center",
     justifyContent: "center",
     gap: 3
@@ -124,5 +139,13 @@ const styles = StyleSheet.create({
     height: 29,
     borderRadius: 15,
     backgroundColor: "#FF0038"
+  },
+  label: {
+    color: colors.tabMuted,
+    fontSize: 10,
+    lineHeight: 12
+  },
+  labelSelected: {
+    color: colors.black
   }
 });
