@@ -29,7 +29,6 @@ import { usePoemEngagement } from "@/features/poem/usePoemEngagement";
 declare const require: (path: string) => ImageSourcePropType;
 
 const waterArtwork = require("../../../assets/preview-water.png");
-const currentUserAvatar = require("../../../assets/profile/profile-avatar-water.png");
 const homeBackground = "#F6F7F7";
 
 const sectionTabs: SegmentTab<FeedSection>[] = [
@@ -115,7 +114,6 @@ export function LineSpaceHomeScreen() {
 
       <BottomNavigation
         items={mainTabs}
-<<<<<<< HEAD
         profileAvatar={
           profileQuery.data
             ? {
@@ -127,10 +125,7 @@ export function LineSpaceHomeScreen() {
               }
             : undefined
         }
-        value="home"
-=======
         value="post"
->>>>>>> b32be5f845e8e6c89ad0496b46de0a750e3de28f
         onChange={(value) => {
           if (value === "compose") {
             setCreateOpen(true);
@@ -172,11 +167,7 @@ function mapPoemToCard(poem: PoemSummary): PoemCardModel {
       displayName: poem.author.displayName,
       handle: poem.author.handle,
       avatarColor: poem.author.avatarColor,
-<<<<<<< HEAD
       avatarUrl: poem.author.avatarUrl
-=======
-      avatarSource: currentUserAvatar
->>>>>>> b32be5f845e8e6c89ad0496b46de0a750e3de28f
     },
     contributorsCount: poem.contributorsCount,
     tags: poem.tags,

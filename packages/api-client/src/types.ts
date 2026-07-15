@@ -301,6 +301,95 @@ export type PoemEngagementResult = {
   collections: UserPoemCollections;
 };
 
+export type ThreadSort = "top" | "latest" | "following";
+
+export type ThreadViewerState = {
+  liked: boolean;
+};
+
+export type ThreadMetrics = {
+  likes: number;
+  continuations: number;
+  shares: number;
+  views?: number;
+};
+
+export type PoetryThread = {
+  id: string;
+  author: UserProfile;
+  content: string;
+  createdAt: string;
+  community?: string;
+  topic?: string;
+  status?: "open" | "complete";
+  cover?: {
+    tone: "water" | "paper" | "night";
+  };
+  metrics: ThreadMetrics;
+  viewer: ThreadViewerState;
+};
+
+export type ThreadContinuation = {
+  id: string;
+  threadId: string;
+  parentContinuationId?: string;
+  author: UserProfile;
+  content: string;
+  createdAt: string;
+  metrics: ThreadMetrics;
+  viewer: ThreadViewerState;
+};
+
+export type ThreadFeedQuery = {
+  sort?: ThreadSort;
+  viewerId?: string;
+};
+
+export type ThreadDetail = {
+  thread: PoetryThread;
+  continuations: ThreadContinuation[];
+};
+
+export type ContinuationDetail = {
+  thread: PoetryThread;
+  path: ThreadContinuation[];
+  current: ThreadContinuation;
+  children: ThreadContinuation[];
+};
+
+export type CreateThreadContinuationInput = {
+  threadId: string;
+  userId: string;
+  content: string;
+};
+
+export type CreateContinuationInput = {
+  continuationId: string;
+  userId: string;
+  content: string;
+};
+
+export type UpdateThreadLikeInput = {
+  threadId: string;
+  userId: string;
+  isActive: boolean;
+};
+
+export type UpdateContinuationLikeInput = {
+  continuationId: string;
+  userId: string;
+  isActive: boolean;
+};
+
+export type ThreadShareTarget =
+  | { kind: "thread"; threadId: string; userId: string }
+  | { kind: "continuation"; continuationId: string; userId: string };
+
+export type ThreadShareResult = {
+  targetId: string;
+  shareCount: number;
+};
+
 export type AiAssistIntent =
   | "continue-poem"
   | "revise-line"

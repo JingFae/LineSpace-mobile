@@ -103,6 +103,36 @@ export function ShareIcon({ width = 28, height = 28, color = "#000000" }: FigmaI
   return <Svg width={width} height={height} viewBox="0 0 28 28"><Path d={sharePath} fill={color} /></Svg>;
 }
 
+export function ContinueIcon({ width = 28, height = 28, color = "#000000" }: FigmaIconProps) {
+  return (
+    <Svg width={width} height={height} viewBox="0 0 28 28">
+      <Path
+        d="M7 5.5V10.5C7 12.7 8.8 14.5 11 14.5H20.2"
+        fill="none"
+        stroke={color}
+        strokeWidth={1.9}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M16.8 10.9L20.4 14.5L16.8 18.1"
+        fill="none"
+        stroke={color}
+        strokeWidth={1.9}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M7 14.5V22.5"
+        fill="none"
+        stroke={color}
+        strokeWidth={1.9}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
 export function MenuIcon({ width = 17, height = 14, color = "#000000" }: FigmaIconProps) {
   return (
     <Svg width={width} height={height} viewBox="0 0 17 14">

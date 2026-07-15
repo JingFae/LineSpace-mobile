@@ -1,11 +1,5 @@
-import { PlaceholderScreen } from "@/screens/PlaceholderScreen";
+import { ThreadFeedScreen } from "@/features/thread/ThreadScreens";
 
 export default function ThreadRoute() {
-  return (
-    <PlaceholderScreen
-      activeTab="thread"
-      title="Thread"
-      body="Thread conversations will be implemented here."
-    />
-  );
+  return <ThreadFeedScreen />;
 }

@@ -1,6 +1,8 @@
 import {
   mockPoems,
   mockPoemDesignCatalog,
+  mockThreadContinuations,
+  mockThreads,
   mockUserConnections,
   mockUserProfileContent,
   mockUserProfileDetails
@@ -8,7 +10,10 @@ import {
 import type {
   AiAssistRequest,
   AiAssistResponse,
+  ContinuationDetail,
+  CreateContinuationInput,
   CreatePoemDraftInput,
+  CreateThreadContinuationInput,
   DraftInvitation,
   DraftOperationInput,
   FeedQuery,
@@ -18,11 +23,19 @@ import type {
   PoemDesignCatalog,
   PoemDraft,
   PoemEngagementResult,
+  PoetryThread,
   PublishPoemDraftInput,
   PublishPoemDraftResult,
   PoemSummary,
+  ThreadContinuation,
+  ThreadDetail,
+  ThreadFeedQuery,
+  ThreadShareResult,
+  ThreadShareTarget,
   UpdatePoemDraftInput,
   UpdatePoemCollectionInput,
+  UpdateContinuationLikeInput,
+  UpdateThreadLikeInput,
   UserConnectionKind,
   UserConnectionPage,
   UserConnectionQuery,
@@ -58,6 +71,17 @@ export interface LineSpaceApi {
     kind: UserConnectionKind,
     query?: UserConnectionQuery
   ): Promise<UserConnectionPage>;
+  listThreads(query?: ThreadFeedQuery): Promise<PoetryThread[]>;
+  getThread(threadId: string, viewerId?: string): Promise<ThreadDetail | null>;
+  getContinuationDetail(
+    continuationId: string,
+    viewerId?: string
+  ): Promise<ContinuationDetail | null>;
+  createThreadContinuation(input: CreateThreadContinuationInput): Promise<ThreadContinuation>;
+  createContinuation(input: CreateContinuationInput): Promise<ThreadContinuation>;
+  setThreadLike(input: UpdateThreadLikeInput): Promise<PoetryThread>;
+  setContinuationLike(input: UpdateContinuationLikeInput): Promise<ThreadContinuation>;
+  recordThreadShare(target: ThreadShareTarget): Promise<ThreadShareResult>;
   requestAiAssist(request: AiAssistRequest): Promise<AiAssistResponse>;
 }
 
@@ -65,11 +89,16 @@ type MutableUserCollections = Record<PoemCollectionKind, Set<string>>;
 
 export class MockLineSpaceApi implements LineSpaceApi {
   private readonly poems = mockPoems.map(clonePoem);
+  private readonly threads = mockThreads.map(cloneThread);
+  private readonly continuations = mockThreadContinuations.map(cloneContinuation);
   private readonly profiles = mockUserProfileDetails.map(cloneUserProfile);
   private readonly drafts = new Map<string, PoemDraft>();
   private readonly invitations: DraftInvitation[] = [];
   private readonly collectionsByUser = new Map<string, MutableUserCollections>();
+  private readonly likedThreadsByUser = new Map<string, Set<string>>();
+  private readonly likedContinuationsByUser = new Map<string, Set<string>>();
   private draftSequence = 0;
+  private continuationSequence = 0;
 
   async getPoemDesignCatalog(): Promise<PoemDesignCatalog> {
     return cloneDesignCatalog(mockPoemDesignCatalog);
@@ -396,6 +425,144 @@ export class MockLineSpaceApi implements LineSpaceApi {
     };
   }
 
+  async listThreads(query: ThreadFeedQuery = {}): Promise<PoetryThread[]> {
+    const viewerId = query.viewerId;
+    let threads = this.threads;
+
+    if (query.sort === "latest") {
+      threads = [...threads].sort(
+        (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)
+      );
+    } else if (query.sort === "following") {
+      threads = threads.filter((thread) => thread.author.id !== viewerId);
+    } else {
+      threads = [...threads].sort(
+        (left, right) =>
+          right.metrics.likes +
+          right.metrics.continuations * 2 -
+          (left.metrics.likes + left.metrics.continuations * 2)
+      );
+    }
+
+    return threads.map((thread) => this.withThreadViewer(thread, viewerId));
+  }
+
+  async getThread(threadId: string, viewerId?: string): Promise<ThreadDetail | null> {
+    const thread = this.threads.find((item) => item.id === threadId);
+    if (!thread) return null;
+    return {
+      thread: this.withThreadViewer(thread, viewerId),
+      continuations: this.continuations
+        .filter((item) => item.threadId === threadId && !item.parentContinuationId)
+        .map((item) => this.withContinuationViewer(item, viewerId))
+    };
+  }
+
+  async getContinuationDetail(
+    continuationId: string,
+    viewerId?: string
+  ): Promise<ContinuationDetail | null> {
+    const current = this.continuations.find((item) => item.id === continuationId);
+    if (!current) return null;
+    const thread = this.threads.find((item) => item.id === current.threadId);
+    if (!thread) return null;
+
+    return {
+      thread: this.withThreadViewer(thread, viewerId),
+      path: this.getContinuationPath(current).map((item) =>
+        this.withContinuationViewer(item, viewerId)
+      ),
+      current: this.withContinuationViewer(current, viewerId),
+      children: this.continuations
+        .filter((item) => item.parentContinuationId === continuationId)
+        .map((item) => this.withContinuationViewer(item, viewerId))
+    };
+  }
+
+  async createThreadContinuation(
+    input: CreateThreadContinuationInput
+  ): Promise<ThreadContinuation> {
+    const thread = this.threads.find((item) => item.id === input.threadId);
+    const author = this.profiles.find((profile) => profile.id === input.userId);
+    const content = input.content.trim();
+    if (!thread || !author || content.length === 0) {
+      throw new Error("Thread continuation cannot be created");
+    }
+
+    const continuation = this.createContinuationRecord({
+      threadId: thread.id,
+      author: profileToUser(author),
+      content
+    });
+    thread.metrics.continuations += 1;
+    return this.withContinuationViewer(continuation, input.userId);
+  }
+
+  async createContinuation(input: CreateContinuationInput): Promise<ThreadContinuation> {
+    const parent = this.continuations.find((item) => item.id === input.continuationId);
+    const author = this.profiles.find((profile) => profile.id === input.userId);
+    const content = input.content.trim();
+    if (!parent || !author || content.length === 0) {
+      throw new Error("Continuation cannot be created");
+    }
+
+    const continuation = this.createContinuationRecord({
+      threadId: parent.threadId,
+      parentContinuationId: parent.id,
+      author: profileToUser(author),
+      content
+    });
+    parent.metrics.continuations += 1;
+    const thread = this.threads.find((item) => item.id === parent.threadId);
+    if (thread) thread.metrics.continuations += 1;
+    return this.withContinuationViewer(continuation, input.userId);
+  }
+
+  async setThreadLike(input: UpdateThreadLikeInput): Promise<PoetryThread> {
+    const thread = this.threads.find((item) => item.id === input.threadId);
+    if (!thread) throw new Error(`Thread ${input.threadId} was not found`);
+    const liked = this.getLikedThreadSet(input.userId);
+    const wasActive = liked.has(input.threadId);
+    if (wasActive !== input.isActive) {
+      input.isActive ? liked.add(input.threadId) : liked.delete(input.threadId);
+      thread.metrics.likes = Math.max(0, thread.metrics.likes + (input.isActive ? 1 : -1));
+    }
+    return this.withThreadViewer(thread, input.userId);
+  }
+
+  async setContinuationLike(
+    input: UpdateContinuationLikeInput
+  ): Promise<ThreadContinuation> {
+    const continuation = this.continuations.find((item) => item.id === input.continuationId);
+    if (!continuation) throw new Error(`Continuation ${input.continuationId} was not found`);
+    const liked = this.getLikedContinuationSet(input.userId);
+    const wasActive = liked.has(input.continuationId);
+    if (wasActive !== input.isActive) {
+      input.isActive ? liked.add(input.continuationId) : liked.delete(input.continuationId);
+      continuation.metrics.likes = Math.max(
+        0,
+        continuation.metrics.likes + (input.isActive ? 1 : -1)
+      );
+    }
+    return this.withContinuationViewer(continuation, input.userId);
+  }
+
+  async recordThreadShare(target: ThreadShareTarget): Promise<ThreadShareResult> {
+    if (target.kind === "thread") {
+      const thread = this.threads.find((item) => item.id === target.threadId);
+      if (!thread) throw new Error(`Thread ${target.threadId} was not found`);
+      thread.metrics.shares += 1;
+      return { targetId: thread.id, shareCount: thread.metrics.shares };
+    }
+
+    const continuation = this.continuations.find(
+      (item) => item.id === target.continuationId
+    );
+    if (!continuation) throw new Error(`Continuation ${target.continuationId} was not found`);
+    continuation.metrics.shares += 1;
+    return { targetId: continuation.id, shareCount: continuation.metrics.shares };
+  }
+
   async requestAiAssist(request: AiAssistRequest): Promise<AiAssistResponse> {
     return {
       id: `mock-ai-${Date.now()}`,
@@ -488,6 +655,102 @@ export class MockLineSpaceApi implements LineSpaceApi {
     }
     return draft;
   }
+
+  private createContinuationRecord(input: {
+    threadId: string;
+    parentContinuationId?: string;
+    author: UserProfile;
+    content: string;
+  }) {
+    const continuation: ThreadContinuation = {
+      id: `continue-new-${++this.continuationSequence}`,
+      threadId: input.threadId,
+      parentContinuationId: input.parentContinuationId,
+      author: { ...input.author },
+      content: input.content,
+      createdAt: new Date().toISOString(),
+      metrics: { likes: 0, continuations: 0, shares: 0 },
+      viewer: { liked: false }
+    };
+    this.continuations.unshift(continuation);
+    return continuation;
+  }
+
+  private getContinuationPath(current: ThreadContinuation) {
+    const path: ThreadContinuation[] = [];
+    let parentId = current.parentContinuationId;
+    while (parentId) {
+      const parent = this.continuations.find((item) => item.id === parentId);
+      if (!parent || path.some((item) => item.id === parent.id)) break;
+      path.unshift(parent);
+      parentId = parent.parentContinuationId;
+    }
+    return path;
+  }
+
+  private getLikedThreadSet(userId: string) {
+    const existing = this.likedThreadsByUser.get(userId);
+    if (existing) return existing;
+    const created = new Set(
+      this.threads.filter((thread) => thread.viewer.liked).map((thread) => thread.id)
+    );
+    this.likedThreadsByUser.set(userId, created);
+    return created;
+  }
+
+  private getLikedContinuationSet(userId: string) {
+    const existing = this.likedContinuationsByUser.get(userId);
+    if (existing) return existing;
+    const created = new Set(
+      this.continuations
+        .filter((continuation) => continuation.viewer.liked)
+        .map((continuation) => continuation.id)
+    );
+    this.likedContinuationsByUser.set(userId, created);
+    return created;
+  }
+
+  private withThreadViewer(thread: PoetryThread, viewerId?: string): PoetryThread {
+    const liked = viewerId ? this.getLikedThreadSet(viewerId).has(thread.id) : false;
+    return {
+      ...cloneThread(thread),
+      author: profileToUser(findProfile(this.profiles, thread.author)),
+      viewer: { liked }
+    };
+  }
+
+  private withContinuationViewer(
+    continuation: ThreadContinuation,
+    viewerId?: string
+  ): ThreadContinuation {
+    const liked = viewerId
+      ? this.getLikedContinuationSet(viewerId).has(continuation.id)
+      : false;
+    return {
+      ...cloneContinuation(continuation),
+      author: profileToUser(findProfile(this.profiles, continuation.author)),
+      viewer: { liked }
+    };
+  }
+}
+
+function cloneThread(thread: PoetryThread): PoetryThread {
+  return {
+    ...thread,
+    author: { ...thread.author },
+    cover: thread.cover ? { ...thread.cover } : undefined,
+    metrics: { ...thread.metrics },
+    viewer: { ...thread.viewer }
+  };
+}
+
+function cloneContinuation(continuation: ThreadContinuation): ThreadContinuation {
+  return {
+    ...continuation,
+    author: { ...continuation.author },
+    metrics: { ...continuation.metrics },
+    viewer: { ...continuation.viewer }
+  };
 }
 
 function clonePoem(poem: PoemSummary): PoemSummary {

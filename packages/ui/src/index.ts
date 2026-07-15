@@ -23,6 +23,7 @@ export {
   CameraIcon,
   ChevronRightIcon,
   CommentIcon,
+  ContinueIcon,
   CreateIcon,
   InviteIcon,
   LikeIcon,

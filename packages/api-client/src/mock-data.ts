@@ -1,6 +1,8 @@
 import type {
   PoemDesignCatalog,
   PoemSummary,
+  PoetryThread,
+  ThreadContinuation,
   UserConnectionKind,
   UserConnectionSummary,
   UserProfile,
@@ -318,6 +320,180 @@ export const mockUserConnections: Record<
     following: []
   }
 };
+
+const threadUsers = {
+  lili: mockUsers[0]!,
+  ray: mockUsers[1]!,
+  jinghe: {
+    id: "user-jinghe",
+    handle: "jinghe",
+    displayName: "Jinghe",
+    avatarColor: "#E35755",
+    bio: "Collecting images from ordinary days."
+  },
+  zhihan: {
+    id: "user-zhihan",
+    handle: "zhihan",
+    displayName: "Zhihan",
+    avatarColor: "#AFCEE5",
+    bio: "Writes about cities and weather."
+  },
+  roma: {
+    id: "user-roma",
+    handle: "roma",
+    displayName: "Roma",
+    avatarColor: "#4A5E2E",
+    bio: "Short poems, long walks."
+  }
+} as const;
+
+export const mockThreads: PoetryThread[] = [
+  {
+    id: "thread-rain-without-rain",
+    author: threadUsers.jinghe,
+    content:
+      "Write a rain poem without naming rain. Start with the sound a window remembers.",
+    createdAt: "2026-07-14T08:10:00.000Z",
+    community: "Poetry Threads",
+    topic: "prompt",
+    status: "open",
+    metrics: { likes: 42, continuations: 5, shares: 8, views: 1800 },
+    viewer: { liked: false }
+  },
+  {
+    id: "thread-unopened-letter",
+    author: threadUsers.ray,
+    content:
+      "Write from the perspective of an unopened letter. Let every line want to be read.",
+    createdAt: "2026-07-14T10:35:00.000Z",
+    community: "LineSpace Relay",
+    topic: "chain",
+    status: "open",
+    metrics: { likes: 28, continuations: 3, shares: 5, views: 920 },
+    viewer: { liked: true }
+  },
+  {
+    id: "thread-city-edge",
+    author: threadUsers.lili,
+    content:
+      "At the edge of the city, the last bus writes its name in light. Continue the next line.",
+    createdAt: "2026-07-13T21:09:00.000Z",
+    community: "Night Lines",
+    topic: "open line",
+    status: "open",
+    metrics: { likes: 63, continuations: 4, shares: 13, views: 2400 },
+    viewer: { liked: false }
+  },
+  {
+    id: "thread-place-return",
+    author: threadUsers.roma,
+    content:
+      "Describe the place you most want to return to, but only through what stayed behind.",
+    createdAt: "2026-07-13T16:20:00.000Z",
+    community: "Memory Atlas",
+    topic: "prompt",
+    status: "open",
+    metrics: { likes: 19, continuations: 2, shares: 2, views: 640 },
+    viewer: { liked: false }
+  }
+];
+
+export const mockThreadContinuations: ThreadContinuation[] = [
+  {
+    id: "continue-rain-glass",
+    threadId: "thread-rain-without-rain",
+    author: threadUsers.lili,
+    content: "The glass learned a thousand small knocks before morning opened its hand.",
+    createdAt: "2026-07-14T08:33:00.000Z",
+    metrics: { likes: 12, continuations: 2, shares: 1 },
+    viewer: { liked: false }
+  },
+  {
+    id: "continue-rain-glass-child",
+    threadId: "thread-rain-without-rain",
+    parentContinuationId: "continue-rain-glass",
+    author: threadUsers.ray,
+    content: "Each knock became a seed of silver on the sill.",
+    createdAt: "2026-07-14T08:47:00.000Z",
+    metrics: { likes: 8, continuations: 1, shares: 0 },
+    viewer: { liked: true }
+  },
+  {
+    id: "continue-rain-glass-grandchild",
+    threadId: "thread-rain-without-rain",
+    parentContinuationId: "continue-rain-glass-child",
+    author: threadUsers.zhihan,
+    content: "By noon, the room had grown a quiet river.",
+    createdAt: "2026-07-14T09:06:00.000Z",
+    metrics: { likes: 5, continuations: 0, shares: 0 },
+    viewer: { liked: false }
+  },
+  {
+    id: "continue-rain-rooftop",
+    threadId: "thread-rain-without-rain",
+    author: threadUsers.roma,
+    content: "The rooftops lowered their voices and waited for the sky to confess.",
+    createdAt: "2026-07-14T09:20:00.000Z",
+    metrics: { likes: 7, continuations: 0, shares: 0 },
+    viewer: { liked: false }
+  },
+  {
+    id: "continue-letter-threshold",
+    threadId: "thread-unopened-letter",
+    author: threadUsers.jinghe,
+    content: "I have lived for weeks at the threshold of your thumb.",
+    createdAt: "2026-07-14T11:04:00.000Z",
+    metrics: { likes: 10, continuations: 1, shares: 2 },
+    viewer: { liked: false }
+  },
+  {
+    id: "continue-letter-threshold-child",
+    threadId: "thread-unopened-letter",
+    parentContinuationId: "continue-letter-threshold",
+    author: threadUsers.lili,
+    content: "Inside me, the ink keeps practicing your name.",
+    createdAt: "2026-07-14T11:19:00.000Z",
+    metrics: { likes: 6, continuations: 0, shares: 1 },
+    viewer: { liked: false }
+  },
+  {
+    id: "continue-letter-drawer",
+    threadId: "thread-unopened-letter",
+    author: threadUsers.zhihan,
+    content: "The drawer is a dark post office where I never stop arriving.",
+    createdAt: "2026-07-14T12:14:00.000Z",
+    metrics: { likes: 4, continuations: 0, shares: 0 },
+    viewer: { liked: false }
+  },
+  {
+    id: "continue-city-bus",
+    threadId: "thread-city-edge",
+    author: threadUsers.ray,
+    content: "A moth follows the route map like it knows where loneliness ends.",
+    createdAt: "2026-07-13T21:22:00.000Z",
+    metrics: { likes: 17, continuations: 1, shares: 3 },
+    viewer: { liked: false }
+  },
+  {
+    id: "continue-city-bus-child",
+    threadId: "thread-city-edge",
+    parentContinuationId: "continue-city-bus",
+    author: threadUsers.roma,
+    content: "At the depot, even the dark keeps a transfer ticket.",
+    createdAt: "2026-07-13T21:40:00.000Z",
+    metrics: { likes: 9, continuations: 0, shares: 0 },
+    viewer: { liked: false }
+  },
+  {
+    id: "continue-place-key",
+    threadId: "thread-place-return",
+    author: threadUsers.zhihan,
+    content: "The old key still tastes like winter when I hold it to the light.",
+    createdAt: "2026-07-13T16:44:00.000Z",
+    metrics: { likes: 11, continuations: 0, shares: 1 },
+    viewer: { liked: false }
+  }
+];
 
 const creditPeople = {
   lili: {
