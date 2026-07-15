@@ -7,8 +7,7 @@ import { Platform, StyleSheet, Text, useWindowDimensions, View } from "react-nat
 const screenInset = 12;
 const previewVerticalMargin = 44;
 const previewHorizontalMargin = 32;
-const previewMaxScale = 0.96;
-const previewScreenWidth = 460;
+const previewScreenWidth = 430;
 const iphone17ProScreenRatio = 2622 / 1206;
 const previewScreenHeight = Math.round(previewScreenWidth * iphone17ProScreenRatio);
 const previewShellWidth = previewScreenWidth + screenInset * 2;
@@ -39,7 +38,7 @@ function WebDevicePreview({ children }: { children: ReactNode }) {
   }
 
   const previewScale = Math.min(
-    previewMaxScale,
+    1,
     (width - previewHorizontalMargin) / previewShellWidth,
     (height - previewVerticalMargin) / previewShellHeight
   );
@@ -69,12 +68,9 @@ function WebDevicePreview({ children }: { children: ReactNode }) {
           <View style={[styles.sideButton, styles.rightButton]} />
           <View style={styles.phoneScreen}>
             <View style={styles.appViewport}>{children}</View>
-            <View pointerEvents="none" style={styles.statusLayer}>
-              <View style={styles.statusLeft}>
-                <Text style={styles.statusTime}>9:41</Text>
-              </View>
-              <View style={styles.dynamicIsland} />
-              <View style={styles.statusRight}>
+            <View pointerEvents="none" style={styles.statusBar}>
+              <Text style={styles.statusTime}>9:41</Text>
+              <View style={styles.statusIcons}>
                 <View style={styles.signalIcon}>
                   <View style={[styles.signalBar, styles.signalOne]} />
                   <View style={[styles.signalBar, styles.signalTwo]} />
@@ -92,6 +88,7 @@ function WebDevicePreview({ children }: { children: ReactNode }) {
                 </View>
               </View>
             </View>
+            <View pointerEvents="none" style={styles.dynamicIsland} />
             <View pointerEvents="none" style={styles.homeIndicator} />
           </View>
         </View>
@@ -131,42 +128,30 @@ const styles = StyleSheet.create({
     backgroundColor: "#F4F2F0"
   },
   appViewport: {
-    flex: 1,
-    paddingTop: 10
+    flex: 1
   },
-  statusLayer: {
+  statusBar: {
     position: "absolute",
-    top: 0,
+    top: 7,
     left: 0,
     right: 0,
-    height: 50
-  },
-  statusLeft: {
-    position: "absolute",
-    top: 17,
-    left: 36,
-    width: 72,
-    height: 22,
+    height: 33,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "flex-start"
+    justifyContent: "space-between",
+    paddingLeft: 35,
+    paddingRight: 28
   },
   statusTime: {
     color: "#111111",
-    fontSize: 15,
-    lineHeight: 18,
+    fontSize: 13,
+    lineHeight: 16,
     fontWeight: "600"
   },
-  statusRight: {
-    position: "absolute",
-    top: 18,
-    right: 28,
-    width: 94,
-    height: 20,
+  statusIcons: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "flex-end",
-    gap: 8
+    gap: 7
   },
   signalIcon: {
     width: 18,
@@ -252,12 +237,12 @@ const styles = StyleSheet.create({
   },
   dynamicIsland: {
     position: "absolute",
-    top: 12,
+    top: 11,
     left: "50%",
-    width: 116,
-    height: 34,
-    marginLeft: -58,
-    borderRadius: 18,
+    width: 78,
+    height: 24,
+    marginLeft: -39,
+    borderRadius: 14,
     backgroundColor: "#050505"
   },
   homeIndicator: {
