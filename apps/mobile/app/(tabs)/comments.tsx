@@ -3,9 +3,9 @@ import { PlaceholderScreen } from "@/screens/PlaceholderScreen";
 export default function CommentsRoute() {
   return (
     <PlaceholderScreen
-      activeTab="inbox"
-      title="Inbox"
-      body="Messages, replies, and contribution updates will appear here."
+      activeTab="comments"
+      title="Comments"
+      body="Line comments, replies, and contribution discussions will appear here."
     />
   );
 }
