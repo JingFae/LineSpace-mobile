@@ -1,5 +1,11 @@
-import { LineSpaceHomeScreen } from "@/features/feed/LineSpaceHomeScreen";
+import { PlaceholderScreen } from "@/screens/PlaceholderScreen";
 
-export default function HomeRoute() {
-  return <LineSpaceHomeScreen />;
+export default function ThreadRoute() {
+  return (
+    <PlaceholderScreen
+      activeTab="thread"
+      title="Thread"
+      body="Thread conversations will be implemented here."
+    />
+  );
 }
