@@ -110,12 +110,14 @@ function DetailHeader({ poem }: { poem?: PoemSummary }) {
         <Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.backButton}>
           <ChevronLeftIcon />
         </Pressable>
-        <Avatar
-          color={avatarColor ?? colors.accent}
-          imageSource={poem?.author.avatarUrl ? { uri: poem.author.avatarUrl } : undefined}
-          label={poem?.author.displayName ?? "LineSpace"}
-          size={34}
-        />
+        <Pressable disabled={!poem} onPress={() => poem && router.push({ pathname: "/profile/[id]", params: { id: poem.author.id } } as never)}>
+          <Avatar
+            color={avatarColor ?? colors.accent}
+            imageSource={poem?.author.avatarUrl ? { uri: poem.author.avatarUrl } : undefined}
+            label={poem?.author.displayName ?? "LineSpace"}
+            size={34}
+          />
+        </Pressable>
         <Text style={styles.headerName}>{poem?.author.displayName.toLowerCase() ?? "line"}</Text>
       </View>
 
@@ -217,12 +219,14 @@ function CommentRow({
 
   return (
     <View style={[styles.commentRow, highlighted && styles.targetHighlight]}>
-      <Avatar
-        color={avatarColor}
-        imageSource={comment.author.avatarUrl ? { uri: comment.author.avatarUrl } : undefined}
-        label={comment.author.displayName}
-        size={30}
-      />
+      <Pressable onPress={() => router.push({ pathname: "/profile/[id]", params: { id: comment.author.id } } as never)}>
+        <Avatar
+          color={avatarColor}
+          imageSource={comment.author.avatarUrl ? { uri: comment.author.avatarUrl } : undefined}
+          label={comment.author.displayName}
+          size={30}
+        />
+      </Pressable>
       <View style={styles.commentBody}>
         <View style={styles.commentNameRow}>
           <Text style={styles.commentAuthor}>{comment.author.displayName}</Text>

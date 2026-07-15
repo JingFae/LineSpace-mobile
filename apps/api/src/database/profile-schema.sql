@@ -96,7 +96,7 @@ create table if not exists user_profile_stats (
   saves_received_count bigint not null default 0 check (saves_received_count >= 0),
   posts_count bigint not null default 0 check (posts_count >= 0),
   comments_count bigint not null default 0 check (comments_count >= 0),
-  quotes_count bigint not null default 0 check (quotes_count >= 0),
+  threads_count bigint not null default 0 check (threads_count >= 0),
   saves_count bigint not null default 0 check (saves_count >= 0),
   updated_at timestamptz not null default now()
 );
@@ -114,11 +114,25 @@ create index if not exists user_follows_follower_created_idx
 create index if not exists user_follows_following_created_idx
   on user_follows (following_user_id, created_at desc);
 
+create table if not exists user_profile_visibility (
+  user_id text primary key references users(id) on delete cascade,
+  posts_public boolean not null default true,
+  threads_public boolean not null default true,
+  comments_public boolean not null default true,
+  saves_public boolean not null default true,
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists user_profile_content (
   id text primary key,
   user_id text not null references users(id) on delete cascade,
   content_id text,
-  section varchar(16) not null check (section in ('posts', 'comments', 'quotes', 'saves')),
+  section varchar(16) not null check (section in ('posts', 'threads', 'comments', 'saves')),
+  content_kind varchar(16) not null default 'post' check (content_kind in ('post', 'thread', 'comment')),
+  thread_relation varchar(16) check (thread_relation in ('started', 'participated')),
+  collection_kind varchar(16) check (collection_kind in ('liked', 'saved')),
+  reference_content_id text,
+  reference_text text,
   title text not null,
   excerpt text not null,
   tags jsonb not null default '[]'::jsonb,
@@ -158,6 +172,20 @@ create trigger users_create_profile_stats
 after insert on users
 for each row execute function ensure_user_profile_stats();
 
+create or replace function ensure_user_profile_visibility()
+returns trigger language plpgsql as $$
+begin
+  insert into user_profile_visibility (user_id) values (new.id)
+  on conflict (user_id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists users_create_profile_visibility on users;
+create trigger users_create_profile_visibility
+after insert on users
+for each row execute function ensure_user_profile_visibility();
+
 create or replace function sync_follow_counters()
 returns trigger language plpgsql as $$
 declare
@@ -193,7 +221,7 @@ begin
   update user_profile_stats set
     posts_count = greatest(0, posts_count + case when content_section = 'posts' then delta else 0 end),
     comments_count = greatest(0, comments_count + case when content_section = 'comments' then delta else 0 end),
-    quotes_count = greatest(0, quotes_count + case when content_section = 'quotes' then delta else 0 end),
+    threads_count = greatest(0, threads_count + case when content_section = 'threads' then delta else 0 end),
     updated_at = now()
   where user_id = owner_id;
   if tg_op = 'DELETE' then
@@ -244,4 +272,4 @@ for each row execute function sync_engagement_counters();
 -- followers          = user_profile_stats.followers_count
 -- following          = user_profile_stats.following_count
 -- likesAndSaves      = likes_received_count + saves_received_count
--- Posts/comments/... = the matching *_count and user_profile_content rows
+-- Posts/threads/comments/saves = matching *_count, visibility, and content rows.

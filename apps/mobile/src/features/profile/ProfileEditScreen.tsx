@@ -26,7 +26,8 @@ import {
 import { colors, radius, spacing } from "@linespace/tokens";
 import type {
   UpdateUserProfileInput,
-  UserProfileDetails
+  UserProfileDetails,
+  UserProfileVisibility
 } from "@linespace/api-client";
 import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
 
@@ -171,6 +172,7 @@ export function ProfileEditScreen() {
           notice={notice}
           onAvatarPress={chooseAvatar}
           onEditField={(field) => openEditor(field, profileQuery.data!)}
+          onPrivacyChange={(visibility) => updateProfileMutation.mutate({ userId: currentUserId, visibility })}
           pageError={pageError}
           profile={profileQuery.data}
         />
@@ -195,7 +197,8 @@ function ProfileEditContent({
   notice,
   pageError,
   onAvatarPress,
-  onEditField
+  onEditField,
+  onPrivacyChange
 }: {
   profile: UserProfileDetails;
   avatarBusy: boolean;
@@ -203,6 +206,7 @@ function ProfileEditContent({
   pageError: string | null;
   onAvatarPress: () => void;
   onEditField: (field: EditableField) => void;
+  onPrivacyChange: (visibility: Partial<UserProfileVisibility>) => void;
 }) {
   const avatarSource = profile.avatarUrl ? { uri: profile.avatarUrl } : profileAvatarArtwork;
 
@@ -284,6 +288,16 @@ function ProfileEditContent({
           />
         </View>
 
+        <View style={styles.privacyCard}>
+          <Text style={styles.readOnlyEyebrow}>PRIVACY</Text>
+          <Text style={styles.privacyTitle}>Who can see your profile sections</Text>
+          <Text style={styles.privacyHint}>These four sections are public by default. Turn any one off when you want a quieter profile.</Text>
+          <PrivacyToggle label="Post" value={profile.visibility.posts} onChange={(value) => onPrivacyChange({ posts: value })} />
+          <PrivacyToggle label="Thread" value={profile.visibility.threads} onChange={(value) => onPrivacyChange({ threads: value })} />
+          <PrivacyToggle label="Comment" value={profile.visibility.comments} onChange={(value) => onPrivacyChange({ comments: value })} />
+          <PrivacyToggle label="Save" value={profile.visibility.saves} onChange={(value) => onPrivacyChange({ saves: value })} />
+        </View>
+
         <View style={styles.readOnlyCard}>
           <Text style={styles.readOnlyEyebrow}>LINE IDENTITY</Text>
           <View style={styles.identityMetaRow}>
@@ -306,6 +320,10 @@ function ProfileEditContent({
       </ScrollView>
     </View>
   );
+}
+
+function PrivacyToggle({ label, value, onChange }: { label: string; value: boolean; onChange: (value: boolean) => void }) {
+  return <View style={styles.privacyRow}><Text style={styles.privacyLabel}>{label}</Text><Pressable accessibilityRole="switch" accessibilityState={{ checked: value }} onPress={() => onChange(!value)} style={[styles.privacySwitch, value && styles.privacySwitchOn]}><View style={[styles.privacyThumb, value && styles.privacyThumbOn]} /></Pressable></View>;
 }
 
 function FieldEditorSheet({
@@ -543,6 +561,20 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl,
     backgroundColor: colors.surfaceWarm
   },
+  privacyCard: {
+    marginTop: 18,
+    padding: 17,
+    borderRadius: 16,
+    backgroundColor: colors.white
+  },
+  privacyTitle: { marginTop: 5, color: colors.ink, fontSize: 18, lineHeight: 23 },
+  privacyHint: { marginTop: 5, color: colors.profileMuted, fontSize: 12, lineHeight: 17 },
+  privacyRow: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
+  privacyLabel: { color: colors.ink, fontSize: 16 },
+  privacySwitch: { width: 42, height: 24, padding: 3, borderRadius: 14, backgroundColor: colors.faint, justifyContent: "center" },
+  privacySwitchOn: { backgroundColor: colors.black },
+  privacyThumb: { width: 18, height: 18, borderRadius: 9, backgroundColor: colors.white },
+  privacyThumbOn: { alignSelf: "flex-end" },
   readOnlyEyebrow: {
     color: colors.profileMuted,
     fontSize: 10,

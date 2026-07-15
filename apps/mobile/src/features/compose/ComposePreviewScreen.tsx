@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -41,6 +42,7 @@ export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
   const draftId = getParam(params.draftId);
   const [activeTool, setActiveTool] = useState<LayoutTool>("template");
   const [layout, setLayout] = useState<PoemLayoutConfig | null>(null);
+  const [finishOpen, setFinishOpen] = useState(false);
 
   const draftQuery = useQuery({
     queryKey: ["compose-draft", draftId],
@@ -72,6 +74,20 @@ export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
       router.replace("/(tabs)/discover" as Href);
     }
   });
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (layout) {
+        await lineSpaceApi.updatePoemDraft({ draftId, userId: currentUserId, layout });
+      }
+      return lineSpaceApi.savePoemDraft({ draftId, userId: currentUserId });
+    },
+    onSuccess: () => {
+      setFinishOpen(false);
+      void queryClient.invalidateQueries({ queryKey: ["user-drafts", currentUserId] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile-content", currentUserId] });
+      router.replace("/profile/drafts" as Href);
+    }
+  });
 
   useEffect(() => {
     if (draftQuery.data && !layout) setLayout(draftQuery.data.layout);
@@ -92,8 +108,8 @@ export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
           <Text style={styles.headerTitle}>layout</Text>
           <Text style={styles.headerSubtitle}>make the poem feel like yours</Text>
         </View>
-        <Pressable accessibilityRole="button" disabled={!draftId || publishMutation.isPending} onPress={() => publishMutation.mutate()} style={styles.doneButton}>
-          {publishMutation.isPending ? <ActivityIndicator color={colors.profileMuted} /> : <Text style={styles.doneText}>done</Text>}
+        <Pressable accessibilityRole="button" disabled={!draftId || publishMutation.isPending || saveMutation.isPending} onPress={() => setFinishOpen(true)} style={styles.doneButton}>
+          {publishMutation.isPending || saveMutation.isPending ? <ActivityIndicator color={colors.profileMuted} /> : <Text style={styles.doneText}>done</Text>}
         </Pressable>
       </View>
 
@@ -117,8 +133,19 @@ export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
       {layoutMutation.isError || publishMutation.isError ? (
         <Text style={styles.floatingError}>This layout could not be saved. Tap the option again to retry.</Text>
       ) : null}
+      <FinishDraftSheet
+        isBusy={publishMutation.isPending || saveMutation.isPending}
+        onClose={() => setFinishOpen(false)}
+        onPublish={() => publishMutation.mutate()}
+        onSave={() => saveMutation.mutate()}
+        visible={finishOpen}
+      />
     </AppScreen>
   );
+}
+
+function FinishDraftSheet({ visible, isBusy, onClose, onPublish, onSave }: { visible: boolean; isBusy: boolean; onClose: () => void; onPublish: () => void; onSave: () => void }) {
+  return <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}><View style={styles.finishRoot}><Pressable accessibilityLabel="Close publish choices" onPress={onClose} style={styles.finishBackdrop} /><View style={styles.finishSheet}><View style={styles.finishHandle} /><Text style={styles.finishEyebrow}>ONE LAST CHOICE</Text><Text style={styles.finishTitle}>What would you like to do with this line?</Text><Text style={styles.finishHint}>You can keep editing a saved draft or make it visible to the community.</Text><Pressable accessibilityRole="button" disabled={isBusy} onPress={onPublish} style={styles.publishChoice}><Text style={styles.publishChoiceTitle}>Publish</Text><Text style={styles.publishChoiceHint}>Share this post now</Text></Pressable><Pressable accessibilityRole="button" disabled={isBusy} onPress={onSave} style={styles.saveChoice}><Text style={styles.saveChoiceTitle}>Save to draft</Text><Text style={styles.saveChoiceHint}>Keep it private and return later</Text></Pressable><Pressable accessibilityRole="button" disabled={isBusy} onPress={onClose} style={styles.cancelChoice}><Text style={styles.cancelText}>Not yet</Text></Pressable></View></View></Modal>;
 }
 
 function LayoutWorkspace({
@@ -274,5 +301,6 @@ const styles = StyleSheet.create({
   toolLabelActive: { color: colors.ink },
   centerState: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 20 },
   errorText: { color: colors.accent, fontSize: 13, lineHeight: 18 },
-  floatingError: { position: "absolute", left: 20, right: 20, bottom: 215, padding: 10, borderRadius: radius.md, overflow: "hidden", backgroundColor: "rgba(255,255,255,0.94)", color: colors.accent, fontSize: 11, lineHeight: 15, textAlign: "center" }
+  floatingError: { position: "absolute", left: 20, right: 20, bottom: 215, padding: 10, borderRadius: radius.md, overflow: "hidden", backgroundColor: "rgba(255,255,255,0.94)", color: colors.accent, fontSize: 11, lineHeight: 15, textAlign: "center" },
+  finishRoot: { flex: 1, justifyContent: "flex-end" }, finishBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.3)" }, finishSheet: { paddingHorizontal: 20, paddingBottom: 28, borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: colors.surface }, finishHandle: { alignSelf: "center", width: 42, height: 4, marginTop: 9, borderRadius: radius.pill, backgroundColor: colors.faint }, finishEyebrow: { marginTop: 20, color: colors.profileMuted, fontSize: 10, letterSpacing: 1.2 }, finishTitle: { marginTop: 8, color: colors.ink, fontSize: 24, lineHeight: 30 }, finishHint: { marginTop: 8, color: colors.profileMuted, fontSize: 13, lineHeight: 18 }, publishChoice: { marginTop: 22, padding: 16, borderRadius: 14, backgroundColor: colors.black }, publishChoiceTitle: { color: colors.white, fontSize: 18 }, publishChoiceHint: { marginTop: 3, color: "rgba(255,255,255,0.65)", fontSize: 12 }, saveChoice: { marginTop: 10, padding: 16, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white }, saveChoiceTitle: { color: colors.ink, fontSize: 18 }, saveChoiceHint: { marginTop: 3, color: colors.profileMuted, fontSize: 12 }, cancelChoice: { marginTop: 10, alignItems: "center", padding: 13 }, cancelText: { color: colors.profileMuted, fontSize: 14 }
 });

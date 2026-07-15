@@ -282,6 +282,15 @@ export async function handleApiRequest(
           })
         );
       }
+
+      if (method === "POST" && draftRoute.resource === "save") {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        return json(
+          200,
+          await api.savePoemDraft({ draftId: draftRoute.draftId, userId: actor.user.id })
+        );
+      }
     } catch {
       return json(404, { code: "DRAFT_NOT_FOUND_OR_FORBIDDEN" });
     }
@@ -290,6 +299,14 @@ export async function handleApiRequest(
   const inviteCandidatesUserId = parseInviteCandidatesRoute(pathname);
   if (method === "GET" && inviteCandidatesUserId) {
     return json(200, await api.listDraftInviteCandidates(inviteCandidatesUserId));
+  }
+
+  const draftsUserId = parseUserDraftsRoute(pathname);
+  if (method === "GET" && draftsUserId) {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
+    if (actor.user.id !== draftsUserId) return json(403, { code: "FORBIDDEN" });
+    return json(200, await api.listUserDrafts(actor.user.id));
   }
 
   if (method === "GET" && pathname === "/v1/feed") {
@@ -352,7 +369,12 @@ export async function handleApiRequest(
     if (profileRoute.resource === "profile-content") {
       return json(
         200,
-        await api.listUserProfileContent(profileRoute.userId, profileRoute.section)
+        await api.listUserProfileContent(profileRoute.userId, profileRoute.section, {
+          viewerId: searchParams.get("viewerId") ?? undefined,
+          threadRelation: parseThreadRelation(searchParams.get("threadRelation")),
+          collection: parseProfileCollection(searchParams.get("collection")),
+          contentKind: parseProfileContentKind(searchParams.get("contentKind"))
+        })
       );
     }
 
@@ -537,7 +559,7 @@ function parsePoemCollectionRoute(pathname: string): ParsedCollectionRoute | nul
 
 type ParsedDraftRoute = {
   draftId: string;
-  resource: "draft" | "operations" | "invitations" | "publish";
+  resource: "draft" | "operations" | "invitations" | "publish" | "save";
 };
 
 function parseDraftRoute(pathname: string): ParsedDraftRoute | null {
@@ -549,7 +571,7 @@ function parseDraftRoute(pathname: string): ParsedDraftRoute | null {
   const resource = segments[3];
   if (
     segments.length === 4 &&
-    (resource === "operations" || resource === "invitations" || resource === "publish")
+    (resource === "operations" || resource === "invitations" || resource === "publish" || resource === "save")
   ) {
     return { draftId: segments[2], resource };
   }
@@ -622,7 +644,26 @@ function parseUserProfileRoute(pathname: string): ParsedUserProfileRoute | null 
 function isUserProfileContentSection(
   value: string | undefined
 ): value is UserProfileContentSection {
-  return value === "posts" || value === "comments" || value === "quotes" || value === "saves";
+  return value === "posts" || value === "threads" || value === "comments" || value === "saves";
+}
+
+function parseThreadRelation(value: string | null): "started" | "participated" | undefined {
+  return value === "started" || value === "participated" ? value : undefined;
+}
+
+function parseProfileCollection(value: string | null): "liked" | "saved" | undefined {
+  return value === "liked" || value === "saved" ? value : undefined;
+}
+
+function parseProfileContentKind(value: string | null): "post" | "thread" | "comment" | undefined {
+  return value === "post" || value === "thread" || value === "comment" ? value : undefined;
+}
+
+function parseUserDraftsRoute(pathname: string): string | null {
+  const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  return segments.length === 4 && segments[0] === "v1" && segments[1] === "users" && segments[3] === "drafts"
+    ? segments[2] ?? null
+    : null;
 }
 
 function isUserConnectionKind(value: string | undefined): value is UserConnectionKind {
@@ -668,6 +709,24 @@ function parseUserProfileChanges(
       return { ok: false, message: "avatarUrl must be a non-empty string." };
     }
     value.avatarUrl = source.avatarUrl.trim();
+  }
+
+  if (source.visibility !== undefined) {
+    if (!source.visibility || typeof source.visibility !== "object") {
+      return { ok: false, message: "visibility must be an object." };
+    }
+    const visibility = source.visibility as Record<string, unknown>;
+    const allowed = ["posts", "threads", "comments", "saves"] as const;
+    const parsed: Partial<Record<(typeof allowed)[number], boolean>> = {};
+    for (const key of allowed) {
+      if (visibility[key] !== undefined) {
+        if (typeof visibility[key] !== "boolean") {
+          return { ok: false, message: `${key} visibility must be boolean.` };
+        }
+        parsed[key] = visibility[key] as boolean;
+      }
+    }
+    value.visibility = parsed;
   }
 
   if (Object.keys(value).length === 0) {

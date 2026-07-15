@@ -181,6 +181,11 @@ export type PublishPoemDraftResult = {
   poem: PoemSummary;
 };
 
+export type SavePoemDraftInput = {
+  draftId: string;
+  userId: string;
+};
+
 export type UserProfile = {
   id: string;
   handle: string;
@@ -203,10 +208,17 @@ export type UserProfileStats = {
   likesAndSaves: number;
 };
 
+export type UserProfileVisibility = {
+  posts: boolean;
+  threads: boolean;
+  comments: boolean;
+  saves: boolean;
+};
+
 export type UserContentCounts = {
   posts: number;
+  threads: number;
   comments: number;
-  quotes: number;
   saves: number;
 };
 
@@ -216,6 +228,7 @@ export type UserProfileDetails = UserProfile & {
   badges: UserBadge[];
   stats: UserProfileStats;
   contentCounts: UserContentCounts;
+  visibility: UserProfileVisibility;
 };
 
 export type UpdateUserProfileInput = {
@@ -224,13 +237,28 @@ export type UpdateUserProfileInput = {
   bio?: string;
   /** Durable object-storage URL in production; local cropped URI in mock mode. */
   avatarUrl?: string;
+  visibility?: Partial<UserProfileVisibility>;
 };
 
-export type UserProfileContentSection = "posts" | "comments" | "quotes" | "saves";
+export type UserProfileContentSection = "posts" | "threads" | "comments" | "saves";
+
+export type UserProfileContentKind = "post" | "thread" | "comment";
+export type UserThreadRelation = "started" | "participated";
+export type UserCollectionKind = "liked" | "saved";
+
+export type UserProfileContentQuery = {
+  viewerId?: string;
+  threadRelation?: UserThreadRelation;
+  collection?: UserCollectionKind;
+  contentKind?: UserProfileContentKind;
+};
 
 export type UserProfileContentItem = {
   id: string;
+  kind: UserProfileContentKind;
   poemId?: string;
+  threadId?: string;
+  commentId?: string;
   title: string;
   excerpt: string;
   tags: string[];
@@ -238,6 +266,12 @@ export type UserProfileContentItem = {
   highlightCount?: number;
   artworkUrl?: string;
   muted?: boolean;
+  threadRelation?: UserThreadRelation;
+  collection?: UserCollectionKind;
+  reference?: {
+    kind: "post" | "comment";
+    text: string;
+  };
 };
 
 export type UserProfileContentPage = {
@@ -245,6 +279,13 @@ export type UserProfileContentPage = {
   section: UserProfileContentSection;
   total: number;
   items: UserProfileContentItem[];
+  visible: boolean;
+};
+
+export type UserDraftPage = {
+  userId: string;
+  total: number;
+  items: PoemDraft[];
 };
 
 export type UserConnectionKind = "followers" | "following";

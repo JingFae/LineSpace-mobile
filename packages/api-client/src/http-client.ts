@@ -17,6 +17,7 @@ import type {
   PoemSummary,
   PublishPoemDraftInput,
   PublishPoemDraftResult,
+  SavePoemDraftInput,
   ThreadContinuation,
   ThreadDetail,
   ThreadFeedQuery,
@@ -31,8 +32,10 @@ import type {
   UserConnectionQuery,
   UserPoemCollections,
   UserProfileContentPage,
+  UserProfileContentQuery,
   UserProfileContentSection,
   UserProfileDetails,
+  UserDraftPage,
   UpdateUserProfileInput
 } from "./types";
 import type { LineSpaceApi } from "./client";
@@ -93,6 +96,20 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     return this.postJson<PublishPoemDraftResult>(
       `/v1/drafts/${encodeURIComponent(draftId)}/publish`,
       request
+    );
+  }
+
+  async savePoemDraft(input: SavePoemDraftInput): Promise<PoemDraft> {
+    const { draftId, ...request } = input;
+    return this.postJson<PoemDraft>(
+      `/v1/drafts/${encodeURIComponent(draftId)}/save`,
+      request
+    );
+  }
+
+  async listUserDrafts(userId: string): Promise<UserDraftPage> {
+    return this.getJson<UserDraftPage>(
+      `/v1/users/${encodeURIComponent(userId)}/drafts`
     );
   }
 
@@ -164,10 +181,17 @@ export class HttpLineSpaceApi implements LineSpaceApi {
 
   async listUserProfileContent(
     userId: string,
-    section: UserProfileContentSection
+    section: UserProfileContentSection,
+    query: UserProfileContentQuery = {}
   ): Promise<UserProfileContentPage> {
+    const params = new URLSearchParams();
+    if (query.viewerId) params.set("viewerId", query.viewerId);
+    if (query.threadRelation) params.set("threadRelation", query.threadRelation);
+    if (query.collection) params.set("collection", query.collection);
+    if (query.contentKind) params.set("contentKind", query.contentKind);
+    const suffix = params.size > 0 ? `?${params.toString()}` : "";
     return this.getJson<UserProfileContentPage>(
-      `/v1/users/${encodeURIComponent(userId)}/profile-content/${section}`
+      `/v1/users/${encodeURIComponent(userId)}/profile-content/${section}${suffix}`
     );
   }
 

@@ -196,6 +196,7 @@ export function ThreadFeedScreen() {
               onOpen={() =>
                 router.push({ pathname: "/thread/[id]", params: { id: thread.id } } as unknown as Href)
               }
+              onAuthorPress={() => router.push({ pathname: "/profile/[id]", params: { id: thread.author.id } } as unknown as Href)}
               onShare={() =>
                 shareMutation.mutate({
                   kind: "thread",
@@ -340,6 +341,7 @@ export function ThreadDetailScreen({ threadId }: { threadId?: string }) {
             <ThreadDetailHero
               followed={followingAuthorIds.has(detail.thread.author.id)}
               thread={detail.thread}
+              onAuthorPress={() => router.push({ pathname: "/profile/[id]", params: { id: detail.thread.author.id } } as unknown as Href)}
               onContinue={() => setComposerTarget({ kind: "thread", thread: detail.thread })}
               onFollow={() =>
                 setFollowingAuthorIds((current) => {
@@ -671,7 +673,8 @@ function ThreadCard({
   onOpen,
   onLike,
   onContinue,
-  onShare
+  onShare,
+  onAuthorPress
 }: {
   thread: PoetryThread;
   elevated?: boolean;
@@ -679,12 +682,13 @@ function ThreadCard({
   onLike: () => void;
   onContinue: () => void;
   onShare: () => void;
+  onAuthorPress: () => void;
 }) {
   const showFullMeta = elevated;
   return (
     <View style={[styles.threadCard, elevated && styles.elevatedCard]}>
       <View style={styles.threadRow}>
-        <Pressable accessibilityLabel={`Open ${thread.author.handle}'s thread`} accessibilityRole="button" onPress={onOpen} style={styles.threadAvatarButton}>
+        <Pressable accessibilityLabel={`Open ${thread.author.handle}'s profile`} accessibilityRole="button" onPress={onAuthorPress} style={styles.threadAvatarButton}>
           <Avatar
             color={thread.author.avatarColor}
             imageSource={thread.author.avatarUrl ? { uri: thread.author.avatarUrl } : undefined}
@@ -717,7 +721,8 @@ function ThreadDetailHero({
   onFollow,
   onLike,
   onContinue,
-  onShare
+  onShare,
+  onAuthorPress
 }: {
   followed: boolean;
   thread: PoetryThread;
@@ -725,6 +730,7 @@ function ThreadDetailHero({
   onLike: () => void;
   onContinue: () => void;
   onShare: () => void;
+  onAuthorPress: () => void;
 }) {
   return (
     <View style={[styles.detailHero, thread.cover && styles.detailHeroWithCover]}>
@@ -734,7 +740,7 @@ function ThreadDetailHero({
         </View>
       ) : null}
       <View style={styles.detailHeroHeader}>
-        <View style={styles.detailHeroAuthor}>
+        <Pressable onPress={onAuthorPress} style={styles.detailHeroAuthor}>
           <Avatar
             color={thread.author.avatarColor}
             imageSource={thread.author.avatarUrl ? { uri: thread.author.avatarUrl } : undefined}
@@ -745,7 +751,7 @@ function ThreadDetailHero({
             <Text numberOfLines={1} style={styles.detailHeroName}>{thread.author.handle}</Text>
             <Text style={styles.detailHeroTime}>{formatRelative(thread.createdAt)}</Text>
           </View>
-        </View>
+        </Pressable>
         <Pressable accessibilityRole="button" onPress={onFollow} style={[styles.followButton, followed && styles.followingButton]}>
           <Text style={[styles.followButtonText, followed && styles.followingButtonText]}>
             {followed ? "Following" : "Follow"}

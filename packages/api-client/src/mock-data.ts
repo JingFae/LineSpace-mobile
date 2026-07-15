@@ -310,10 +310,11 @@ export const mockUserProfileDetails: UserProfileDetails[] = [
     },
     contentCounts: {
       posts: 17,
+      threads: 12,
       comments: 42,
-      quotes: 9,
       saves: 29
-    }
+    },
+    visibility: { posts: true, threads: true, comments: true, saves: true }
   },
   {
     ...mockUsers[1]!,
@@ -333,10 +334,11 @@ export const mockUserProfileDetails: UserProfileDetails[] = [
     },
     contentCounts: {
       posts: 9,
+      threads: 6,
       comments: 31,
-      quotes: 5,
       saves: 18
-    }
+    },
+    visibility: { posts: true, threads: true, comments: true, saves: true }
   }
 ];
 
@@ -346,6 +348,7 @@ const profilePost = (
   overrides: Partial<UserProfileContentItem> = {}
 ): UserProfileContentItem => ({
   id,
+  kind: "post",
   poemId: "poem-cedar",
   title: "Remembered",
   excerpt: "I dreamed that AI …",
@@ -368,29 +371,46 @@ export const mockUserProfileContent: Record<
       profilePost("profile-post-5", 12),
       profilePost("profile-post-6", 21)
     ],
-    comments: [
-      profilePost("profile-comment-1", 22, {
-        title: "A quiet revision",
-        excerpt: "The maps insisted I had lived there once."
+    threads: [
+      profilePost("profile-thread-started", 14, {
+        kind: "thread",
+        threadId: "thread-city-edge",
+        title: "thread started by Lili",
+        excerpt: "The first line waits for a stranger to answer.",
+        threadRelation: "started"
       }),
-      profilePost("profile-comment-2", 18, {
-        title: "Between floors",
-        excerpt: "It stopped between floors."
+      profilePost("profile-thread-joined", 8, {
+        kind: "thread",
+        threadId: "thread-rain-without-rain",
+        title: "thread joined by Lili",
+        excerpt: "A continuation can change the temperature of a room.",
+        threadRelation: "participated"
       })
     ],
-    quotes: [
-      profilePost("profile-quote-1", 14, {
-        title: "Borrowed light",
-        excerpt: "Yesterday kept borrowing tomorrow's light."
+    comments: [
+      profilePost("profile-comment-1", 22, {
+        kind: "comment",
+        commentId: "comment-lili-childhood",
+        title: "A quiet revision",
+        excerpt: "The maps insisted I had lived there once.",
+        reference: { kind: "post", text: "Remembered" }
       }),
-      profilePost("profile-quote-2", 6, {
-        title: "Separate moons",
-        excerpt: "Every window kept a separate moon."
+      profilePost("profile-comment-2", 18, {
+        kind: "comment",
+        commentId: "comment-lili-reply",
+        title: "Between floors",
+        excerpt: "It stopped between floors.",
+        reference: { kind: "comment", text: "Can I quote the moon image in my reply?" }
       })
     ],
     saves: [
-      profilePost("profile-save-1", 11),
+      profilePost("profile-like-post-1", 11, { collection: "liked", kind: "post", title: "Remembered" }),
+      profilePost("profile-like-thread-1", 8, { collection: "liked", kind: "thread", threadId: "thread-unopened-letter", title: "thread · unopened letter", excerpt: "The letter stayed open on the table." }),
+      profilePost("profile-like-comment-1", 5, { collection: "liked", kind: "comment", poemId: "poem-light", commentId: "comment-jinghe-floors", title: "comment · Between floors", excerpt: "It stopped between floors.", reference: { kind: "post", text: "light" } }),
+      profilePost("profile-save-1", 11, { collection: "saved", kind: "post" }),
       profilePost("profile-save-2", 8, {
+        collection: "saved",
+        kind: "post",
         title: "orbit",
         poemId: "poem-orbit",
         excerpt: "The city hummed below its own reflection.",
@@ -400,8 +420,8 @@ export const mockUserProfileContent: Record<
   },
   "user-ray": {
     posts: [profilePost("ray-profile-post-1", 5, { poemId: "poem-cedar" })],
+    threads: [],
     comments: [],
-    quotes: [],
     saves: []
   }
 };

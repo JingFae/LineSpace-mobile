@@ -66,6 +66,7 @@ export type {
   LoginAuthInput,
   PublishPoemDraftInput,
   PublishPoemDraftResult,
+  SavePoemDraftInput,
   RefreshAuthInput,
   RegisterAuthInput,
   ThreadContinuation,
@@ -85,8 +86,14 @@ export type {
   UserPoemCollections,
   UserProfile,
   UserProfileContentItem,
+  UserProfileContentKind,
   UserProfileContentPage,
+  UserProfileContentQuery,
   UserProfileContentSection,
   UserProfileDetails,
+  UserProfileVisibility,
+  UserDraftPage,
+  UserCollectionKind,
+  UserThreadRelation,
   UserProfileStats
 } from "./types";
