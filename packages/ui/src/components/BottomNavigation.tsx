@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, View, type ImageSourcePropType } from "react-native";
+import { Pressable, StyleSheet, Text, View, type ImageSourcePropType } from "react-native";
 import { colors, spacing } from "@linespace/tokens";
 import { ActivityIcon, CreateIcon, MessagesIcon, ReadPostIcon } from "../icon";
 import { Avatar } from "./Avatar";
@@ -44,6 +44,11 @@ export function BottomNavigation<TValue extends string>({
               selected={item.value === value}
               value={item.value}
             />
+            {isCreate ? null : (
+              <Text style={[styles.label, item.value === value && styles.labelSelected]}>
+                {item.label}
+              </Text>
+            )}
           </Pressable>
         );
       })}
@@ -66,11 +71,11 @@ function NavIcon({
     return <CreateIcon />;
   }
 
-  if (value === "discover") {
+  if (value === "post") {
     return <ReadPostIcon color={color} />;
   }
 
-  if (value === "comments") {
+  if (value === "inbox") {
     return <MessagesIcon color={color} />;
   }
 
@@ -112,6 +117,7 @@ const styles = StyleSheet.create({
   },
   item: {
     minWidth: 58,
+    minHeight: 48,
     alignItems: "center",
     justifyContent: "center",
     gap: 3
@@ -124,5 +130,13 @@ const styles = StyleSheet.create({
     height: 29,
     borderRadius: 15,
     backgroundColor: "#FF0038"
+  },
+  label: {
+    color: colors.tabMuted,
+    fontSize: 10,
+    lineHeight: 12
+  },
+  labelSelected: {
+    color: colors.black
   }
 });

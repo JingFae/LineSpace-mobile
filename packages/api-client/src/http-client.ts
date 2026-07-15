@@ -1,7 +1,10 @@
 import type {
   AiAssistRequest,
   AiAssistResponse,
+  ContinuationDetail,
+  CreateContinuationInput,
   CreatePoemDraftInput,
+  CreateThreadContinuationInput,
   DraftInvitation,
   DraftOperationInput,
   FeedQuery,
@@ -9,11 +12,19 @@ import type {
   PoemDesignCatalog,
   PoemDraft,
   PoemEngagementResult,
+  PoetryThread,
   PoemSummary,
   PublishPoemDraftInput,
   PublishPoemDraftResult,
+  ThreadContinuation,
+  ThreadDetail,
+  ThreadFeedQuery,
+  ThreadShareResult,
+  ThreadShareTarget,
   UpdatePoemDraftInput,
   UpdatePoemCollectionInput,
+  UpdateContinuationLikeInput,
+  UpdateThreadLikeInput,
   UserConnectionKind,
   UserConnectionPage,
   UserConnectionQuery,
@@ -165,6 +176,82 @@ export class HttpLineSpaceApi implements LineSpaceApi {
 
     return this.getJson<UserConnectionPage>(
       `/v1/users/${encodeURIComponent(userId)}/${kind}${suffix}`
+    );
+  }
+
+  async listThreads(query: ThreadFeedQuery = {}): Promise<PoetryThread[]> {
+    const params = new URLSearchParams();
+    if (query.sort) params.set("sort", query.sort);
+    if (query.viewerId) params.set("viewerId", query.viewerId);
+    const suffix = params.size > 0 ? `?${params.toString()}` : "";
+    return this.getJson<PoetryThread[]>(`/v1/threads${suffix}`);
+  }
+
+  async getThread(threadId: string, viewerId?: string): Promise<ThreadDetail | null> {
+    const params = new URLSearchParams();
+    if (viewerId) params.set("viewerId", viewerId);
+    const suffix = params.size > 0 ? `?${params.toString()}` : "";
+    return this.getJson<ThreadDetail | null>(
+      `/v1/threads/${encodeURIComponent(threadId)}${suffix}`
+    );
+  }
+
+  async getContinuationDetail(
+    continuationId: string,
+    viewerId?: string
+  ): Promise<ContinuationDetail | null> {
+    const params = new URLSearchParams();
+    if (viewerId) params.set("viewerId", viewerId);
+    const suffix = params.size > 0 ? `?${params.toString()}` : "";
+    return this.getJson<ContinuationDetail | null>(
+      `/v1/continuations/${encodeURIComponent(continuationId)}${suffix}`
+    );
+  }
+
+  async createThreadContinuation(
+    input: CreateThreadContinuationInput
+  ): Promise<ThreadContinuation> {
+    const { threadId, ...request } = input;
+    return this.postJson<ThreadContinuation>(
+      `/v1/threads/${encodeURIComponent(threadId)}/continuations`,
+      request
+    );
+  }
+
+  async createContinuation(input: CreateContinuationInput): Promise<ThreadContinuation> {
+    const { continuationId, ...request } = input;
+    return this.postJson<ThreadContinuation>(
+      `/v1/continuations/${encodeURIComponent(continuationId)}/continuations`,
+      request
+    );
+  }
+
+  async setThreadLike(input: UpdateThreadLikeInput): Promise<PoetryThread> {
+    return this.putJson<PoetryThread>(
+      `/v1/threads/${encodeURIComponent(input.threadId)}/like`,
+      { userId: input.userId, isActive: input.isActive }
+    );
+  }
+
+  async setContinuationLike(
+    input: UpdateContinuationLikeInput
+  ): Promise<ThreadContinuation> {
+    return this.putJson<ThreadContinuation>(
+      `/v1/continuations/${encodeURIComponent(input.continuationId)}/like`,
+      { userId: input.userId, isActive: input.isActive }
+    );
+  }
+
+  async recordThreadShare(target: ThreadShareTarget): Promise<ThreadShareResult> {
+    if (target.kind === "thread") {
+      return this.postJson<ThreadShareResult>(
+        `/v1/threads/${encodeURIComponent(target.threadId)}/share`,
+        { userId: target.userId }
+      );
+    }
+    return this.postJson<ThreadShareResult>(
+      `/v1/continuations/${encodeURIComponent(target.continuationId)}/share`,
+      { userId: target.userId }
     );
   }
 

@@ -1,5 +1,5 @@
-import { LineSpaceHomeScreen } from "@/features/feed/LineSpaceHomeScreen";
+import { ThreadFeedScreen } from "@/features/thread/ThreadScreens";
 
-export default function HomeRoute() {
-  return <LineSpaceHomeScreen />;
+export default function ThreadRoute() {
+  return <ThreadFeedScreen />;
 }

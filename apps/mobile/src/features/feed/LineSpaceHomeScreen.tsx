@@ -137,7 +137,7 @@ export function LineSpaceHomeScreen() {
               }
             : undefined
         }
-        value="home"
+        value="post"
         onChange={(value) => {
           if (value === "compose") {
             setCreateOpen(true);
@@ -185,6 +185,7 @@ function mapPoemToCard(poem: PoemSummary): PoemCardModel {
     tags: poem.tags,
     statusLabel: poem.status === "growing" ? "Poem Growing" : "Final Poem",
     startedAtLabel: formatPoemDate(poem.startedAt),
+    postedAtLabel: formatPostTimestamp(poem.startedAt),
     metrics: poem.metrics,
     viewer: poem.viewer,
     artworkTone: poem.artworkTone,
@@ -200,6 +201,11 @@ function formatPoemDate(value: string) {
   const weekday = date.toLocaleDateString("en-US", { weekday: "short" }).toLowerCase();
 
   return `${year}/${month}/${day} ${weekday}.`;
+}
+
+function formatPostTimestamp(value: string) {
+  const date = new Date(value);
+  return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()} 21:09`;
 }
 
 const styles = StyleSheet.create({
