@@ -4,16 +4,23 @@
 
 create table if not exists users (
   id text primary key,
+  auth_user_id uuid unique references auth.users(id) on delete cascade,
   linespace_id varchar(32) not null unique,
-  handle varchar(64) not null unique,
+  handle varchar(32) not null unique,
   display_name varchar(120) not null,
   avatar_url text,
   avatar_color varchar(16) not null default '#DCD8D3',
   bio varchar(280),
   level integer not null default 1 check (level >= 1),
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  check (char_length(handle) between 3 and 32),
+  check (handle = lower(handle)),
+  check (handle ~ '^[a-z0-9][a-z0-9._-]*$')
 );
+
+create unique index if not exists users_handle_case_insensitive_idx
+  on users (lower(handle));
 
 create or replace function touch_users_updated_at()
 returns trigger language plpgsql as $$
@@ -27,6 +34,44 @@ drop trigger if exists users_touch_updated_at on users;
 create trigger users_touch_updated_at
 before update of display_name, avatar_url, avatar_color, bio, level on users
 for each row execute function touch_users_updated_at();
+
+create or replace function public.handle_new_auth_user()
+returns trigger
+language plpgsql
+security definer set search_path = ''
+as $$
+declare
+  requested_handle text := lower(trim(new.raw_user_meta_data ->> 'username'));
+begin
+  if requested_handle is null
+     or char_length(requested_handle) not between 3 and 32
+     or requested_handle !~ '^[a-z0-9][a-z0-9._-]*$' then
+    raise exception using
+      errcode = '23514',
+      message = 'invalid LineSpace username metadata';
+  end if;
+
+  insert into public.users (
+    id,
+    auth_user_id,
+    linespace_id,
+    handle,
+    display_name
+  ) values (
+    new.id::text,
+    new.id,
+    left('ls_' || replace(new.id::text, '-', ''), 32),
+    requested_handle,
+    left(coalesce(nullif(trim(new.raw_user_meta_data ->> 'display_name'), ''), requested_handle), 120)
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+after insert on auth.users
+for each row execute function public.handle_new_auth_user();
 
 create table if not exists badges (
   id text primary key,

@@ -1,5 +1,50 @@
 export type FeedSection = "latest" | "popular" | "following";
 
+export type AuthUser = {
+  id: string;
+  authUserId: string;
+  username: string;
+  email: string;
+  displayName: string;
+  emailConfirmed: boolean;
+  createdAt: string;
+};
+
+export type AuthSession = {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  expiresIn: number;
+  tokenType: string;
+};
+
+export type RegisterAuthInput = {
+  username: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
+};
+
+export type LoginAuthInput = {
+  username: string;
+  password: string;
+};
+
+export type RefreshAuthInput = {
+  refreshToken: string;
+};
+
+export type AuthRegistrationResult = {
+  user: AuthUser;
+  session: AuthSession | null;
+  emailConfirmationRequired: boolean;
+};
+
+export type AuthSessionResult = {
+  user: AuthUser;
+  session: AuthSession;
+};
+
 export type FeedFilter = "all" | "most-contributed" | "growing" | "final";
 
 export type PoemStatus = "growing" | "final" | "draft";

@@ -1,5 +1,5 @@
 export { createMockLineSpaceApi, MockLineSpaceApi, type LineSpaceApi } from "./client";
-export { HttpLineSpaceApi } from "./http-client";
+export { HttpLineSpaceApi, type HttpLineSpaceApiOptions } from "./http-client";
 export {
   mockPoems,
   mockInboxActivitySummaries,
@@ -15,6 +15,10 @@ export type {
   AiAssistIntent,
   AiAssistRequest,
   AiAssistResponse,
+  AuthRegistrationResult,
+  AuthSession,
+  AuthSessionResult,
+  AuthUser,
   ComposeMode,
   ContinuationDetail,
   CreateContinuationInput,
@@ -59,8 +63,11 @@ export type {
   UpdateThreadLikeInput,
   UpdateUserProfileInput,
   InviteDraftCollaboratorInput,
+  LoginAuthInput,
   PublishPoemDraftInput,
   PublishPoemDraftResult,
+  RefreshAuthInput,
+  RegisterAuthInput,
   ThreadContinuation,
   ThreadDetail,
   ThreadFeedQuery,

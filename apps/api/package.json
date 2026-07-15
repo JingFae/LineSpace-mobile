@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/server.ts",
-    "check": "tsx src/smoke-check.ts",
+    "check": "tsx src/auth-check.ts && tsx src/smoke-check.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@linespace/api-client": "workspace:*",
+    "@supabase/supabase-js": "^2.110.5",
     "tsx": "^4.19.2"
   },
   "devDependencies": {
