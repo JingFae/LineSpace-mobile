@@ -769,7 +769,7 @@ export const mockThreadContinuations: ThreadContinuation[] = [
     author: threadUsers.roma,
     content: "The rooftops lowered their voices and waited for the sky to confess.",
     createdAt: "2026-07-14T09:20:00.000Z",
-    metrics: { likes: 7, continuations: 1, shares: 0 },
+    metrics: { likes: 38, continuations: 1, shares: 0 },
     viewer: { liked: false }
   },
   {
@@ -779,7 +779,7 @@ export const mockThreadContinuations: ThreadContinuation[] = [
     author: threadUsers.zhihan,
     content: "Under every eave, a bucket kept practicing the sky.",
     createdAt: "2026-07-14T09:34:00.000Z",
-    metrics: { likes: 5, continuations: 0, shares: 0 },
+    metrics: { likes: 21, continuations: 0, shares: 0 },
     viewer: { liked: false }
   },
   {
