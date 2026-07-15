@@ -41,6 +41,12 @@ import type {
 } from "@linespace/api-client";
 import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
 import { mainTabs, tabRoutes } from "@/navigation/tabs";
+import {
+  adaptThreadToCreativeViewModel,
+  getThreadContributors,
+  getThreadMedia,
+  type CreativeThreadViewModel
+} from "./threadCreative";
 
 type ComposerTarget =
   | { kind: "thread"; thread: PoetryThread }
@@ -196,6 +202,9 @@ export function ThreadFeedScreen() {
               onOpen={() =>
                 router.push({ pathname: "/thread/[id]", params: { id: thread.id } } as unknown as Href)
               }
+              onOpenVersion={() =>
+                router.push({ pathname: "/thread/version/[id]", params: { id: thread.id } } as unknown as Href)
+              }
               onShare={() =>
                 shareMutation.mutate({
                   kind: "thread",
@@ -226,6 +235,7 @@ export function ThreadFeedScreen() {
         onSubmitted={(continuation, submittedTarget) => {
           setComposerTarget(null);
           updateThreadListCaches(queryClient, continuation);
+          updateThreadVersionTreeCache(queryClient, continuation.threadId, continuation);
         }}
         target={composerTarget}
       />
@@ -252,6 +262,12 @@ export function ThreadDetailScreen({ threadId }: { threadId?: string }) {
   const continuationLikeMutation = useContinuationLikeMutation();
   const shareMutation = useShareMutation((notice) => setShareNotice(notice));
   const detail = detailQuery.data ?? undefined;
+  const versionTreeQuery = useQuery({
+    queryKey: ["thread-version-tree", threadId, currentUserId, detail?.continuations.map((item) => item.id).join("|")],
+    enabled: Boolean(detail),
+    queryFn: () => getAllThreadContinuations(detail!.continuations)
+  });
+  const allContinuations = versionTreeQuery.data ?? detail?.continuations ?? [];
   const sortedContinuations = useMemo(() => {
     return sortContinuationItems(detail?.continuations ?? [], continuationOrder);
   }, [continuationOrder, detail?.continuations]);
@@ -338,6 +354,7 @@ export function ThreadDetailScreen({ threadId }: { threadId?: string }) {
         ) : (
           <>
             <ThreadDetailHero
+              continuations={allContinuations}
               followed={followingAuthorIds.has(detail.thread.author.id)}
               thread={detail.thread}
               onContinue={() => setComposerTarget({ kind: "thread", thread: detail.thread })}
@@ -362,6 +379,9 @@ export function ThreadDetailScreen({ threadId }: { threadId?: string }) {
                   threadId: detail.thread.id,
                   userId: currentUserId
                 })
+              }
+              onOpenVersion={() =>
+                router.push({ pathname: "/thread/version/[id]", params: { id: detail.thread.id } } as unknown as Href)
               }
             />
             <ContinuationHeader order={continuationOrder} onChange={handleContinuationOrderChange} />
@@ -418,6 +438,7 @@ export function ThreadDetailScreen({ threadId }: { threadId?: string }) {
           setComposerTarget(null);
           updateThreadListCaches(queryClient, continuation);
           updateThreadDetailCache(queryClient, threadId, continuation, submittedTarget);
+          updateThreadVersionTreeCache(queryClient, threadId, continuation);
           if (submittedTarget.kind === "continuation") {
             setExpandedDescendants((current) => appendExpandedDescendant(current, submittedTarget.continuation.id, continuation));
           }
@@ -615,6 +636,7 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
           setComposerTarget(null);
           updateThreadListCaches(queryClient, continuation);
           updateContinuationDetailCache(queryClient, continuationId, continuation, submittedTarget);
+          updateThreadVersionTreeCache(queryClient, continuation.threadId, continuation);
           if (submittedTarget.kind === "continuation") {
             setExpandedDescendants((current) => appendExpandedDescendant(current, submittedTarget.continuation.id, continuation));
           }
@@ -669,6 +691,7 @@ function ThreadCard({
   thread,
   elevated = false,
   onOpen,
+  onOpenVersion,
   onLike,
   onContinue,
   onShare
@@ -676,11 +699,13 @@ function ThreadCard({
   thread: PoetryThread;
   elevated?: boolean;
   onOpen: () => void;
+  onOpenVersion: () => void;
   onLike: () => void;
   onContinue: () => void;
   onShare: () => void;
 }) {
   const showFullMeta = elevated;
+  const creativeThread = adaptThreadToCreativeViewModel(thread);
   return (
     <View style={[styles.threadCard, elevated && styles.elevatedCard]}>
       <View style={styles.threadRow}>
@@ -695,9 +720,13 @@ function ThreadCard({
         <View style={styles.threadBody}>
           <Pressable accessibilityRole="button" onPress={onOpen} style={styles.threadOpenArea}>
             <CompactAuthorLine author={thread.author} createdAt={thread.createdAt} meta={showFullMeta ? thread.community : undefined} />
-            <Text numberOfLines={showFullMeta ? undefined : 20} style={styles.threadContent}>{thread.content}</Text>
-            {showFullMeta && thread.topic ? <Text style={styles.topicText}>#{thread.topic}</Text> : null}
+            <Text numberOfLines={showFullMeta ? undefined : 20} style={styles.threadContent}>{creativeThread.writingPrompt}</Text>
           </Pressable>
+          <StartingContentCard
+            compact={!elevated}
+            creativeThread={creativeThread}
+            onPress={onOpenVersion}
+          />
           <ThreadActionBar
             liked={thread.viewer.liked}
             metrics={thread.metrics}
@@ -712,27 +741,28 @@ function ThreadCard({
 }
 
 function ThreadDetailHero({
+  continuations,
   followed,
   thread,
   onFollow,
   onLike,
   onContinue,
-  onShare
+  onShare,
+  onOpenVersion
 }: {
+  continuations: readonly ThreadContinuation[];
   followed: boolean;
   thread: PoetryThread;
   onFollow: () => void;
   onLike: () => void;
   onContinue: () => void;
   onShare: () => void;
+  onOpenVersion: () => void;
 }) {
+  const creativeThread = adaptThreadToCreativeViewModel(thread);
+  const contributors = getThreadContributors(thread, continuations);
   return (
-    <View style={[styles.detailHero, thread.cover && styles.detailHeroWithCover]}>
-      {thread.cover ? (
-        <View pointerEvents="none" style={[styles.detailHeroImageWash, coverToneStyle(thread.cover.tone)]}>
-          <View style={styles.detailHeroFadeTop} />
-        </View>
-      ) : null}
+    <View style={styles.detailHero}>
       <View style={styles.detailHeroHeader}>
         <View style={styles.detailHeroAuthor}>
           <Avatar
@@ -752,8 +782,13 @@ function ThreadDetailHero({
           </Text>
         </Pressable>
       </View>
-      <Text style={styles.detailHeroContent}>{thread.content}</Text>
-      {thread.topic ? <Text style={styles.detailHeroTag}>#{thread.topic}</Text> : null}
+      <Text style={styles.detailHeroContent}>{creativeThread.writingPrompt}</Text>
+      <StartingContentCard
+        contributors={contributors}
+        creativeThread={creativeThread}
+        detail
+        onPress={onOpenVersion}
+      />
       <ThreadActionBar
         compact
         liked={thread.viewer.liked}
@@ -762,6 +797,82 @@ function ThreadDetailHero({
         onLike={onLike}
         onShare={onShare}
       />
+    </View>
+  );
+}
+
+function StartingContentCard({
+  creativeThread,
+  compact = false,
+  detail = false,
+  contributors = [],
+  onPress
+}: {
+  creativeThread: CreativeThreadViewModel;
+  compact?: boolean;
+  detail?: boolean;
+  contributors?: readonly PoetryThread["author"][];
+  onPress: () => void;
+}) {
+  const media = getThreadMedia(creativeThread.thread);
+  const visibleContributors = contributors.length > 0 ? contributors : [creativeThread.author];
+  return (
+    <Pressable
+      accessibilityLabel="Open Poem Version Preview"
+      accessibilityRole="button"
+      onPress={onPress}
+      style={[
+        styles.startingContentCard,
+        compact && styles.startingContentCardCompact,
+        detail && styles.startingContentCardDetail,
+        { backgroundColor: media.backgroundColor }
+      ]}
+    >
+      <View pointerEvents="none" style={[styles.startingContentOverlay, { backgroundColor: media.overlayColor }]} />
+      <View pointerEvents="none" style={[styles.mediaAccentOne, { backgroundColor: media.accentColor }]} />
+      <View pointerEvents="none" style={[styles.mediaAccentTwo, { borderColor: media.accentColor }]} />
+      <Text
+        numberOfLines={detail ? 7 : 5}
+        style={[
+          styles.startingContentText,
+          compact && styles.startingContentTextCompact,
+          { color: media.textColor }
+        ]}
+      >
+        {creativeThread.startingContent}
+      </Text>
+      {detail ? (
+        <View style={styles.startingContentFooter}>
+          <ContributorAvatarStack contributors={visibleContributors} />
+          <Text style={[styles.startingContentHint, { color: media.mutedTextColor }]}>Poem Version</Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function ContributorAvatarStack({ contributors }: { contributors: readonly PoetryThread["author"][] }) {
+  const uniqueContributors = [...new Map(contributors.map((author) => [author.id, author])).values()];
+  const visible = uniqueContributors.slice(0, 4);
+  const overflow = Math.max(0, uniqueContributors.length - visible.length);
+
+  return (
+    <View style={styles.contributorStack}>
+      {visible.map((author, index) => (
+        <View key={author.id} style={[styles.contributorAvatarWrap, { marginLeft: index === 0 ? 0 : -9 }]}>
+          <Avatar
+            color={author.avatarColor}
+            imageSource={author.avatarUrl ? { uri: author.avatarUrl } : undefined}
+            label={author.displayName}
+            size={24}
+          />
+        </View>
+      ))}
+      {overflow > 0 ? (
+        <View style={[styles.contributorMore, { marginLeft: visible.length > 0 ? -9 : 0 }]}>
+          <Text style={styles.contributorMoreText}>+{overflow}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -1696,6 +1807,26 @@ async function getDescendantsDepthFirst(
   return rows;
 }
 
+async function getAllThreadContinuations(roots: readonly ThreadContinuation[]) {
+  const visited = new Set<string>();
+  const all: ThreadContinuation[] = [];
+
+  const walk = async (continuation: ThreadContinuation) => {
+    if (visited.has(continuation.id)) return;
+    visited.add(continuation.id);
+    all.push(continuation);
+    const detail = await lineSpaceApi.getContinuationDetail(continuation.id, currentUserId);
+    for (const child of detail?.children ?? []) {
+      await walk(child);
+    }
+  };
+
+  for (const root of roots) {
+    await walk(root);
+  }
+  return all;
+}
+
 function buildVisibleContinuationGroups(
   roots: readonly ThreadContinuation[],
   expandedDescendants: Record<string, FlattenedDescendantRow[]>,
@@ -1784,6 +1915,20 @@ function updateThreadDetailCache(
         item.id === target.continuation.id ? addContinuationMetric(item) : item
       )
     };
+  });
+}
+
+function updateThreadVersionTreeCache(
+  queryClient: QueryClient,
+  threadId: string | undefined,
+  continuation: ThreadContinuation
+) {
+  if (!threadId) return;
+  queryClient.setQueriesData<ThreadContinuation[]>({ queryKey: ["thread-version-tree", threadId] }, (items) => {
+    if (!items || items.some((item) => item.id === continuation.id)) return items;
+    return [continuation, ...items.map((item) =>
+      item.id === continuation.parentContinuationId ? addContinuationMetric(item) : item
+    )];
   });
 }
 
@@ -1967,6 +2112,95 @@ const styles = StyleSheet.create({
   compactTimeText: { marginLeft: 6, fontSize: 14, lineHeight: 18, color: colors.profileMuted },
   threadContent: { marginTop: 2, maxWidth: "100%", fontSize: 15, lineHeight: 21, color: colors.ink },
   topicText: { marginTop: 5, fontSize: 13, lineHeight: 17, color: colors.profileMuted },
+  startingContentCard: {
+    position: "relative",
+    width: "100%",
+    minHeight: 112,
+    maxHeight: 178,
+    marginTop: 8,
+    overflow: "hidden",
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 15
+  },
+  startingContentCardCompact: {
+    minHeight: 96,
+    maxHeight: 164,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 13
+  },
+  startingContentCardDetail: {
+    minHeight: 118,
+    maxHeight: 178,
+    marginTop: 12,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingTop: 15,
+    paddingBottom: 42
+  },
+  startingContentOverlay: {
+    ...StyleSheet.absoluteFillObject
+  },
+  mediaAccentOne: {
+    position: "absolute",
+    right: -28,
+    top: -34,
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    opacity: 0.18
+  },
+  mediaAccentTwo: {
+    position: "absolute",
+    left: -24,
+    bottom: -28,
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+    borderWidth: 18,
+    opacity: 0.14
+  },
+  startingContentText: {
+    position: "relative",
+    fontSize: 18,
+    lineHeight: 25,
+    fontWeight: "600"
+  },
+  startingContentTextCompact: {
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: "600"
+  },
+  startingContentFooter: {
+    position: "absolute",
+    left: 14,
+    right: 14,
+    bottom: 12,
+    minHeight: 26,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between"
+  },
+  startingContentHint: { fontSize: 12, lineHeight: 16, fontWeight: "600" },
+  contributorStack: { flexDirection: "row", alignItems: "center" },
+  contributorAvatarWrap: {
+    borderWidth: 2,
+    borderColor: colors.surface,
+    borderRadius: 14,
+    backgroundColor: colors.surface
+  },
+  contributorMore: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.ink
+  },
+  contributorMoreText: { color: colors.white, fontSize: 10, lineHeight: 12, fontWeight: "700" },
   actionBar: { flexDirection: "row", alignItems: "center", gap: 18, marginTop: 5 },
   compactActionBar: { marginTop: 3 },
   actionButton: { minHeight: 32, minWidth: 42, flexDirection: "row", alignItems: "center" },
