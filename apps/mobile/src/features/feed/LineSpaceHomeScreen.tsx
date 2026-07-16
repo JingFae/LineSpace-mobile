@@ -133,7 +133,7 @@ export function LineSpaceHomeScreen() {
           if (value === "compose") {
             router.push({
               pathname: "/(tabs)/compose",
-              params: { type: "post", session: `${Date.now()}` }
+              params: { session: `${Date.now()}` }
             } as Href);
             return;
           }

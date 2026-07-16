@@ -22,14 +22,14 @@ export function CreateHomeScreen() {
         description="A finished poem, thought or image-led post with your own layout."
         icon="✦"
         label="Post"
-        onPress={() => router.push({ pathname: "/compose", params: { type: "post" } } as unknown as Href)}
+        onPress={() => router.push({ pathname: "/compose", params: { type: "post", session: `${Date.now()}` } } as unknown as Href)}
       />
       <CreateChoice
         accent="#557B79"
         description="Set a prompt or rule and invite the community to continue the poem."
         icon="↗"
         label="Thread · Poem relay"
-        onPress={() => router.push({ pathname: "/compose", params: { type: "thread" } } as unknown as Href)}
+        onPress={() => router.push({ pathname: "/compose", params: { type: "thread", session: `${Date.now()}` } } as unknown as Href)}
       />
 
       <View style={styles.footerCard}>

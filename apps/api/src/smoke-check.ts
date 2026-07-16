@@ -166,6 +166,12 @@ async function main() {
       viewerId: profile.id
     });
     assert(connections.userId === profile.id, "Connection route returned the wrong user.");
+    const searchPage = await httpApi.searchUsers("l", profile.id, { limit: 1 });
+    assert(searchPage.results.length <= 1, "User search did not enforce its page size.");
+    assert(
+      searchPage.results.every((result) => !Object.prototype.hasOwnProperty.call(result, "email")),
+      "User search returned a sensitive email field."
+    );
     const avatarUrl = "https://linespace.local/avatars/user-lili.png";
     const updatedProfile = await httpApi.updateUserProfile({
       userId: profile.id,

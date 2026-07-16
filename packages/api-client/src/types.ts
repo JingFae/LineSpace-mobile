@@ -463,11 +463,18 @@ export type UserSearchResult = UserProfile & {
   hasRecentChat: boolean;
 };
 
+export type UserSearchQuery = {
+  /** Opaque numeric cursor for the current in-memory adapter. */
+  cursor?: string;
+  limit?: number;
+};
+
 export type UserSearchPage = {
   query: string;
   recent: UserSearchResult[];
   friends: UserSearchResult[];
   results: UserSearchResult[];
+  nextCursor: string | null;
 };
 
 export type SharePoemInput = {

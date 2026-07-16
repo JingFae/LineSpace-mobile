@@ -111,6 +111,7 @@ export type {
   UserDraftPage,
   UserCollectionKind,
   UserThreadRelation,
+  UserSearchQuery,
   UserSearchPage,
   UserSearchResult,
   SharePoemInput,

@@ -63,7 +63,8 @@ begin
     left('ls_' || replace(new.id::text, '-', ''), 32),
     requested_handle,
     left(coalesce(nullif(trim(new.raw_user_meta_data ->> 'display_name'), ''), requested_handle), 120)
-  );
+  )
+  on conflict (auth_user_id) do nothing;
   return new;
 end;
 $$;

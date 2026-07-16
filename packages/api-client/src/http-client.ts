@@ -43,6 +43,7 @@ import type {
   UserProfileContentSection,
   UserProfileDetails,
   UserSearchPage,
+  UserSearchQuery,
   InboxConversationMessage,
   UpdateCommentCollectionInput,
   UserDraftPage,
@@ -185,8 +186,13 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     );
   }
 
-  async searchUsers(query: string, viewerId: string): Promise<UserSearchPage> {
-    const params = new URLSearchParams({ query, viewerId });
+  async searchUsers(query: string, _viewerId: string, options: UserSearchQuery = {}): Promise<UserSearchPage> {
+    // The server derives the viewer from the bearer JWT. Keep the legacy
+    // method parameter for LineSpaceApi compatibility, but never send it as
+    // an identity claim over HTTP.
+    const params = new URLSearchParams({ query });
+    if (options.limit !== undefined) params.set("limit", String(options.limit));
+    if (options.cursor) params.set("cursor", options.cursor);
     return this.getJson<UserSearchPage>(`/v1/users/search?${params.toString()}`);
   }
 

@@ -72,6 +72,7 @@ pnpm dev:web
 ```text
 apps/api/src/database/profile-schema.sql
 apps/api/src/database/migrations/202607150001_auth_identity.sql
+apps/api/src/database/migrations/202607160004_auth_trigger_idempotent.sql
 ```
 
 迁移会完成：

@@ -56,6 +56,7 @@ import type {
   UserProfileContentQuery,
   UserProfileContentSection,
   UserProfileDetails,
+  UserSearchQuery,
   UserSearchPage,
   InboxConversationMessage,
   UpdateCommentCollectionInput,
@@ -106,7 +107,7 @@ export interface LineSpaceApi {
   requestAiAssist(request: AiAssistRequest): Promise<AiAssistResponse>;
   createPoemComment(input: CreatePoemCommentInput): Promise<PoemComment>;
   setCommentCollection(input: UpdateCommentCollectionInput): Promise<PoemCommentEngagementResult>;
-  searchUsers(query: string, viewerId: string): Promise<UserSearchPage>;
+  searchUsers(query: string, viewerId: string, options?: UserSearchQuery): Promise<UserSearchPage>;
   sharePoem(input: SharePoemInput): Promise<SharePoemResult>;
   listInboxMessages(userId: string, contactId: string): Promise<InboxConversationMessage[]>;
 }
@@ -454,8 +455,10 @@ export class MockLineSpaceApi implements LineSpaceApi {
     return { poem: this.withViewer(poem, input.userId), comment: cloneComment(comment) };
   }
 
-  async searchUsers(query: string, viewerId: string): Promise<UserSearchPage> {
+  async searchUsers(query: string, viewerId: string, options: UserSearchQuery = {}): Promise<UserSearchPage> {
     const normalized = query.trim().toLowerCase();
+    const limit = clampSearchLimit(options.limit);
+    const offset = parseSearchCursor(options.cursor);
     const all = this.getAllProfiles()
       .filter((profile) => profile.id !== viewerId)
       .map((profile) => ({
@@ -467,11 +470,14 @@ export class MockLineSpaceApi implements LineSpaceApi {
         )
       }))
       .filter((profile) => !normalized || `${profile.displayName} ${profile.handle}`.toLowerCase().includes(normalized));
+    const results = normalized ? all : [];
+    const page = results.slice(offset, offset + limit);
     return {
       query,
       recent: all.filter((profile) => profile.hasRecentChat).slice(0, 8),
       friends: all.filter((profile) => profile.isFriend).slice(0, 8),
-      results: normalized ? all : []
+      results: page,
+      nextCursor: offset + page.length < results.length ? String(offset + page.length) : null
     };
   }
 
@@ -1299,6 +1305,16 @@ function canViewContent(visibility: PoemSummary["visibility"], audienceUserIds: 
   if (viewerId === ownerId) return true;
   const selected = audienceUserIds ?? [];
   return visibility === "include" ? Boolean(viewerId && selected.includes(viewerId)) : Boolean(!viewerId || !selected.includes(viewerId));
+}
+
+function clampSearchLimit(value: number | undefined) {
+  return Number.isInteger(value) ? Math.min(50, Math.max(1, value as number)) : 20;
+}
+
+function parseSearchCursor(value: string | undefined) {
+  if (!value) return 0;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
 }
 
 function cloneDraft(draft: PoemDraft): PoemDraft {

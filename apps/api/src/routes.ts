@@ -19,6 +19,7 @@ import {
   type UpdateCommentCollectionInput,
   type UpdateUserProfileInput,
   type UserConnectionKind,
+  type UserSearchQuery,
   type UserProfileContentSection
 } from "@linespace/api-client";
 import {
@@ -341,7 +342,21 @@ export async function handleApiRequest(
   if (method === "GET" && pathname === "/v1/users/search") {
     const actor = await authenticateRequest(context);
     if (!actor.ok) return actor.response;
-    return json(200, await api.searchUsers(searchParams.get("query") ?? "", actor.user.id));
+    const query = searchParams.get("query")?.trim() ?? "";
+    if ([...query].length > 64) {
+      return json(400, {
+        code: "INVALID_USER_SEARCH",
+        message: "Search text cannot exceed 64 characters."
+      });
+    }
+    const rawLimit = Number(searchParams.get("limit") ?? 20);
+    const limit = Number.isInteger(rawLimit) ? Math.min(50, Math.max(1, rawLimit)) : 20;
+    const cursor = searchParams.get("cursor") ?? undefined;
+    if (cursor !== undefined && !/^\d+$/.test(cursor)) {
+      return json(400, { code: "INVALID_USER_SEARCH_CURSOR" });
+    }
+    const options: UserSearchQuery = { limit, cursor };
+    return json(200, await api.searchUsers(query, actor.user.id, options));
   }
 
   const poemRoute = parsePoemRoute(pathname);
