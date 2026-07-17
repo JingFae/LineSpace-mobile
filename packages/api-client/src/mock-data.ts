@@ -433,7 +433,9 @@ const connectionUsers: UserConnectionSummary[] = [
     displayName: "Ray",
     avatarColor: "#E75435",
     bio: "Collaborative poem drafts.",
-    isFollowing: true
+    isFollowing: true,
+    followsYou: false,
+    isFriend: false
   },
   {
     id: "user-jinghe",
@@ -441,7 +443,9 @@ const connectionUsers: UserConnectionSummary[] = [
     displayName: "Jinghe",
     avatarColor: "#E35755",
     bio: "Collecting images from ordinary days.",
-    isFollowing: true
+    isFollowing: true,
+    followsYou: false,
+    isFriend: false
   },
   {
     id: "user-zhihan",
@@ -449,7 +453,9 @@ const connectionUsers: UserConnectionSummary[] = [
     displayName: "Zhihan",
     avatarColor: "#AFCEE5",
     bio: "Writes about cities and weather.",
-    isFollowing: false
+    isFollowing: false,
+    followsYou: false,
+    isFriend: false
   },
   {
     id: "user-roma",
@@ -457,7 +463,9 @@ const connectionUsers: UserConnectionSummary[] = [
     displayName: "Roma",
     avatarColor: "#4A5E2E",
     bio: "Short poems, long walks.",
-    isFollowing: true
+    isFollowing: true,
+    followsYou: false,
+    isFriend: false
   }
 ];
 
@@ -473,7 +481,9 @@ export const mockUserConnections: Record<
     followers: [
       {
         ...mockUsers[0]!,
-        isFollowing: true
+        isFollowing: true,
+        followsYou: false,
+        isFriend: false
       }
     ],
     following: []

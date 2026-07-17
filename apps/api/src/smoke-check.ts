@@ -3,9 +3,17 @@ import {
   createMockLineSpaceApi,
   HttpAuthClient,
   HttpLineSpaceApi,
-  type AuthUser
+  type AuthUser,
+  type UserProfileDetails
 } from "@linespace/api-client";
 import { ApiAuthError, type AuthService } from "./auth";
+import type {
+  UserConnectionPage,
+  UserSearchPage,
+  UpdateUserFollowInput,
+  UserFollowResult
+} from "@linespace/api-client";
+import type { ProfileRepository as ApiProfileRepository } from "./database/profile-repository";
 import { handleApiRequest } from "./routes";
 
 const baseUrl = "http://linespace.local";
@@ -209,8 +217,10 @@ async function main() {
     }
     assert(aiBoundaryRejected, "The unconfigured AI boundary should reject HTTP requests.");
 
+    await verifyUserDomainHttpIdentity();
     await verifyRefreshSingleFlight();
     await verifyAuthClientContract();
+    await verifyInjectedUserDomainRepository();
 
     process.stdout.write(
       "API smoke check passed: health, Auth, Inbox privacy, Mock mode, HTTP contract, bearer headers, single-flight refresh, drafts, feed, poem, profile, collections, collaboration, and AI boundary.\n"
@@ -218,6 +228,197 @@ async function main() {
   } finally {
     globalThis.fetch = originalFetch;
   }
+}
+
+async function verifyUserDomainHttpIdentity() {
+  const requestUrls: string[] = [];
+  let sawAuthorization = false;
+  globalThis.fetch = async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+    requestUrls.push(url);
+    sawAuthorization =
+      new Headers(init?.headers).get("authorization") === "Bearer smoke-token";
+    if (new URL(url).pathname.endsWith("/following")) {
+      return jsonResponse({
+        userId: smokeUser.id,
+        kind: "following",
+        total: 0,
+        items: []
+      });
+    }
+    return jsonResponse({
+      query: "ray",
+      recent: [],
+      friends: [],
+      results: [],
+      nextCursor: null
+    });
+  };
+
+  const httpApi = new HttpLineSpaceApi(baseUrl, {
+    getAccessToken: () => "smoke-token"
+  });
+  await httpApi.listUserConnections(smokeUser.id, "following", {
+    limit: 10,
+    viewerId: "untrusted-environment-user"
+  });
+  await httpApi.searchUsers("ray", "untrusted-environment-user", { limit: 10 });
+
+  assert(sawAuthorization, "User-domain HTTP requests did not carry the Access Token.");
+  assert(
+    requestUrls.every((url) => !new URL(url).searchParams.has("viewerId")),
+    "HTTP user-domain requests must not send viewerId."
+  );
+  globalThis.fetch = routeAdapter;
+}
+
+async function verifyInjectedUserDomainRepository() {
+  const calls: string[] = [];
+  const profile: UserProfileDetails = {
+    id: smokeUser.id,
+    linespaceId: "ls-smoke",
+    handle: smokeUser.username,
+    displayName: smokeUser.displayName,
+    avatarColor: "#DCD8D3",
+    level: 1,
+    badges: [],
+    stats: { followers: 0, following: 0, likesAndSaves: 0 },
+    contentCounts: { posts: 0, threads: 0, comments: 0, saves: 0 },
+    visibility: { posts: true, threads: true, comments: true, saves: true }
+  };
+  const repository: ApiProfileRepository = {
+    async getProfile(userId) {
+      calls.push(`profile:${userId}`);
+      return userId === smokeUser.id ? profile : null;
+    },
+    async updateProfile(actorUserId, targetUserId, changes) {
+      calls.push(`update:${actorUserId}:${targetUserId}:${Object.keys(changes).join(",")}`);
+      return profile;
+    },
+    async searchUsers(actorUserId, query, options) {
+      calls.push(`search:${actorUserId}:${query}:${options?.limit ?? 20}`);
+      const result = {
+        id: "user-ray",
+        handle: "ray",
+        displayName: "Ray",
+        avatarColor: "#DCD8D3",
+        isFriend: true,
+        hasRecentChat: false
+      };
+      return {
+        query,
+        recent: [],
+        friends: [result],
+        results: [result],
+        nextCursor: null
+      } satisfies UserSearchPage;
+    },
+    async listConnections(actorUserId, targetUserId, kind) {
+      calls.push(`connections:${actorUserId}:${targetUserId}:${kind}`);
+      return {
+        userId: targetUserId,
+        kind,
+        total: 0,
+        items: []
+      } satisfies UserConnectionPage;
+    },
+    async listRecentContacts() {
+      return [];
+    },
+    async setUserFollow(input: UpdateUserFollowInput): Promise<UserFollowResult> {
+      calls.push(`follow:${input.userId}:${input.targetUserId}:${input.isActive}`);
+      return {
+        targetUserId: input.targetUserId,
+        isFollowing: input.isActive,
+        followsYou: false,
+        isFriend: false,
+        followers: 0,
+        following: input.isActive ? 1 : 0
+      };
+    }
+  };
+
+  const search = await handleApiRequest(
+    "GET",
+    "/v1/users/search",
+    new URLSearchParams({ query: "ray", limit: "1" }),
+    undefined,
+    {
+      authService: smokeAuthService,
+      authorization: "Bearer smoke-token",
+      profileRepository: repository
+    }
+  );
+  assert(search.status === 200, "Injected profile repository search did not return 200.");
+  assert(calls.includes("search:user-lili:ray:1"), "Search actor was not derived from JWT.");
+
+  const follow = await handleApiRequest(
+    "PUT",
+    "/v1/users/user-ray/follow",
+    new URLSearchParams(),
+    {},
+    {
+      authService: smokeAuthService,
+      authorization: "Bearer smoke-token",
+      profileRepository: repository
+    }
+  );
+  assert(follow.status === 200, "Injected follow repository did not return 200.");
+  assert(
+    calls.includes("follow:user-lili:user-ray:true"),
+    "Follow route did not pass JWT actor and URL target to the repository."
+  );
+
+  const connections = await handleApiRequest(
+    "GET",
+    "/v1/users/user-lili/connections",
+    new URLSearchParams({ kind: "following", limit: "5" }),
+    undefined,
+    {
+      authService: smokeAuthService,
+      authorization: "Bearer smoke-token",
+      profileRepository: repository
+    }
+  );
+  assert(connections.status === 200, "Connections compatibility route did not return 200.");
+  assert(
+    calls.includes("connections:user-lili:user-lili:following"),
+    "Connections route did not use the JWT actor."
+  );
+
+  const forbiddenUpdate = await handleApiRequest(
+    "PUT",
+    "/v1/users/user-ray/profile",
+    new URLSearchParams(),
+    { displayName: "Not allowed" },
+    {
+      authService: smokeAuthService,
+      authorization: "Bearer smoke-token",
+      profileRepository: repository
+    }
+  );
+  assert(forbiddenUpdate.status === 403, "Profile update allowed a mismatched URL user.");
+
+  const unknownFieldUpdate = await handleApiRequest(
+    "PUT",
+    "/v1/users/user-lili/profile",
+    new URLSearchParams(),
+    { level: 99 },
+    {
+      authService: smokeAuthService,
+      authorization: "Bearer smoke-token",
+      profileRepository: repository
+    }
+  );
+  assert(
+    unknownFieldUpdate.status === 400,
+    "Profile update accepted a protected or unknown field."
+  );
 }
 
 async function verifyRefreshSingleFlight() {

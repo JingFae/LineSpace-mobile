@@ -138,6 +138,41 @@ apps/api    ──> packages/api-client
 
 禁止反向依赖：tokens 不依赖 UI；UI 不依赖 API；api-client 不依赖 App；后端不导入移动端 Screen。
 
+## 用户域 Repository 与数据库边界
+
+HTTP 模式的用户资料、搜索、关注关系和最近联系人由
+`apps/api/src/database/profile-repository.ts` 访问 PostgreSQL。Repository
+按请求创建 Supabase Client，并只使用当前请求的 Bearer JWT 和
+Publishable/Anon Key；Service Role 不参与普通资料、搜索或关系读写。
+Feed、Poem、Post、评论和 Compose 仍然保持现有 Mock 路径。
+
+`ProfileRepository` 提供 `getProfile`、`updateProfile`、`searchUsers`、
+`listConnections`、`listRecentContacts` 和 `setUserFollow`。路由只负责认证、
+输入校验和稳定错误映射，不拼接 SQL；Repository 不依赖 React Native。
+测试可以通过 `AuthRequestContext.profileRepository` 注入替身，生产环境则由
+`createProfileRepositoryForRequest` 创建 request-scoped Supabase Client。
+
+`public.users` 保存公开业务资料，`auth.users` 只保存认证身份。JWT 的
+`auth.uid()` 通过 `public.current_linespace_user_id()` 映射到业务用户
+`users.id`。资料更新、关注写入和 Inbox 读取均同时受服务端身份校验与
+PostgreSQL RLS 保护。搜索使用 `search_public_users` RPC，连接列表使用
+`list_public_connections` RPC，均为 `SECURITY INVOKER`，返回列是明确的公开字段。
+资料字段与可见性通过 `update_my_profile` 在同一数据库事务中更新。
+
+新增迁移 `202607180001_user_domain_persistence.sql` 必须在
+`202607160004_auth_trigger_idempotent.sql` 之后执行。它只补充用户关系域的
+索引、RLS、受控计数器函数和搜索/连接 RPC，不创建或修改 Feed、Poem、Post、
+评论表。
+
+用户域 HTTP 契约：
+
+- `GET /v1/users/:id/profile`
+- `PUT /v1/users/:id/profile`
+- `GET /v1/users/search?query&limit&cursor`
+- `GET /v1/users/:id/connections?kind=followers|following`
+- `GET /v1/users/:id/followers` 与 `/following`（兼容旧路径）
+- `PUT|DELETE /v1/users/:id/follow`
+
 ## 审计后的文件分类
 
 - 必须保留：`apps/mobile`、所有路由和 Feature、共享包、数据库草案、当前图片、根构建与部署配置。

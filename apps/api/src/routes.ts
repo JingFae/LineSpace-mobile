@@ -29,6 +29,10 @@ import {
   parseBearerToken,
   type AuthRequestContext
 } from "./auth";
+import {
+  createProfileRepositoryForRequest,
+  ProfileRepositoryError
+} from "./database/profile-repository";
 
 const api = createMockLineSpaceApi();
 
@@ -352,10 +356,21 @@ export async function handleApiRequest(
     const rawLimit = Number(searchParams.get("limit") ?? 20);
     const limit = Number.isInteger(rawLimit) ? Math.min(50, Math.max(1, rawLimit)) : 20;
     const cursor = searchParams.get("cursor") ?? undefined;
-    if (cursor !== undefined && !/^\d+$/.test(cursor)) {
-      return json(400, { code: "INVALID_USER_SEARCH_CURSOR" });
+    if (cursor !== undefined && cursor.length > 512) {
+      return json(400, {
+        code: "INVALID_USER_SEARCH_CURSOR",
+        message: "Search cursor is too long."
+      });
     }
     const options: UserSearchQuery = { limit, cursor };
+    const profileRepository = getProfileRepository(context);
+    if (profileRepository) {
+      try {
+        return json(200, await profileRepository.searchUsers(actor.user.id, query, options));
+      } catch (error) {
+        return profileRepositoryErrorResponse(error);
+      }
+    }
     return json(200, await api.searchUsers(query, actor.user.id, options));
   }
 
@@ -411,7 +426,34 @@ export async function handleApiRequest(
     return json(200, await api.getInboxActivitySummary(actor.user.id));
   }
 
-  const profileRoute = parseUserProfileRoute(pathname);
+  const profileRoute = parseUserProfileRoute(pathname, searchParams);
+  if (
+    profileRoute?.resource === "follow" &&
+    (method === "PUT" || method === "DELETE")
+  ) {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
+    const profileRepository = getProfileRepository(context);
+    try {
+      return json(
+        200,
+        profileRepository
+          ? await profileRepository.setUserFollow({
+              userId: actor.user.id,
+              targetUserId: profileRoute.userId,
+              isActive: method === "PUT"
+            })
+          : await api.setUserFollow({
+              userId: actor.user.id,
+              targetUserId: profileRoute.userId,
+              isActive: method === "PUT"
+            })
+      );
+    } catch (error) {
+      return profileRepositoryErrorResponse(error);
+    }
+  }
+
   if (profileRoute?.resource === "profile" && method === "PUT") {
     const actor = await authenticateRequest(context);
     if (!actor.ok) return actor.response;
@@ -426,6 +468,22 @@ export async function handleApiRequest(
       });
     }
 
+    const profileRepository = getProfileRepository(context);
+    if (profileRepository) {
+      try {
+        return json(
+          200,
+          await profileRepository.updateProfile(
+            actor.user.id,
+            profileRoute.userId,
+            changes.value
+          )
+        );
+      } catch (error) {
+        return profileRepositoryErrorResponse(error);
+      }
+    }
+
     try {
       return json(
         200,
@@ -436,21 +494,51 @@ export async function handleApiRequest(
     }
   }
 
-  if (profileRoute && method === "GET") {
-    if (profileRoute.resource === "profile") {
-      return json(200, await api.getUserProfile(profileRoute.userId));
+  if (profileRoute?.resource === "profile" && method === "GET") {
+    const profileRepository = getProfileRepository(context);
+    if (profileRepository) {
+      try {
+        const profile = await profileRepository.getProfile(profileRoute.userId);
+        return json(200, profile);
+      } catch (error) {
+        return profileRepositoryErrorResponse(error);
+      }
     }
+    return json(200, await api.getUserProfile(profileRoute.userId));
+  }
 
-    if (profileRoute.resource === "profile-content") {
-      return json(
-        200,
-        await api.listUserProfileContent(profileRoute.userId, profileRoute.section, {
-          viewerId: searchParams.get("viewerId") ?? undefined,
-          threadRelation: parseThreadRelation(searchParams.get("threadRelation")),
-          collection: parseProfileCollection(searchParams.get("collection")),
-          contentKind: parseProfileContentKind(searchParams.get("contentKind"))
-        })
-      );
+  if (profileRoute?.resource === "profile-content" && method === "GET") {
+    return json(
+      200,
+      await api.listUserProfileContent(profileRoute.userId, profileRoute.section, {
+        viewerId: searchParams.get("viewerId") ?? undefined,
+        threadRelation: parseThreadRelation(searchParams.get("threadRelation")),
+        collection: parseProfileCollection(searchParams.get("collection")),
+        contentKind: parseProfileContentKind(searchParams.get("contentKind"))
+      })
+    );
+  }
+
+  if (profileRoute?.resource === "connections" && method === "GET") {
+    const profileRepository = getProfileRepository(context);
+    if (profileRepository) {
+      const actor = await authenticateRequest(context);
+      if (!actor.ok) return actor.response;
+      const rawLimit = Number(searchParams.get("limit") ?? 20);
+      const limit = Number.isInteger(rawLimit) ? Math.min(50, Math.max(1, rawLimit)) : 20;
+      try {
+        return json(
+          200,
+          await profileRepository.listConnections(
+            actor.user.id,
+            profileRoute.userId,
+            profileRoute.kind,
+            { cursor: searchParams.get("cursor") ?? undefined, limit }
+          )
+        );
+      } catch (error) {
+        return profileRepositoryErrorResponse(error);
+      }
     }
 
     const rawLimit = Number(searchParams.get("limit") ?? 20);
@@ -529,17 +617,46 @@ function json(status: number, body: unknown): ApiResponse {
   return { status, body };
 }
 
+function profileRepositoryErrorResponse(error: unknown): ApiResponse {
+  if (error instanceof ProfileRepositoryError) {
+    return json(error.status, {
+      code: error.code,
+      message: error.publicMessage
+    });
+  }
+  if (error instanceof Error && error.message.includes("follow yourself")) {
+    return json(400, {
+      code: "INVALID_PROFILE",
+      message: "You cannot follow yourself."
+    });
+  }
+  if (error instanceof Error && error.message.includes("not found")) {
+    return json(404, { code: "PROFILE_NOT_FOUND" });
+  }
+  return json(503, {
+    code: "USER_DOMAIN_UNAVAILABLE",
+    message: "User data is temporarily unavailable."
+  });
+}
+
+function getProfileRepository(context: AuthRequestContext) {
+  return (
+    context.profileRepository ??
+    createProfileRepositoryForRequest(context.authorization)
+  );
+}
+
 async function authenticateRequest(
   context: AuthRequestContext
 ): Promise<
-  | { ok: true; user: AuthUser }
+  | { ok: true; user: AuthUser; accessToken: string }
   | { ok: false; response: ApiResponse }
 > {
   try {
     const accessToken = parseBearerToken(context.authorization);
     const service = context.authService ?? getServerAuthService();
     const user = await service.authenticate(accessToken);
-    return { ok: true, user };
+    return { ok: true, user, accessToken };
   } catch (error) {
     return { ok: false, response: authErrorResponse(error) };
   }
@@ -711,6 +828,7 @@ function parseInboxMessagesRoute(pathname: string): string | null {
 
 type ParsedUserProfileRoute =
   | { userId: string; resource: "profile" }
+  | { userId: string; resource: "follow" }
   | {
       userId: string;
       resource: "profile-content";
@@ -718,7 +836,10 @@ type ParsedUserProfileRoute =
     }
   | { userId: string; resource: "connections"; kind: UserConnectionKind };
 
-function parseUserProfileRoute(pathname: string): ParsedUserProfileRoute | null {
+function parseUserProfileRoute(
+  pathname: string,
+  searchParams?: URLSearchParams
+): ParsedUserProfileRoute | null {
   const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
   const userId = segments[2];
   if (segments[0] !== "v1" || segments[1] !== "users" || !userId) {
@@ -727,6 +848,10 @@ function parseUserProfileRoute(pathname: string): ParsedUserProfileRoute | null 
 
   if (segments.length === 4 && segments[3] === "profile") {
     return { userId, resource: "profile" };
+  }
+
+  if (segments.length === 4 && segments[3] === "follow") {
+    return { userId, resource: "follow" };
   }
 
   const section = segments[4];
@@ -741,6 +866,17 @@ function parseUserProfileRoute(pathname: string): ParsedUserProfileRoute | null 
   const kind = segments[3];
   if (segments.length === 4 && isUserConnectionKind(kind)) {
     return { userId, resource: "connections", kind };
+  }
+  if (
+    segments.length === 4 &&
+    segments[3] === "connections" &&
+    isUserConnectionKind(searchParams?.get("kind") ?? undefined)
+  ) {
+    return {
+      userId,
+      resource: "connections",
+      kind: searchParams?.get("kind") as UserConnectionKind
+    };
   }
 
   return null;
@@ -785,6 +921,20 @@ function parseUserProfileChanges(
   }
 
   const source = body as Record<string, unknown>;
+  const allowedFields = new Set([
+    "displayName",
+    "avatarUrl",
+    "avatarColor",
+    "bio",
+    "visibility"
+  ]);
+  const unknownField = Object.keys(source).find((key) => !allowedFields.has(key));
+  if (unknownField) {
+    return {
+      ok: false,
+      message: `Unknown profile field: ${unknownField}.`
+    };
+  }
   const value: ProfileChanges = {};
 
   if (source.displayName !== undefined) {
@@ -816,12 +966,31 @@ function parseUserProfileChanges(
     value.avatarUrl = source.avatarUrl.trim();
   }
 
+  if (source.avatarColor !== undefined) {
+    if (
+      typeof source.avatarColor !== "string" ||
+      !/^#[0-9a-f]{6,8}$/i.test(source.avatarColor.trim())
+    ) {
+      return { ok: false, message: "avatarColor must be a hexadecimal color." };
+    }
+    value.avatarColor = source.avatarColor.trim().toLowerCase();
+  }
+
   if (source.visibility !== undefined) {
     if (!source.visibility || typeof source.visibility !== "object") {
       return { ok: false, message: "visibility must be an object." };
     }
     const visibility = source.visibility as Record<string, unknown>;
     const allowed = ["posts", "threads", "comments", "saves"] as const;
+    const unknownVisibilityField = Object.keys(visibility).find(
+      (key) => !allowed.includes(key as (typeof allowed)[number])
+    );
+    if (unknownVisibilityField) {
+      return {
+        ok: false,
+        message: `Unknown visibility field: ${unknownVisibilityField}.`
+      };
+    }
     const parsed: Partial<Record<(typeof allowed)[number], boolean>> = {};
     for (const key of allowed) {
       if (visibility[key] !== undefined) {

@@ -33,6 +33,7 @@ import type {
   UpdatePoemDraftInput,
   UpdatePoemCollectionInput,
   UpdateContinuationLikeInput,
+  UpdateUserFollowInput,
   UpdateThreadLikeInput,
   UserConnectionKind,
   UserConnectionPage,
@@ -42,6 +43,7 @@ import type {
   UserProfileContentQuery,
   UserProfileContentSection,
   UserProfileDetails,
+  UserFollowResult,
   UserSearchPage,
   UserSearchQuery,
   InboxConversationMessage,
@@ -248,6 +250,17 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     );
   }
 
+  async setUserFollow(input: UpdateUserFollowInput): Promise<UserFollowResult> {
+    return input.isActive
+      ? this.putJson<UserFollowResult>(
+          `/v1/users/${encodeURIComponent(input.targetUserId)}/follow`,
+          {}
+        )
+      : this.deleteJson<UserFollowResult>(
+          `/v1/users/${encodeURIComponent(input.targetUserId)}/follow`
+        );
+  }
+
   async listUserProfileContent(
     userId: string,
     section: UserProfileContentSection,
@@ -275,9 +288,6 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     }
     if (query.limit) {
       params.set("limit", `${query.limit}`);
-    }
-    if (query.viewerId) {
-      params.set("viewerId", query.viewerId);
     }
     const suffix = params.size > 0 ? `?${params.toString()}` : "";
 
@@ -378,12 +388,16 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     return this.sendJson<T>("PUT", path, body);
   }
 
+  private async deleteJson<T>(path: string): Promise<T> {
+    return this.requestJson<T>("DELETE", path);
+  }
+
   private async sendJson<T>(method: "POST" | "PUT", path: string, body: unknown): Promise<T> {
     return this.requestJson<T>(method, path, body);
   }
 
   private async requestJson<T>(
-    method: "GET" | "POST" | "PUT",
+    method: "GET" | "POST" | "PUT" | "DELETE",
     path: string,
     body?: unknown
   ): Promise<T> {
@@ -404,7 +418,7 @@ export class HttpLineSpaceApi implements LineSpaceApi {
   }
 
   private async performRequest(
-    method: "GET" | "POST" | "PUT",
+    method: "GET" | "POST" | "PUT" | "DELETE",
     path: string,
     body?: unknown,
     accessTokenOverride?: string

@@ -84,6 +84,22 @@ Supabase Dashboard 的 Redirect URLs 还需要包含 `https://your-domain.exampl
 
 完成这些工作前，文档和产品配置都不应声称 API 已上线。
 
+## 用户域数据库上线顺序
+
+在将 `EXPO_PUBLIC_USE_MOCKS` 设为 `false` 前，必须在目标 Supabase 项目按
+`docs/environment.md` 的顺序执行全部用户资料迁移，最后执行
+`202607180001_user_domain_persistence.sql`。该迁移只负责
+`public.users` 的资料读取/更新、`user_follows`、用户资料统计/可见性、
+`badges`/`user_badges` 和 `inbox_messages` 的 RLS 与用户域查询 RPC；
+Feed、Poem、Post、评论和 Compose 不会因此变成 PostgreSQL 持久化。
+
+API Function 仅配置服务端 `SUPABASE_URL`、Publishable/Anon Key 和
+`SUPABASE_SERVICE_ROLE_KEY`。普通用户域查询使用请求 JWT；Service Role
+只保留给现有认证映射与受控后台动作，绝不能配置为 `EXPO_PUBLIC_*`。
+发布前需确认 Supabase Dashboard 已启用 RLS、邮箱确认回跳地址和生产
+Redirect URL，并在隔离数据库中执行迁移幂等性与 RLS 测试。当前仓库没有
+真实生产 Supabase 数据库凭据，因此本地检查不会声称完成端到端数据库验证。
+
 ## CI
 
 `.github/workflows/ci.yml` 在 Node 22 / pnpm 11.7.0 上执行：

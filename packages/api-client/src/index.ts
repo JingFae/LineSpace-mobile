@@ -76,6 +76,8 @@ export type {
   UpdatePoemDraftInput,
   UpdateThreadLikeInput,
   UpdateUserProfileInput,
+  UpdateUserFollowInput,
+  UserFollowResult,
   InviteDraftCollaboratorInput,
   LoginAuthInput,
   PublishPoemDraftInput,

@@ -254,6 +254,7 @@ export type UpdateUserProfileInput = {
   bio?: string;
   /** Durable object-storage URL in production; local cropped URI in mock mode. */
   avatarUrl?: string;
+  avatarColor?: string;
   visibility?: Partial<UserProfileVisibility>;
 };
 
@@ -309,6 +310,8 @@ export type UserConnectionKind = "followers" | "following";
 
 export type UserConnectionSummary = UserProfile & {
   isFollowing: boolean;
+  followsYou: boolean;
+  isFriend: boolean;
 };
 
 export type UserConnectionPage = {
@@ -322,7 +325,23 @@ export type UserConnectionPage = {
 export type UserConnectionQuery = {
   cursor?: string;
   limit?: number;
+  /** Mock-only compatibility field; HTTP mode derives the viewer from JWT. */
   viewerId?: string;
+};
+
+export type UpdateUserFollowInput = {
+  userId: string;
+  targetUserId: string;
+  isActive: boolean;
+};
+
+export type UserFollowResult = {
+  targetUserId: string;
+  isFollowing: boolean;
+  followsYou: boolean;
+  isFriend: boolean;
+  followers: number;
+  following: number;
 };
 
 export type PoemMetrics = {

@@ -46,6 +46,7 @@ import type {
   UpdatePoemDraftInput,
   UpdatePoemCollectionInput,
   UpdateContinuationLikeInput,
+  UpdateUserFollowInput,
   UpdateThreadLikeInput,
   UserConnectionKind,
   UserConnectionPage,
@@ -56,6 +57,7 @@ import type {
   UserProfileContentQuery,
   UserProfileContentSection,
   UserProfileDetails,
+  UserFollowResult,
   UserSearchQuery,
   UserSearchPage,
   InboxConversationMessage,
@@ -83,6 +85,7 @@ export interface LineSpaceApi {
   getInboxActivitySummary(userId: string): Promise<InboxActivitySummary>;
   getUserProfile(userId: string): Promise<UserProfileDetails | null>;
   updateUserProfile(input: UpdateUserProfileInput): Promise<UserProfileDetails>;
+  setUserFollow(input: UpdateUserFollowInput): Promise<UserFollowResult>;
   listUserProfileContent(
     userId: string,
     section: UserProfileContentSection,
@@ -127,6 +130,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
   private readonly commentLikesByUser = new Map<string, Set<string>>();
   private readonly commentSavesByUser = new Map<string, Set<string>>();
   private readonly inboxMessages: InboxConversationMessage[] = [];
+  private readonly followingByUser = new Map<string, Set<string>>();
   private draftSequence = 0;
   private continuationSequence = 0;
   private shareSequence = 0;
@@ -219,7 +223,12 @@ export class MockLineSpaceApi implements LineSpaceApi {
   async listDraftInviteCandidates(userId: string): Promise<UserConnectionPage["items"]> {
     return this.profiles
       .filter((profile) => profile.id !== userId)
-      .map((profile) => ({ ...profileToUser(profile), isFollowing: true }));
+      .map((profile) => ({
+        ...profileToUser(profile),
+        isFollowing: true,
+        followsYou: false,
+        isFriend: false
+      }));
   }
 
   async inviteDraftCollaborator(
@@ -639,6 +648,9 @@ export class MockLineSpaceApi implements LineSpaceApi {
     if (input.avatarUrl !== undefined) {
       profile.avatarUrl = input.avatarUrl;
     }
+    if (input.avatarColor !== undefined) {
+      profile.avatarColor = input.avatarColor;
+    }
     if (input.visibility) {
       profile.visibility = { ...profile.visibility, ...input.visibility };
     }
@@ -725,6 +737,30 @@ export class MockLineSpaceApi implements LineSpaceApi {
       items: items
         .slice(offset, offset + limit)
         .map((item) => this.withCurrentProfileSummary(item))
+    };
+  }
+
+  async setUserFollow(input: UpdateUserFollowInput): Promise<UserFollowResult> {
+    if (input.userId === input.targetUserId) {
+      throw new Error("You cannot follow yourself.");
+    }
+
+    const following = this.getFollowingIds(input.userId);
+    if (input.isActive) {
+      following.add(input.targetUserId);
+    } else {
+      following.delete(input.targetUserId);
+    }
+    this.followingByUser.set(input.userId, following);
+
+    const reverse = this.getFollowingIds(input.targetUserId).has(input.userId);
+    return {
+      targetUserId: input.targetUserId,
+      isFollowing: following.has(input.targetUserId),
+      followsYou: reverse,
+      isFriend: following.has(input.targetUserId) && reverse,
+      followers: this.countFollowers(input.targetUserId),
+      following: following.size
     };
   }
 
@@ -1015,6 +1051,22 @@ export class MockLineSpaceApi implements LineSpaceApi {
           avatarUrl: current.avatarUrl
         }
       : { ...item };
+  }
+
+  private getFollowingIds(userId: string) {
+    const existing = this.followingByUser.get(userId);
+    if (existing) return existing;
+    const seeded = new Set(
+      (mockUserConnections[userId]?.following ?? []).map((item) => item.id)
+    );
+    this.followingByUser.set(userId, seeded);
+    return seeded;
+  }
+
+  private countFollowers(userId: string) {
+    return this.getAllProfiles().filter((profile) =>
+      this.getFollowingIds(profile.id).has(userId)
+    ).length;
   }
 
   private requireEditableDraft(draftId: string, userId: string) {

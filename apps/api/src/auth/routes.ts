@@ -1,6 +1,7 @@
 import type { AuthService } from "./service";
 import { authErrorResponse } from "./errors";
 import { getServerAuthService } from "./supabase-auth-service";
+import type { ProfileRepository } from "../database/profile-repository";
 import {
   parseBearerToken,
   parseLogin,
@@ -16,6 +17,11 @@ export type AuthRouteResponse = {
 export type AuthRequestContext = {
   authorization?: string;
   authService?: AuthService;
+  /**
+   * Optional request-scoped user-domain repository. Production requests use
+   * the JWT-bound Supabase repository; tests can inject a deterministic fake.
+   */
+  profileRepository?: ProfileRepository;
 };
 
 export async function handleAuthRoute(

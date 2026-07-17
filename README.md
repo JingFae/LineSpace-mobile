@@ -131,7 +131,7 @@ EXPO_PUBLIC_API_BASE_URL=http://localhost:4000
 - 重复视觉值：`packages/tokens/src/`。
 - 原始设计资产用途不明确时保留并记录，不猜测删除。
 
-详见 [docs/figma-handoff.md](docs/figma-handoff.md) 和 [docs/figma-mcp-setup.md](docs/figma-mcp-setup.md)。
+详见 [docs/figma-handoff.md](figma-handoff.md) 和 [docs/figma-mcp-setup.md](docs/figma-mcp-setup.md)。
 
 ## 后端扩展边界
 
