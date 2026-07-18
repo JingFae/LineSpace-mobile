@@ -228,7 +228,7 @@ export function AuthLoadingScreen() {
   return (
     <View style={styles.loading} accessibilityLabel="Loading your session">
       <ActivityIndicator color={colors.accent} />
-      <Text style={styles.loadingText}>Opening LineSpace…</Text>
+      <Text style={styles.loadingText}>Opening LineSpace...</Text>
     </View>
   );
 }

@@ -40,13 +40,17 @@ export function LoginScreen() {
   };
 
   return (
-    <AuthShell title="welcome back" subtitle="Return to your lines and conversations.">
+    <AuthShell
+      eyebrow="YOUR NEXT LINE STARTS HERE"
+      title="Welcome back."
+      subtitle="Return to your lines, your people, and the conversations still unfolding."
+    >
       <AuthField
         autoCapitalize="none"
         autoCorrect={false}
         label="username"
         onChangeText={setUsername}
-        placeholder="your username"
+        placeholder="your public handle"
         returnKeyType="next"
         value={username}
       />
@@ -57,17 +61,17 @@ export function LoginScreen() {
         setShowPassword={setShowPassword}
         value={password}
       />
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <AuthError message={error} /> : null}
       <PrimaryButton
         disabled={submitting || !username.trim() || !password}
-        label="log in"
+        label="Enter LineSpace"
         loading={submitting}
         onPress={submit}
       />
       <View style={styles.switchRow}>
         <Text style={styles.switchText}>New to LineSpace?</Text>
         <Pressable accessibilityRole="link" onPress={() => router.push("/register" as Href)}>
-          <Text style={styles.link}>create an account</Text>
+          <Text style={styles.link}>Create an account</Text>
         </Pressable>
       </View>
     </AuthShell>
@@ -117,14 +121,19 @@ export function RegisterScreen() {
   };
 
   return (
-    <AuthShell title="make room for lines" subtitle="Create an account for poems made together.">
+    <AuthShell
+      eyebrow="MAKE ROOM FOR SOMETHING NEW"
+      formTitle="Create your account"
+      title="Create your space."
+      subtitle="A softer place for poems made together, one thoughtful line at a time."
+    >
       <AuthField
         autoCapitalize="none"
         autoCorrect={false}
         helper="3–32 characters"
         label="username"
         onChangeText={setUsername}
-        placeholder="choose a username"
+        placeholder="choose a public handle"
         returnKeyType="next"
         value={username}
       />
@@ -154,19 +163,19 @@ export function RegisterScreen() {
         secureTextEntry={!showPassword}
         value={confirmPassword}
       />
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <AuthError message={error} /> : null}
       <PrimaryButton
         disabled={
           submitting || !username.trim() || !email.trim() || !password || !confirmPassword
         }
-        label="create account"
+        label="Create my space"
         loading={submitting}
         onPress={submit}
       />
       <View style={styles.switchRow}>
         <Text style={styles.switchText}>Already have an account?</Text>
         <Pressable accessibilityRole="link" onPress={() => router.replace("/login" as Href)}>
-          <Text style={styles.link}>log in</Text>
+          <Text style={styles.link}>Log in</Text>
         </Pressable>
       </View>
     </AuthShell>
@@ -204,7 +213,12 @@ export function EmailConfirmationScreen() {
 
   if (state === "verifying") {
     return (
-      <AuthShell title="confirming your email" subtitle="One moment while we finish setting up your session.">
+      <AuthShell
+        eyebrow="ONE MORE SMALL STEP"
+        formTitle="Email confirmation"
+        title="Confirming your email."
+        subtitle="One moment while we finish setting up your session."
+      >
         <ActivityIndicator color={colors.accent} />
       </AuthShell>
     );
@@ -212,53 +226,111 @@ export function EmailConfirmationScreen() {
 
   return (
     <AuthShell
-      title={state === "failed" ? "confirmation link expired" : "check your email"}
-      subtitle={state === "failed" ? "Please request a new confirmation email or try signing in again." : "Your account is waiting for email confirmation."}
+      eyebrow={state === "failed" ? "THAT LINK HAS EXPIRED" : "CHECK YOUR INBOX"}
+      formTitle="Email confirmation"
+      title={state === "failed" ? "Let's try that again." : "Your space is waiting."}
+      subtitle={
+        state === "failed"
+          ? "Please request a new confirmation email or try signing in again."
+          : "Follow the confirmation link we sent, then return here to continue."
+      }
     >
       <Text style={styles.confirmationCopy}>
         {state === "failed"
           ? "We could not safely verify that link. No token was kept in this URL or on the device."
-          : "Follow the confirmation link we sent, then return here to log in. Your session will not be active until the email is confirmed."}
+          : "Your session will not be active until the email is confirmed. Once it is, your lines will be ready for you."}
       </Text>
-      <PrimaryButton label="return to log in" onPress={() => router.replace("/login" as Href)} />
-      <Pressable accessibilityRole="link" onPress={() => router.replace("/register" as Href)} style={styles.secondaryButton}>
-        <Text style={styles.secondaryButtonText}>try a different email</Text>
+      <PrimaryButton label="Return to log in" onPress={() => router.replace("/login" as Href)} />
+      <Pressable
+        accessibilityRole="link"
+        onPress={() => router.replace("/register" as Href)}
+        style={styles.secondaryButton}
+      >
+        <Text style={styles.secondaryButtonText}>Try a different email</Text>
       </Pressable>
     </AuthShell>
   );
 }
 
-function AuthShell({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
+function AuthShell({
+  eyebrow,
+  formTitle = "Sign in to continue",
+  title,
+  subtitle,
+  children
+}: {
+  eyebrow: string;
+  formTitle?: string;
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+}) {
   return (
     <AppScreen padded={false} style={styles.screen} contentContainerStyle={styles.screenContent}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.keyboard}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <View style={styles.brandMark} accessibilityLabel="LineSpace">
-            <Text style={styles.brandLine}>line</Text>
-            <Text style={styles.brandSpace}>space</Text>
+          <View pointerEvents="none" style={styles.decorativeField}>
+            <View style={styles.decorativeHalo} />
+            <View style={styles.decorativeOrb} />
+            <View style={styles.decorativeOrbit} />
+            <Text style={styles.decorativeQuote}>write<br />together</Text>
+            <Text style={styles.decorativeCaption}>01 / 01</Text>
           </View>
-          <Text style={styles.title}>{title}</Text>
-          <Text style={styles.subtitle}>{subtitle}</Text>
-          <View style={styles.form}>{children}</View>
+          <View style={styles.topRow}>
+            <View style={styles.wordmark}>
+              <Text style={styles.wordmarkLine}>line</Text>
+              <Text style={styles.wordmarkSpace}>space</Text>
+            </View>
+            <Text style={styles.topNote}>a social notebook<br />for poets</Text>
+          </View>
+          <View style={styles.intro}>
+            <Text style={styles.eyebrow}>{eyebrow}</Text>
+            <Text style={styles.title}>{title}</Text>
+            <Text style={styles.subtitle}>{subtitle}</Text>
+          </View>
+          <View style={styles.formCard}>
+            <View style={styles.formCardHeader}>
+              <Text style={styles.formCardTitle}>{formTitle}</Text>
+              <View style={styles.liveDot} />
+            </View>
+            <View style={styles.form}>{children}</View>
+          </View>
+          <Text style={styles.footnote}>By continuing, you agree to keep this a generous place to write.</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </AppScreen>
   );
 }
 
-function AuthField({ label, helper, ...props }: { label: string; helper?: string } & React.ComponentProps<typeof TextInput>) {
+function AuthField({
+  label,
+  helper,
+  ...props
+}: { label: string; helper?: string } & React.ComponentProps<typeof TextInput>) {
   return (
     <View style={styles.field}>
       <View style={styles.labelRow}>
         <Text style={styles.label}>{label}</Text>
         {helper ? <Text style={styles.helper}>{helper}</Text> : null}
       </View>
-      <TextInput accessibilityLabel={label} placeholderTextColor={colors.profileMuted} style={styles.input} {...props} />
+      <TextInput
+        accessibilityLabel={label}
+        placeholderTextColor={colors.profileMuted}
+        style={styles.input}
+        {...props}
+      />
     </View>
   );
 }
 
-function PasswordField({ showPassword, setShowPassword, ...props }: { showPassword: boolean; setShowPassword: (value: boolean) => void } & React.ComponentProps<typeof TextInput>) {
+function PasswordField({
+  showPassword,
+  setShowPassword,
+  ...props
+}: {
+  showPassword: boolean;
+  setShowPassword: (value: boolean) => void;
+} & React.ComponentProps<typeof TextInput>) {
   return (
     <View style={styles.field}>
       <Text style={styles.label}>password</Text>
@@ -272,7 +344,12 @@ function PasswordField({ showPassword, setShowPassword, ...props }: { showPasswo
           style={styles.passwordInput}
           {...props}
         />
-        <Pressable accessibilityLabel={showPassword ? "Hide password" : "Show password"} accessibilityRole="button" onPress={() => setShowPassword(!showPassword)} style={styles.togglePassword}>
+        <Pressable
+          accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+          accessibilityRole="button"
+          onPress={() => setShowPassword(!showPassword)}
+          style={styles.togglePassword}
+        >
           <Text style={styles.togglePasswordText}>{showPassword ? "hide" : "show"}</Text>
         </Pressable>
       </View>
@@ -280,42 +357,238 @@ function PasswordField({ showPassword, setShowPassword, ...props }: { showPasswo
   );
 }
 
-function PrimaryButton({ label, disabled, loading = false, onPress }: { label: string; disabled?: boolean; loading?: boolean; onPress: () => void }) {
+function AuthError({ message }: { message: string }) {
   return (
-    <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.primaryButton, (pressed || disabled) && styles.primaryButtonMuted]}>
-      {loading ? <ActivityIndicator color={colors.white} /> : <Text style={styles.primaryButtonText}>{label}</Text>}
+    <View style={styles.errorCard}>
+      <View style={styles.errorDot} />
+      <Text style={styles.error}>{message}</Text>
+    </View>
+  );
+}
+
+function PrimaryButton({
+  label,
+  disabled,
+  loading = false,
+  onPress
+}: {
+  label: string;
+  disabled?: boolean;
+  loading?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.primaryButton,
+        pressed && styles.primaryButtonPressed,
+        disabled && styles.primaryButtonMuted
+      ]}
+    >
+      {loading ? (
+        <ActivityIndicator color={colors.white} />
+      ) : (
+        <>
+          <Text style={styles.primaryButtonText}>{label}</Text>
+          <Text style={styles.primaryButtonArrow}>↗</Text>
+        </>
+      )}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { backgroundColor: colors.profileCanvas },
+  screen: { backgroundColor: "#F5F2EC" },
   screenContent: { flex: 1 },
   keyboard: { flex: 1 },
-  scroll: { flexGrow: 1, justifyContent: "center", paddingHorizontal: spacing.xl, paddingVertical: 44 },
-  brandMark: { flexDirection: "row", alignItems: "baseline", marginBottom: 38 },
-  brandLine: { color: colors.ink, fontSize: 28, fontWeight: "600" },
-  brandSpace: { color: colors.accent, fontSize: 28, fontWeight: "300" },
-  title: { color: colors.ink, fontSize: 31, lineHeight: 37, fontWeight: "500" },
-  subtitle: { marginTop: 8, color: colors.profileMuted, fontSize: 15, lineHeight: 21 },
-  form: { marginTop: 34, gap: 18 },
+  scroll: {
+    flexGrow: 1,
+    paddingHorizontal: spacing.lg,
+    paddingTop: 30,
+    paddingBottom: 28
+  },
+  decorativeField: {
+    position: "absolute",
+    top: 50,
+    right: -34,
+    height: 190,
+    width: 190
+  },
+  decorativeHalo: {
+    position: "absolute",
+    top: 8,
+    right: 0,
+    height: 158,
+    width: 158,
+    borderRadius: 80,
+    borderWidth: 1,
+    borderColor: "rgba(245,50,74,0.2)"
+  },
+  decorativeOrb: {
+    position: "absolute",
+    top: 31,
+    right: 23,
+    height: 111,
+    width: 111,
+    borderRadius: 56,
+    backgroundColor: "#F5324A",
+    opacity: 0.92
+  },
+  decorativeOrbit: {
+    position: "absolute",
+    top: 43,
+    right: 35,
+    height: 87,
+    width: 87,
+    borderRadius: 44,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.58)"
+  },
+  decorativeQuote: {
+    position: "absolute",
+    top: 66,
+    right: 42,
+    color: colors.white,
+    fontSize: 14,
+    fontWeight: "700",
+    lineHeight: 17,
+    letterSpacing: 0.4,
+    transform: [{ rotate: "-8deg" }]
+  },
+  decorativeCaption: {
+    position: "absolute",
+    top: 167,
+    right: 36,
+    color: colors.profileMuted,
+    fontSize: 9,
+    letterSpacing: 1.4
+  },
+  topRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    paddingRight: 4
+  },
+  wordmark: { flexDirection: "row", alignItems: "baseline" },
+  wordmarkLine: { color: colors.ink, fontSize: 26, fontWeight: "700", letterSpacing: -1 },
+  wordmarkSpace: { color: colors.accent, fontSize: 26, fontWeight: "300", letterSpacing: -1 },
+  topNote: {
+    color: colors.profileMuted,
+    fontSize: 9,
+    lineHeight: 13,
+    letterSpacing: 1.2,
+    textAlign: "right",
+    textTransform: "uppercase"
+  },
+  intro: { marginTop: 76, maxWidth: 300 },
+  eyebrow: {
+    color: colors.accent,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1.6
+  },
+  title: {
+    color: colors.ink,
+    fontSize: 39,
+    fontWeight: "600",
+    letterSpacing: -1.2,
+    lineHeight: 44,
+    marginTop: 12
+  },
+  subtitle: {
+    color: colors.inkSoft,
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: 11,
+    maxWidth: 305
+  },
+  formCard: {
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderColor: "rgba(21,21,21,0.07)",
+    borderRadius: 24,
+    borderWidth: 1,
+    marginTop: 31,
+    padding: 18,
+    shadowColor: "#7E776E",
+    shadowOpacity: 0.08,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 11 },
+    elevation: 2
+  },
+  formCardHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 4
+  },
+  formCardTitle: { color: colors.ink, fontSize: 14, fontWeight: "700" },
+  liveDot: { backgroundColor: colors.success, borderRadius: 4, height: 7, width: 7 },
+  form: { gap: 17, marginTop: 17 },
   field: { gap: 7 },
-  labelRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline" },
-  label: { color: colors.ink, fontSize: 14, fontWeight: "500" },
-  helper: { color: colors.profileMuted, fontSize: 11 },
-  input: { height: 52, paddingHorizontal: 15, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white, color: colors.ink, fontSize: 16 },
-  passwordRow: { height: 52, flexDirection: "row", alignItems: "center", borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white },
-  passwordInput: { flex: 1, height: "100%", paddingHorizontal: 15, color: colors.ink, fontSize: 16 },
-  togglePassword: { minWidth: 56, minHeight: 44, alignItems: "center", justifyContent: "center" },
-  togglePasswordText: { color: colors.accent, fontSize: 12 },
-  error: { color: colors.accent, fontSize: 13, lineHeight: 18 },
-  primaryButton: { minHeight: 54, alignItems: "center", justifyContent: "center", borderRadius: radius.md, backgroundColor: colors.ink },
-  primaryButtonMuted: { opacity: 0.58 },
-  primaryButtonText: { color: colors.white, fontSize: 16, fontWeight: "600" },
-  switchRow: { flexDirection: "row", justifyContent: "center", gap: 5 },
-  switchText: { color: colors.profileMuted, fontSize: 13 },
-  link: { color: colors.accent, fontSize: 13, fontWeight: "500" },
-  confirmationCopy: { color: colors.inkSoft, fontSize: 16, lineHeight: 24 },
-  secondaryButton: { minHeight: 48, alignItems: "center", justifyContent: "center" },
-  secondaryButtonText: { color: colors.accent, fontSize: 14 }
+  labelRow: { alignItems: "baseline", flexDirection: "row", justifyContent: "space-between" },
+  label: { color: colors.ink, fontSize: 12, fontWeight: "800", letterSpacing: 0.4 },
+  helper: { color: colors.profileMuted, fontSize: 10 },
+  input: {
+    backgroundColor: "#FBFAF8",
+    borderColor: colors.line,
+    borderRadius: 15,
+    borderWidth: 1,
+    color: colors.ink,
+    fontSize: 16,
+    height: 55,
+    paddingHorizontal: 15
+  },
+  passwordRow: {
+    alignItems: "center",
+    backgroundColor: "#FBFAF8",
+    borderColor: colors.line,
+    borderRadius: 15,
+    borderWidth: 1,
+    flexDirection: "row",
+    height: 55
+  },
+  passwordInput: { color: colors.ink, flex: 1, fontSize: 16, height: "100%", paddingHorizontal: 15 },
+  togglePassword: { alignItems: "center", justifyContent: "center", minHeight: 44, minWidth: 58 },
+  togglePasswordText: { color: colors.accent, fontSize: 11, fontWeight: "800", letterSpacing: 0.3 },
+  errorCard: {
+    alignItems: "center",
+    backgroundColor: "#FFF0EE",
+    borderRadius: 12,
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 10
+  },
+  errorDot: { backgroundColor: colors.accent, borderRadius: 4, height: 7, width: 7 },
+  error: { color: "#B52E3E", flex: 1, fontSize: 12, lineHeight: 17 },
+  primaryButton: {
+    alignItems: "center",
+    backgroundColor: colors.ink,
+    borderRadius: 15,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 56,
+    paddingHorizontal: 17
+  },
+  primaryButtonPressed: { backgroundColor: "#373431" },
+  primaryButtonMuted: { opacity: 0.47 },
+  primaryButtonText: { color: colors.white, fontSize: 15, fontWeight: "700" },
+  primaryButtonArrow: { color: colors.white, fontSize: 22, fontWeight: "300" },
+  switchRow: { alignItems: "center", flexDirection: "row", gap: 5, justifyContent: "center" },
+  switchText: { color: colors.profileMuted, fontSize: 12 },
+  link: { color: colors.accent, fontSize: 12, fontWeight: "800" },
+  confirmationCopy: { color: colors.inkSoft, fontSize: 15, lineHeight: 23 },
+  secondaryButton: { alignItems: "center", justifyContent: "center", minHeight: 48 },
+  secondaryButtonText: { color: colors.accent, fontSize: 13, fontWeight: "700" },
+  footnote: {
+    color: colors.profileMuted,
+    fontSize: 10,
+    lineHeight: 15,
+    marginTop: 17,
+    textAlign: "center"
+  }
 });

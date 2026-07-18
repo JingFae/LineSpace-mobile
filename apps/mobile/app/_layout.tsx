@@ -1,4 +1,4 @@
-import { Stack, useRouter, useSegments, type Href } from "expo-router";
+import { Stack, useRootNavigationState, useRouter, useSegments, type Href } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
@@ -37,23 +37,35 @@ function RouteGuard({ children }: { children: ReactNode }) {
   const { status } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  const rootNavigationState = useRootNavigationState();
   const firstSegment = segments[0] as string | undefined;
   const isPublicRoute =
     firstSegment === "login" || firstSegment === "register" || firstSegment === "auth";
 
   useEffect(() => {
-    if (status === "loading") return;
+    if (status === "loading" || !rootNavigationState?.key) return;
     if (status === "unauthenticated" && !isPublicRoute) {
       router.replace("/login" as Href);
     } else if (status === "authenticated" && isPublicRoute) {
       router.replace("/(tabs)" as Href);
     }
-  }, [isPublicRoute, router, status]);
+  }, [isPublicRoute, rootNavigationState?.key, router, status]);
 
-  if (status === "loading") return <AuthLoadingScreen />;
-  if (status === "unauthenticated" && !isPublicRoute) return <AuthLoadingScreen />;
-  if (status === "authenticated" && isPublicRoute) return <AuthLoadingScreen />;
-  return <>{children}</>;
+  const shouldHoldRoute =
+    status === "loading" ||
+    (status === "unauthenticated" && !isPublicRoute) ||
+    (status === "authenticated" && isPublicRoute);
+
+  return (
+    <View style={styles.routeGuardRoot}>
+      {children}
+      {shouldHoldRoute ? (
+        <View pointerEvents="auto" style={styles.routeGuardOverlay}>
+          <AuthLoadingScreen />
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 function WebDevicePreview({ children }: { children: ReactNode }) {
@@ -124,6 +136,8 @@ function WebDevicePreview({ children }: { children: ReactNode }) {
 }
 
 const styles = StyleSheet.create({
+  routeGuardRoot: { flex: 1 },
+  routeGuardOverlay: { ...StyleSheet.absoluteFillObject },
   previewRoot: {
     flex: 1,
     alignItems: "center",

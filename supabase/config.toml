@@ -6,7 +6,7 @@ port = 55421
 
 [db]
 # Keep this aligned with the hosted Supabase project's PostgreSQL major version.
-major_version = 15
+major_version = 17
 # 54322-54332 are blocked by the current Windows/Docker networking setup.
 # This is only the host port for the local database container.
 port = 55432

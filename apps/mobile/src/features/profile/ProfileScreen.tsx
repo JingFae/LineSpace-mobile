@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
-  Alert,
   Easing,
   Image,
   Modal,
@@ -65,6 +64,7 @@ export function ProfileScreen({ userId = currentUserId }: ProfileScreenProps) {
   const [saveKind, setSaveKind] = useState<"post" | "thread" | "comment">("post");
   const [connectionKind, setConnectionKind] = useState<UserConnectionKind | null>(null);
   const [showExperience, setShowExperience] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const profileQuery = useQuery({
     queryKey: ["user-profile", userId],
@@ -131,16 +131,7 @@ export function ProfileScreen({ userId = currentUserId }: ProfileScreenProps) {
             onConnectionsPress={setConnectionKind}
             onExperiencePress={() => setShowExperience(true)}
             onLikesAndSavesPress={() => setSection("saves")}
-            onLogoutPress={() =>
-              Alert.alert(
-                "Log out of LineSpace?",
-                "Your local poems and mock data will stay on this device.",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  { text: "Log out", style: "destructive", onPress: () => void logout() }
-                ]
-              )
-            }
+            onSettingsPress={() => setShowSettings(true)}
             onSectionChange={setSection}
             onThreadRelationChange={setThreadRelation}
             onSaveCollectionChange={setSaveCollection}
@@ -176,6 +167,18 @@ export function ProfileScreen({ userId = currentUserId }: ProfileScreenProps) {
         onClose={() => setConnectionKind(null)}
         page={connectionsQuery.data}
       />
+      <ProfileSettingsSheet
+        onClose={() => setShowSettings(false)}
+        onEditProfile={() => {
+          setShowSettings(false);
+          router.push("/profile/edit" as Href);
+        }}
+        onLogout={() => {
+          setShowSettings(false);
+          void logout();
+        }}
+        visible={showSettings}
+      />
     </AppScreen>
   );
 }
@@ -191,7 +194,7 @@ function ProfileLoaded({
   onConnectionsPress,
   onExperiencePress,
   onLikesAndSavesPress,
-  onLogoutPress,
+  onSettingsPress,
   onSectionChange,
   onThreadRelationChange,
   onSaveCollectionChange,
@@ -207,7 +210,7 @@ function ProfileLoaded({
   onConnectionsPress: (kind: UserConnectionKind) => void;
   onExperiencePress: () => void;
   onLikesAndSavesPress: () => void;
-  onLogoutPress: () => void;
+  onSettingsPress: () => void;
   onSectionChange: (section: UserProfileContentSection) => void;
   onThreadRelationChange: (relation: UserThreadRelation) => void;
   onSaveCollectionChange: (collection: UserCollectionKind) => void;
@@ -247,7 +250,7 @@ function ProfileLoaded({
         onConnectionsPress={onConnectionsPress}
         onExperiencePress={onExperiencePress}
         onLikesAndSavesPress={onLikesAndSavesPress}
-        onLogoutPress={onLogoutPress}
+        onSettingsPress={onSettingsPress}
         profile={profile}
       />
       <View style={styles.contentPanel}>
@@ -320,7 +323,7 @@ function ProfileHero({
   onConnectionsPress,
   onExperiencePress,
   onLikesAndSavesPress,
-  onLogoutPress
+  onSettingsPress
 }: {
   profile: UserProfileDetails;
   experience: UserExperience;
@@ -328,7 +331,7 @@ function ProfileHero({
   onConnectionsPress: (kind: UserConnectionKind) => void;
   onExperiencePress: () => void;
   onLikesAndSavesPress: () => void;
-  onLogoutPress: () => void;
+  onSettingsPress: () => void;
 }) {
   const avatarSource = profile.avatarUrl ? { uri: profile.avatarUrl } : profileAvatarArtwork;
   return (
@@ -337,9 +340,9 @@ function ProfileHero({
       <View style={styles.heroShade} />
       <View style={styles.heroActions}>
         <Pressable
-          accessibilityLabel={isOwner ? "Log out" : "Open profile menu"}
+          accessibilityLabel={isOwner ? "Open profile settings" : "Open profile menu"}
           hitSlop={12}
-          onPress={isOwner ? onLogoutPress : undefined}
+          onPress={isOwner ? onSettingsPress : undefined}
           style={styles.iconButton}
         >
           <MenuIcon />
@@ -352,7 +355,7 @@ function ProfileHero({
             <Pressable
               accessibilityLabel="Profile settings"
               hitSlop={12}
-              onPress={() => router.push("/profile/edit" as Href)}
+              onPress={onSettingsPress}
               style={styles.iconButton}
             >
               <SettingsIcon />
@@ -597,6 +600,110 @@ function ProfileContentCard({ item }: { item: UserProfileContentItem }) {
   );
 }
 
+function ProfileSettingsSheet({
+  visible,
+  onClose,
+  onEditProfile,
+  onLogout
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onEditProfile: () => void;
+  onLogout: () => void;
+}) {
+  const [confirmingLogout, setConfirmingLogout] = useState(false);
+
+  useEffect(() => {
+    if (!visible) setConfirmingLogout(false);
+  }, [visible]);
+
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
+      <View style={styles.modalRoot}>
+        <Pressable accessibilityLabel="Close settings" onPress={onClose} style={styles.modalBackdrop} />
+        <View style={styles.settingsSheet}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHeader}>
+            <View>
+              <Text style={styles.sheetEyebrow}>YOUR SPACE</Text>
+              <Text style={styles.sheetTitle}>Settings</Text>
+            </View>
+            <Pressable accessibilityLabel="Close" hitSlop={10} onPress={onClose}>
+              <Text style={styles.closeGlyph}>×</Text>
+            </Pressable>
+          </View>
+          {confirmingLogout ? (
+            <View style={styles.logoutConfirm}>
+              <View style={styles.logoutConfirmMark}>
+                <Text style={styles.logoutConfirmGlyph}>↗</Text>
+              </View>
+              <Text style={styles.logoutConfirmTitle}>Leave this session?</Text>
+              <Text style={styles.logoutConfirmCopy}>
+                Your poems stay safe. You can return whenever you are ready.
+              </Text>
+              <View style={styles.logoutConfirmActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setConfirmingLogout(false)}
+                  style={styles.logoutCancel}
+                >
+                  <Text style={styles.logoutCancelText}>Keep writing</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={onLogout}
+                  style={styles.logoutConfirmButton}
+                >
+                  <Text style={styles.logoutConfirmButtonText}>Log out</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <>
+              <Text style={styles.settingsIntro}>
+                Keep your profile close to how you want to be found.
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={onEditProfile}
+                style={({ pressed }) => [styles.settingsRow, pressed && styles.cardPressed]}
+              >
+                <View style={styles.settingsRowIcon}>
+                  <Text style={styles.settingsRowGlyph}>✎</Text>
+                </View>
+                <View style={styles.settingsRowCopy}>
+                  <Text style={styles.settingsRowTitle}>Edit profile</Text>
+                  <Text style={styles.settingsRowSubtitle}>Name, bio, avatar and visibility</Text>
+                </View>
+                <Text style={styles.settingsChevron}>›</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setConfirmingLogout(true)}
+                style={({ pressed }) => [
+                  styles.settingsRow,
+                  styles.settingsDangerRow,
+                  pressed && styles.cardPressed
+                ]}
+              >
+                <View style={[styles.settingsRowIcon, styles.settingsDangerIcon]}>
+                  <Text style={[styles.settingsRowGlyph, styles.settingsDangerGlyph]}>↗</Text>
+                </View>
+                <View style={styles.settingsRowCopy}>
+                  <Text style={[styles.settingsRowTitle, styles.settingsDangerTitle]}>Log out</Text>
+                  <Text style={styles.settingsRowSubtitle}>End this session on this device</Text>
+                </View>
+                <Text style={[styles.settingsChevron, styles.settingsDangerTitle]}>›</Text>
+              </Pressable>
+            </>
+          )}
+          <Text style={styles.settingsVersion}>LineSpace · made for lines in progress</Text>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function ExperienceSheet({
   experience,
   visible,
@@ -799,11 +906,90 @@ const styles = StyleSheet.create({
   modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.28)" },
   sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 26, borderTopRightRadius: 26, maxHeight: "68%", minHeight: 360, paddingBottom: 24, paddingHorizontal: 20 },
   experienceSheet: { backgroundColor: colors.surface, borderTopLeftRadius: 26, borderTopRightRadius: 26, paddingBottom: 27, paddingHorizontal: spacing.lg },
+  settingsSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingBottom: 28,
+    paddingHorizontal: spacing.lg
+  },
   sheetHandle: { alignSelf: "center", backgroundColor: colors.faint, borderRadius: radius.pill, height: 4, marginTop: 9, width: 42 },
   sheetHeader: { alignItems: "center", borderBottomColor: colors.line, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: "row", justifyContent: "space-between", minHeight: 76 },
   sheetEyebrow: { color: colors.profileMuted, fontSize: 10, fontWeight: "700", letterSpacing: 1.4 },
   sheetTitle: { color: colors.ink, fontSize: 24, fontWeight: "700", marginTop: 4 },
   closeGlyph: { color: colors.ink, fontSize: 28, fontWeight: "300" },
+  settingsIntro: { color: colors.profileMuted, fontSize: 13, lineHeight: 19, marginTop: 15 },
+  settingsRow: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.line,
+    borderRadius: 17,
+    borderWidth: 1,
+    flexDirection: "row",
+    marginTop: 12,
+    minHeight: 72,
+    paddingHorizontal: 12
+  },
+  settingsDangerRow: { backgroundColor: "#FFF7F5", borderColor: "#F6D9D4" },
+  settingsRowIcon: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceWarm,
+    borderRadius: 13,
+    height: 42,
+    justifyContent: "center",
+    width: 42
+  },
+  settingsDangerIcon: { backgroundColor: "#FFE6E1" },
+  settingsRowGlyph: { color: colors.ink, fontSize: 21, fontWeight: "500" },
+  settingsDangerGlyph: { color: colors.accent, transform: [{ rotate: "90deg" }] },
+  settingsRowCopy: { flex: 1, marginLeft: 12 },
+  settingsRowTitle: { color: colors.ink, fontSize: 15, fontWeight: "700" },
+  settingsDangerTitle: { color: colors.accent },
+  settingsRowSubtitle: { color: colors.profileMuted, fontSize: 11, marginTop: 4 },
+  settingsChevron: { color: colors.ink, fontSize: 27, fontWeight: "300", marginLeft: 8 },
+  logoutConfirm: {
+    alignItems: "center",
+    backgroundColor: "#FFF7F5",
+    borderColor: "#F6D9D4",
+    borderRadius: 19,
+    borderWidth: 1,
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 20
+  },
+  logoutConfirmMark: {
+    alignItems: "center",
+    backgroundColor: "#FFE6E1",
+    borderRadius: 25,
+    height: 50,
+    justifyContent: "center",
+    width: 50
+  },
+  logoutConfirmGlyph: { color: colors.accent, fontSize: 24, transform: [{ rotate: "90deg" }] },
+  logoutConfirmTitle: { color: colors.ink, fontSize: 18, fontWeight: "800", marginTop: 13 },
+  logoutConfirmCopy: { color: colors.profileMuted, fontSize: 12, lineHeight: 18, marginTop: 6, textAlign: "center" },
+  logoutConfirmActions: { flexDirection: "row", gap: 8, marginTop: 17, width: "100%" },
+  logoutCancel: {
+    alignItems: "center",
+    backgroundColor: colors.white,
+    borderColor: colors.line,
+    borderRadius: 13,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 46
+  },
+  logoutCancelText: { color: colors.ink, fontSize: 13, fontWeight: "700" },
+  logoutConfirmButton: {
+    alignItems: "center",
+    backgroundColor: colors.accent,
+    borderRadius: 13,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 46
+  },
+  logoutConfirmButtonText: { color: colors.white, fontSize: 13, fontWeight: "800" },
+  settingsVersion: { color: colors.profileMuted, fontSize: 10, letterSpacing: 0.3, marginTop: 22, textAlign: "center" },
   experienceTotalCard: { alignItems: "center", backgroundColor: colors.surfaceWarm, borderRadius: 18, flexDirection: "row", marginTop: 17, padding: 14 },
   experienceTotalCopy: { flex: 1, marginLeft: 13 },
   experienceLevel: { color: colors.ink, fontSize: 16, fontWeight: "800" },
