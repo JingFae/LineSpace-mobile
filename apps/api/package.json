@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx src/server.ts",
+    "dev": "tsx --env-file-if-exists=.env src/server.ts",
     "check": "tsx src/auth-check.ts && tsx src/smoke-check.ts && tsx src/database/migration-check.ts",
     "typecheck": "tsc --noEmit"
   },

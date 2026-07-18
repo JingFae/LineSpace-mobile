@@ -10,6 +10,7 @@
     "dev": "pnpm --filter @linespace/mobile dev",
     "dev:web": "pnpm --filter @linespace/mobile web",
     "dev:api": "pnpm --filter @linespace/api dev",
+    "dev:api:local": "node scripts/dev-api-local.mjs",
     "typecheck": "pnpm -r --workspace-concurrency=1 --if-present typecheck",
     "build": "turbo run build",
     "build:web": "pnpm --filter @linespace/mobile export:web",

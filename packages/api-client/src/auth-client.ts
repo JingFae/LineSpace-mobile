@@ -39,7 +39,11 @@ export class HttpAuthClient {
     private readonly baseUrl: string,
     options: AuthClientOptions = {}
   ) {
-    this.requestFn = options.fetch ?? globalThis.fetch;
+    const requestFn = options.fetch ?? globalThis.fetch;
+    // Browser fetch must be called with the global object as its receiver.
+    // Storing it as an instance property and calling `this.requestFn(...)`
+    // otherwise throws "Illegal invocation" before any request is sent.
+    this.requestFn = requestFn.bind(globalThis);
   }
 
   register(input: RegisterAuthInput): Promise<AuthRegistrationResult> {
@@ -140,4 +144,3 @@ function safeMessage(code: AuthClientErrorCode, path: string) {
   if (code === "INVALID_AUTH_INPUT") return "Please check the information you entered.";
   return "Authentication is temporarily unavailable.";
 }
-
