@@ -1,5 +1,9 @@
 export { AppScreen } from "./components/AppScreen";
 export { Avatar } from "./components/Avatar";
+export {
+  ProfileBadgeArtwork,
+  type ProfileBadgeVariant
+} from "./components/ProfileBadgeArtwork";
 export { BottomNavigation, type BottomNavItem } from "./components/BottomNavigation";
 export { CreateFlowSheet } from "./components/CreateFlowSheet";
 export { EmptyState } from "./components/EmptyState";

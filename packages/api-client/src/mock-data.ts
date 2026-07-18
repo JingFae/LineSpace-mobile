@@ -294,13 +294,29 @@ export const mockUserProfileDetails: UserProfileDetails[] = [
   {
     ...mockUsers[0]!,
     linespaceId: "12345678",
-    level: 12,
+    level: 4,
+    experience: {
+      creator: 26,
+      reviewer: 22,
+      total: 48,
+      level: 4,
+      levelProgress: 0.8,
+      nextLevelAt: 50
+    },
     badges: [
       {
-        id: "badge-classical",
-        label: "Classical",
-        symbol: "🏮",
-        tone: "warm"
+        id: "badge-ink-weaver",
+        label: "Ink Weaver · 织墨者",
+        symbol: "✒",
+        tone: "warm",
+        category: "creator"
+      },
+      {
+        id: "badge-soul-echo",
+        label: "Soul Echo · 共鸣者",
+        symbol: "♧",
+        tone: "neutral",
+        category: "reviewer"
       }
     ],
     stats: {
@@ -319,14 +335,16 @@ export const mockUserProfileDetails: UserProfileDetails[] = [
   {
     ...mockUsers[1]!,
     linespaceId: "87654321",
-    level: 8,
-    badges: [
-      {
-        id: "badge-modern",
-        label: "Modern",
-        tone: "neutral"
-      }
-    ],
+    level: 2,
+    experience: {
+      creator: 18,
+      reviewer: 8,
+      total: 26,
+      level: 2,
+      levelProgress: 0.6,
+      nextLevelAt: 30
+    },
+    badges: [],
     stats: {
       followers: 88,
       following: 104,

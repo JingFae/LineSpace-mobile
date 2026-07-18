@@ -107,6 +107,27 @@ async function main() {
     ),
     "Mock group messages did not round-trip."
   );
+  const beforeExperience = await mockApi.getUserProfile("user-ray");
+  await mockApi.setPoemCollection({
+    userId: "user-ray",
+    poemId: "poem-orbit",
+    collection: "liked",
+    isActive: true
+  });
+  const comment = await mockApi.createPoemComment({
+    userId: "user-ray",
+    poemId: "poem-orbit",
+    body: "The light is still moving."
+  });
+  const afterExperience = await mockApi.getUserProfile("user-ray");
+  assert(
+    beforeExperience &&
+      afterExperience &&
+      afterExperience.experience.creator === beforeExperience.experience.creator &&
+      afterExperience.experience.reviewer === beforeExperience.experience.reviewer + 5,
+    "Experience should reward comments while keeping the creator total scoped to the recipient."
+  );
+  assert(comment.author.id === "user-ray", "Comment experience smoke setup failed.");
 
   const health = await handleApiRequest("GET", "/health", new URLSearchParams());
   assert(health.status === 200, "The API health handler did not return 200.");
@@ -321,6 +342,14 @@ async function verifyInjectedUserDomainRepository() {
     displayName: smokeUser.displayName,
     avatarColor: "#DCD8D3",
     level: 1,
+    experience: {
+      creator: 6,
+      reviewer: 4,
+      total: 10,
+      level: 1,
+      levelProgress: 0,
+      nextLevelAt: 20
+    },
     badges: [],
     stats: { followers: 0, following: 0, likesAndSaves: 0 },
     contentCounts: { posts: 0, threads: 0, comments: 0, saves: 0 },

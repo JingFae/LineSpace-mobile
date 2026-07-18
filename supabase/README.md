@@ -2,6 +2,22 @@
 
 This directory is the only migration source used by Supabase CLI.
 
+## Local host ports
+
+Windows on this machine reserves the default `543xx` host-port range, so
+`supabase/config.toml` maps the local services to:
+
+```text
+API/PostgREST:  http://127.0.0.1:55421
+PostgreSQL:     127.0.0.1:55432
+Studio:         http://127.0.0.1:55423
+Mailpit:        http://127.0.0.1:55424
+SMTP:           127.0.0.1:55425
+```
+
+These are local host ports only; they do not change the hosted Supabase
+project or the Vercel API URL.
+
 Current migration order:
 
 ```text

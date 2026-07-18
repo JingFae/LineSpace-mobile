@@ -104,6 +104,8 @@ export type {
   ThreadSort,
   ThreadViewerState,
   UserBadge,
+  UserExperience,
+  UserExperienceCategory,
   UserConnectionKind,
   UserConnectionPage,
   UserConnectionQuery,

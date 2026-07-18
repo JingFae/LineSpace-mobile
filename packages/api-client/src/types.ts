@@ -220,6 +220,18 @@ export type UserBadge = {
   label: string;
   symbol?: string;
   tone: "neutral" | "warm";
+  category?: "creator" | "reviewer";
+};
+
+export type UserExperienceCategory = "creator" | "reviewer";
+
+export type UserExperience = {
+  creator: number;
+  reviewer: number;
+  total: number;
+  level: number;
+  levelProgress: number;
+  nextLevelAt: number | null;
 };
 
 export type UserProfileStats = {
@@ -245,6 +257,7 @@ export type UserContentCounts = {
 export type UserProfileDetails = UserProfile & {
   linespaceId: string;
   level: number;
+  experience: UserExperience;
   badges: UserBadge[];
   stats: UserProfileStats;
   contentCounts: UserContentCounts;
@@ -286,6 +299,9 @@ export type UserProfileContentItem = {
   finishedAt: string;
   highlightCount?: number;
   artworkUrl?: string;
+  media?: PoemDraftMedia;
+  layout?: PoemLayoutConfig;
+  artworkTone?: "water" | "paper" | "night";
   muted?: boolean;
   threadRelation?: UserThreadRelation;
   collection?: UserCollectionKind;

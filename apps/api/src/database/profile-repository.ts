@@ -43,6 +43,14 @@ type StatsRow = {
   saves_count: number;
 };
 
+type ExperienceRow = {
+  user_id: string;
+  creator_experience: number;
+  reviewer_experience: number;
+  total_experience: number;
+  level: number;
+};
+
 type VisibilityRow = {
   user_id: string;
   posts_public: boolean;
@@ -198,7 +206,7 @@ class SupabaseProfileRepository implements ProfileRepository {
     if (!userResult.data) return null;
 
     const user = userResult.data as UserRow;
-    const [statsResult, visibilityResult, badgeRowsResult] = await Promise.all([
+    const [statsResult, visibilityResult, badgeRowsResult, experienceResult] = await Promise.all([
       this.client
         .from("user_profile_stats")
         .select(
@@ -215,11 +223,17 @@ class SupabaseProfileRepository implements ProfileRepository {
         .from("user_badges")
         .select("badge_id,display_order")
         .eq("user_id", userId)
-        .order("display_order", { ascending: true })
+        .order("display_order", { ascending: true }),
+      this.client
+        .from("user_experience")
+        .select("user_id,creator_experience,reviewer_experience,total_experience,level")
+        .eq("user_id", userId)
+        .maybeSingle()
     ]);
     ensureDatabaseResult(statsResult.error);
     ensureDatabaseResult(visibilityResult.error);
     ensureDatabaseResult(badgeRowsResult.error);
+    ensureDatabaseResult(experienceResult.error);
 
     const badgeRows = (badgeRowsResult.data as UserBadgeRow[] | null) ?? [];
     const badgeIds = badgeRows.map((row) => row.badge_id);
@@ -249,7 +263,8 @@ class SupabaseProfileRepository implements ProfileRepository {
       user,
       (statsResult.data as StatsRow | null) ?? emptyStats(userId),
       (visibilityResult.data as VisibilityRow | null) ?? emptyVisibility(userId),
-      badges
+      badges,
+      (experienceResult.data as ExperienceRow | null) ?? emptyExperienceRow(userId)
     );
   }
 
@@ -575,12 +590,28 @@ function toProfileDetails(
   row: UserRow,
   stats: StatsRow,
   visibility: VisibilityRow,
-  badges: UserProfileDetails["badges"]
+  badges: UserProfileDetails["badges"],
+  experience: ExperienceRow
 ): UserProfileDetails {
+  const level = countValue(experience.level);
   return {
     ...toUserProfile(row),
     linespaceId: row.linespace_id,
-    level: row.level,
+    level,
+    experience: {
+      creator: countValue(experience.creator_experience),
+      reviewer: countValue(experience.reviewer_experience),
+      total: countValue(experience.total_experience),
+      level,
+      levelProgress:
+        countValue(experience.total_experience) >= 100
+          ? 1
+          : (countValue(experience.total_experience) % 10) / 10,
+      nextLevelAt:
+        countValue(experience.total_experience) >= 100
+          ? null
+          : (level + 1) * 10
+    },
     badges,
     stats: {
       followers: countValue(stats.followers_count),
@@ -632,6 +663,16 @@ function emptyVisibility(userId: string): VisibilityRow {
     threads_public: true,
     comments_public: true,
     saves_public: true
+  };
+}
+
+function emptyExperienceRow(userId: string): ExperienceRow {
+  return {
+    user_id: userId,
+    creator_experience: 0,
+    reviewer_experience: 0,
+    total_experience: 0,
+    level: 0
   };
 }
 

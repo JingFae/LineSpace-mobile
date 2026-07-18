@@ -147,6 +147,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
   private readonly inboxMessages: InboxConversationMessage[] = [];
   private readonly inboxGroups = new Map<string, InboxGroup>();
   private readonly inboxGroupMessages: InboxConversationMessage[] = [];
+  private readonly experienceEvents = new Set<string>();
   private readonly followingByUser = new Map<string, Set<string>>();
   private draftSequence = 0;
   private continuationSequence = 0;
@@ -347,6 +348,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
       });
       owner.contentCounts.posts += 1;
     }
+    this.awardExperience(owner.id, "creator", 5, `publish-post:${poem.id}`);
     return { draft: cloneDraft(draft), poem: clonePoem(poem) };
   }
 
@@ -392,6 +394,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
       });
       owner.contentCounts.threads += 1;
     }
+    this.awardExperience(owner.id, "creator", 5, `publish-thread:${thread.id}`);
     return { draft: cloneDraft(draft), thread: cloneThread(thread) };
   }
 
@@ -483,6 +486,9 @@ export class MockLineSpaceApi implements LineSpaceApi {
     poem.metrics.comments += 1;
     const profile = this.profiles.find((item) => item.id === input.userId);
     if (profile) profile.contentCounts.comments += 1;
+    if (poem.author.id !== input.userId) {
+      this.awardExperience(input.userId, "reviewer", 5, `comment:${comment.id}`);
+    }
     return cloneComment(comment);
   }
 
@@ -501,6 +507,14 @@ export class MockLineSpaceApi implements LineSpaceApi {
       if (input.collection === "saved") {
         const profile = this.profiles.find((item) => item.id === input.userId);
         if (profile) profile.contentCounts.saves = Math.max(0, profile.contentCounts.saves + (input.isActive ? 1 : -1));
+      }
+      if (input.isActive && comment.author.id !== input.userId) {
+        this.awardExperience(
+          comment.author.id,
+          "reviewer",
+          2,
+          `comment-${input.collection}:${input.userId}:${input.commentId}`
+        );
       }
     }
     comment.viewer = {
@@ -812,6 +826,14 @@ export class MockLineSpaceApi implements LineSpaceApi {
           );
         }
       }
+      if (input.isActive && poem.author.id !== input.userId) {
+        this.awardExperience(
+          poem.author.id,
+          "creator",
+          2,
+          `poem-${input.collection}:${input.userId}:${input.poemId}`
+        );
+      }
     }
 
     return {
@@ -857,6 +879,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
       ...identity,
       linespaceId: `guest_${identity.id.replace(/[^a-z0-9]/gi, "").slice(-8)}`,
       level: 1,
+      experience: emptyExperience(),
       badges: [],
       stats: { followers: 0, following: 0, likesAndSaves: 0 },
       contentCounts: { posts: 0, threads: 0, comments: 0, saves: 0 },
@@ -958,7 +981,22 @@ export class MockLineSpaceApi implements LineSpaceApi {
       userId,
       section,
       total: profile?.contentCounts[section] ?? items.length,
-      items: items.map((item) => ({ ...item, tags: [...item.tags], reference: item.reference ? { ...item.reference } : undefined })),
+      items: items.map((item) => {
+        const poem = item.poemId ? this.poems.find((candidate) => candidate.id === item.poemId) : undefined;
+        return {
+          ...item,
+          ...(poem
+            ? {
+                artworkUrl: item.artworkUrl ?? poem.artworkUrl,
+                media: poem.media ? { ...poem.media } : item.media,
+                layout: poem.layout ? cloneLayout(poem.layout) : item.layout,
+                artworkTone: poem.artworkTone
+              }
+            : {}),
+          tags: [...item.tags],
+          reference: item.reference ? { ...item.reference } : undefined
+        };
+      }),
       visible: true
     };
   }
@@ -1077,6 +1115,9 @@ export class MockLineSpaceApi implements LineSpaceApi {
       content
     });
     thread.metrics.continuations += 1;
+    if (thread.author.id !== input.userId) {
+      this.awardExperience(input.userId, "creator", 5, `participate-thread:${continuation.id}`);
+    }
     return this.withContinuationViewer(continuation, input.userId);
   }
 
@@ -1097,6 +1138,9 @@ export class MockLineSpaceApi implements LineSpaceApi {
     parent.metrics.continuations += 1;
     const thread = this.threads.find((item) => item.id === parent.threadId);
     if (thread) thread.metrics.continuations += 1;
+    if (thread?.author.id !== input.userId) {
+      this.awardExperience(input.userId, "creator", 5, `participate-thread:${continuation.id}`);
+    }
     return this.withContinuationViewer(continuation, input.userId);
   }
 
@@ -1108,6 +1152,14 @@ export class MockLineSpaceApi implements LineSpaceApi {
     if (wasActive !== input.isActive) {
       input.isActive ? liked.add(input.threadId) : liked.delete(input.threadId);
       thread.metrics.likes = Math.max(0, thread.metrics.likes + (input.isActive ? 1 : -1));
+      if (input.isActive && thread.author.id !== input.userId) {
+        this.awardExperience(
+          thread.author.id,
+          "creator",
+          2,
+          `thread-liked:${input.userId}:${thread.id}`
+        );
+      }
     }
     return this.withThreadViewer(thread, input.userId);
   }
@@ -1125,6 +1177,14 @@ export class MockLineSpaceApi implements LineSpaceApi {
         0,
         continuation.metrics.likes + (input.isActive ? 1 : -1)
       );
+      if (input.isActive && continuation.author.id !== input.userId) {
+        this.awardExperience(
+          continuation.author.id,
+          "creator",
+          2,
+          `continuation-liked:${input.userId}:${continuation.id}`
+        );
+      }
     }
     return this.withContinuationViewer(continuation, input.userId);
   }
@@ -1529,6 +1589,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
         ...identity,
         linespaceId: `guest_${identity.id.replace(/[^a-z0-9]/gi, "").slice(-8)}`,
         level: 1,
+        experience: emptyExperience(),
         badges: [],
         stats: { followers: 0, following: 0, likesAndSaves: 0 },
         contentCounts: { posts: 0, threads: 0, comments: 0, saves: 0 },
@@ -1536,6 +1597,50 @@ export class MockLineSpaceApi implements LineSpaceApi {
       });
     }
     return result;
+  }
+
+  private awardExperience(
+    userId: string,
+    category: "creator" | "reviewer",
+    points: number,
+    eventKey: string
+  ) {
+    if (points <= 0 || this.experienceEvents.has(eventKey)) return;
+    const profile = this.profiles.find((item) => item.id === userId);
+    if (!profile) return;
+    this.experienceEvents.add(eventKey);
+    profile.experience[category] += points;
+    const total = profile.experience.creator + profile.experience.reviewer;
+    const level = Math.min(10, Math.floor(total / 10));
+    profile.experience = {
+      creator: profile.experience.creator,
+      reviewer: profile.experience.reviewer,
+      total,
+      level,
+      levelProgress: total >= 100 ? 1 : (total % 10) / 10,
+      nextLevelAt: total >= 100 ? null : (level + 1) * 10
+    };
+    profile.level = level;
+    const badges = profile.badges.filter((badge) => badge.id !== "badge-ink-weaver" && badge.id !== "badge-soul-echo");
+    if (profile.experience.creator >= 20) {
+      badges.push({
+        id: "badge-ink-weaver",
+        label: "Ink Weaver · 织墨者",
+        symbol: "✒",
+        tone: "warm",
+        category: "creator"
+      });
+    }
+    if (profile.experience.reviewer >= 20) {
+      badges.push({
+        id: "badge-soul-echo",
+        label: "Soul Echo · 共鸣者",
+        symbol: "♧",
+        tone: "neutral",
+        category: "reviewer"
+      });
+    }
+    profile.badges = badges;
   }
 
   private findAnyProfile(userId: string) {
@@ -1663,10 +1768,22 @@ function hydrateCreditPerson(person: PoemCreditPerson, profiles: UserProfileDeta
 function cloneUserProfile(profile: UserProfileDetails): UserProfileDetails {
   return {
     ...profile,
+    experience: { ...profile.experience },
     badges: profile.badges.map((badge) => ({ ...badge })),
     stats: { ...profile.stats },
     contentCounts: { ...profile.contentCounts },
     visibility: { ...profile.visibility }
+  };
+}
+
+function emptyExperience() {
+  return {
+    creator: 0,
+    reviewer: 0,
+    total: 0,
+    level: 0,
+    levelProgress: 0,
+    nextLevelAt: 10
   };
 }
 
@@ -1680,6 +1797,10 @@ function profileContentFromPoem(poem: PoemSummary) {
     tags: [...poem.tags],
     finishedAt: poem.startedAt,
     highlightCount: poem.metrics.likes,
+    artworkUrl: poem.artworkUrl,
+    media: poem.media ? { ...poem.media } : undefined,
+    layout: poem.layout ? cloneLayout(poem.layout) : undefined,
+    artworkTone: poem.artworkTone,
     collection: "saved" as const
   };
 }

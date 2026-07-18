@@ -1,8 +1,27 @@
 project_id = "linespace"
 
+[api]
+# Keep Supabase's local HTTP API outside the Windows-excluded 543xx range.
+port = 55421
+
 [db]
 # Keep this aligned with the hosted Supabase project's PostgreSQL major version.
 major_version = 15
+# 54322-54332 are blocked by the current Windows/Docker networking setup.
+# This is only the host port for the local database container.
+port = 55432
+shadow_port = 55430
+
+[studio]
+port = 55423
+
+[inbucket]
+port = 55424
+smtp_port = 55425
+pop3_port = 55426
+
+[analytics]
+enabled = false
 
 [auth]
 site_url = "http://localhost:8081"

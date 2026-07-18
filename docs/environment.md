@@ -180,3 +180,18 @@ AUTH_EMAIL_REDIRECT_URL=https://<web-domain>/auth/confirm
 not use the `EXPO_PUBLIC_` prefix. `EXPO_PUBLIC_USE_MOCKS=false` and
 `EXPO_PUBLIC_API_BASE_URL` are the only client build switches needed to point
 the Web app at the HTTP API.
+
+### Local Supabase ports on Windows
+
+This machine reserves the default `543xx` host-port range. The checked-in
+`supabase/config.toml` therefore uses:
+
+```text
+API/PostgREST: http://127.0.0.1:55421
+PostgreSQL:    127.0.0.1:55432
+Studio:        http://127.0.0.1:55423
+Mailpit:       http://127.0.0.1:55424
+```
+
+The LineSpace API should use `SUPABASE_URL=http://127.0.0.1:55421` when
+running against the local stack. These port changes are local-only.

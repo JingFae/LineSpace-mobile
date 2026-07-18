@@ -21,6 +21,10 @@ const inboxGroupsMigration = await readFile(
   new URL("20260718000200_inbox_groups.sql", canonicalMigrationsUrl),
   "utf8"
 );
+const experienceMigration = await readFile(
+  new URL("20260718000300_profile_experience.sql", canonicalMigrationsUrl),
+  "utf8"
+);
 const profileRepository = await readFile(
   new URL("./profile-repository.ts", import.meta.url),
   "utf8"
@@ -108,6 +112,18 @@ for (const required of [
   /active members send group messages/i
 ] as const) {
   assert(required.test(inboxGroupsMigration), `Inbox group migration is missing ${required}.`);
+}
+
+for (const required of [
+  /create\s+table\s+if\s+not\s+exists\s+public\.user_experience/i,
+  /create\s+table\s+if\s+not\s+exists\s+public\.experience_events/i,
+  /award_profile_experience/i,
+  /recalculate_user_experience/i,
+  /badge-ink-weaver/i,
+  /badge-soul-echo/i,
+  /alter\s+table\s+public\.experience_events\s+enable\s+row\s+level\s+security/i
+] as const) {
+  assert(required.test(experienceMigration), `Profile experience migration is missing ${required}.`);
 }
 
 assert(
