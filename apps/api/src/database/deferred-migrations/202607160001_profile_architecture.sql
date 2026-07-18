@@ -1,3 +1,4 @@
+-- DEFERRED: not part of the canonical Supabase migration chain.
 -- Profile architecture: post/thread/comment collections and per-section visibility.
 -- This migration is additive so existing profile rows remain readable while the
 -- application rolls out the new profile tabs.
@@ -46,4 +47,3 @@ alter table if exists user_profile_content
 
 create index if not exists user_profile_content_kind_idx
   on user_profile_content (user_id, section, content_kind, created_at desc);
-

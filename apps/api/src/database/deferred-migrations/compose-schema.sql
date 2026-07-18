@@ -1,3 +1,4 @@
+-- DEFERRED: not part of the canonical Supabase migration chain.
 -- PostgreSQL schema for Draft, Layout and collaborative editing.
 -- Media binaries/background assets belong in object storage; these tables keep durable URLs and choices.
 

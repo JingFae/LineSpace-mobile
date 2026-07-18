@@ -219,8 +219,7 @@ Service Role 不得被移动端、`packages/api-client` 或 `packages/ui` 引用
 ```text
 database/
 ├─ profile-repository.ts        # 用户资料、搜索、关系和最近联系人
-├─ profile-schema.sql            # Profile 域基础 schema
-├─ compose-schema.sql            # Compose 域 schema 草案
+├─ deferred-migrations/          # 尚未进入云端的 Post/Poem/Compose SQL
 ├─ migrations/                  # 按时间排序的正式迁移
 └─ migration-check.ts            # 静态迁移契约检查
 ```
@@ -314,13 +313,11 @@ HTTP 模式下，`EXPO_PUBLIC_CURRENT_USER_ID` 不再是可信身份来源。若
 ## 8. 数据库迁移顺序
 
 ```text
-profile-schema.sql
-202607150001_auth_identity.sql
-202607160001_profile_architecture.sql
-202607160002_post_interactions.sql
-202607160003_create_visibility.sql
-202607160004_auth_trigger_idempotent.sql
-202607180001_user_domain_persistence.sql
+supabase/migrations/20260715000000_profile_foundation.sql
+supabase/migrations/20260715000100_auth_identity.sql
+supabase/migrations/20260716000400_auth_trigger_idempotent.sql
+supabase/migrations/20260718000100_user_domain_persistence.sql
+supabase/migrations/20260718000200_inbox_groups.sql
 ```
 
 迁移要求：
@@ -394,3 +391,44 @@ pnpm check
 
 `pnpm check` 是当前 CI 级综合检查，包含 TypeScript、Auth/API 契约和 Expo Web
 导出。当前仓库没有独立 ESLint，`pnpm lint` 兼容执行 TypeScript 检查。
+
+## Canonical Supabase CLI migration source
+
+The old profile schema and user-domain migrations now live in
+`supabase/migrations/`. Supabase CLI must only read that directory; do not
+maintain a second deployable copy under `apps/api`.
+
+The current cloud-safe chain is:
+
+```text
+20260715000000_profile_foundation.sql
+20260715000100_auth_identity.sql
+20260716000400_auth_trigger_idempotent.sql
+20260718000100_user_domain_persistence.sql
+20260718000200_inbox_groups.sql
+```
+
+The foundation creates the minimal `inbox_messages` participant/timestamp
+contract needed for recent-contact queries. It deliberately does not create
+Post, Poem, Comment, Feed, Compose, or content-engagement tables.
+
+Those SQL files are retained under
+`apps/api/src/database/deferred-migrations/` as non-deployable references.
+They must be rebased against the current foundation and receive a separate
+RLS/security review before promotion. `apps/api/src/database/migration-check.ts`
+fails if a deferred content table is accidentally added to the canonical
+chain.
+
+Local and hosted commands:
+
+```bash
+pnpm db:start
+pnpm db:reset
+pnpm db:lint
+pnpm exec supabase link --project-ref <staging-project-ref>
+pnpm db:push:dry-run
+pnpm db:push
+```
+
+`db:reset` is local-only. The hosted push must be reviewed from the dry run
+first; never use `db reset --linked` against production.

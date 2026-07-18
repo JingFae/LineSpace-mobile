@@ -70,9 +70,9 @@ pnpm dev:web
 先应用现有 profile schema，再执行认证迁移：
 
 ```text
-apps/api/src/database/profile-schema.sql
-apps/api/src/database/migrations/202607150001_auth_identity.sql
-apps/api/src/database/migrations/202607160004_auth_trigger_idempotent.sql
+supabase/migrations/20260715000000_profile_foundation.sql
+supabase/migrations/20260715000100_auth_identity.sql
+supabase/migrations/20260716000400_auth_trigger_idempotent.sql
 ```
 
 迁移会完成：
@@ -120,13 +120,11 @@ request-scoped；不会复用携带某个用户 JWT 的全局 Client，也不会
 
 执行迁移的顺序为：
 
-1. `profile-schema.sql`（新环境初始化）
-2. `202607150001_auth_identity.sql`
-3. `202607160001_profile_architecture.sql`
-4. `202607160002_post_interactions.sql`
-5. `202607160003_create_visibility.sql`
-6. `202607160004_auth_trigger_idempotent.sql`
-7. `202607180001_user_domain_persistence.sql`
+1. `supabase/migrations/20260715000000_profile_foundation.sql`
+2. `supabase/migrations/20260715000100_auth_identity.sql`
+3. `supabase/migrations/20260716000400_auth_trigger_idempotent.sql`
+4. `supabase/migrations/20260718000100_user_domain_persistence.sql`
+5. `supabase/migrations/20260718000200_inbox_groups.sql`
 
 最后一个迁移启用用户关系域的 RLS、最近联系人索引、关注计数器和
 `search_public_users`/`list_public_connections` RPC。执行前应先运行
@@ -142,3 +140,43 @@ request-scoped；不会复用携带某个用户 JWT 的全局 Client，也不会
 取消关注和 Inbox RLS；也可以将迁移按上述顺序通过 `psql "$DATABASE_URL" -f`
 逐个执行。当前仓库只提供静态迁移契约和 Repository/路由测试，不包含生产
 数据库凭据。
+
+## Supabase CLI and cloud database variables
+
+The repository now uses `supabase/config.toml` and
+`supabase/migrations/` as the canonical database deployment entry point.
+`apps/api/src/database/deferred-migrations/` is intentionally excluded from
+the current cloud push because it contains Post/Poem/Compose persistence that
+is still Mock-backed.
+
+For local Supabase, run:
+
+```bash
+pnpm db:start
+pnpm db:reset
+pnpm db:lint
+```
+
+For a dedicated hosted Staging project:
+
+```bash
+pnpm exec supabase login
+pnpm exec supabase link --project-ref <staging-project-ref>
+pnpm db:push:dry-run
+pnpm db:push
+```
+
+The API server receives these variables through Vercel/server process
+configuration, never through the Expo bundle:
+
+```env
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_PUBLISHABLE_KEY=<publishable-key>
+SUPABASE_SERVICE_ROLE_KEY=<server-only-service-role-key>
+AUTH_EMAIL_REDIRECT_URL=https://<web-domain>/auth/confirm
+```
+
+`SUPABASE_SERVICE_ROLE_KEY`, database passwords, and connection strings must
+not use the `EXPO_PUBLIC_` prefix. `EXPO_PUBLIC_USE_MOCKS=false` and
+`EXPO_PUBLIC_API_BASE_URL` are the only client build switches needed to point
+the Web app at the HTTP API.

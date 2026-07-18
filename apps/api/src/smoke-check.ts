@@ -82,6 +82,31 @@ async function main() {
   const mockApi = createMockLineSpaceApi();
   const mockFeed = await mockApi.listFeed({ viewerId: "user-lili" });
   assert(mockFeed.length > 0, "Mock mode returned an empty feed.");
+  const mockGroup = await mockApi.createInboxGroup({
+    ownerId: "user-lili",
+    name: "Smoke Lines",
+    inviteeIds: ["user-ray"]
+  });
+  assert(
+    mockGroup.members.some((member) => member.user.id === "user-ray" && member.status === "invited"),
+    "Mock group creation did not create a pending invitation."
+  );
+  await mockApi.respondInboxGroupInvite({
+    groupId: mockGroup.id,
+    userId: "user-ray",
+    accept: true
+  });
+  await mockApi.sendInboxMessage({
+    senderId: "user-ray",
+    groupId: mockGroup.id,
+    text: "Group message contract"
+  });
+  assert(
+    (await mockApi.listInboxGroupMessages(mockGroup.id, "user-lili")).some(
+      (message) => message.text === "Group message contract"
+    ),
+    "Mock group messages did not round-trip."
+  );
 
   const health = await handleApiRequest("GET", "/health", new URLSearchParams());
   assert(health.status === 200, "The API health handler did not return 200.");
@@ -120,6 +145,16 @@ async function main() {
       inboxSummary.unread.comments > 0 && inboxSummary.unread.likes > 0,
       "Inbox summary did not return unread activity counts."
     );
+    const httpGroup = await httpApi.createInboxGroup({
+      ownerId: profile.id,
+      name: "HTTP Lines",
+      inviteeIds: ["user-ray"]
+    });
+    assert(httpGroup.name === "HTTP Lines", "Group creation did not reach the HTTP route.");
+    const httpGroupInList = (await httpApi.listInboxGroups("user-lili")).find(
+      (group) => group.id === httpGroup.id
+    );
+    assert(httpGroupInList, "HTTP group was not returned for its owner.");
 
     const draft = await httpApi.createPoemDraft({ ownerId: profile.id, mode: "draft" });
     const loadedDraft = await httpApi.getPoemDraft(draft.id);

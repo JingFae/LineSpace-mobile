@@ -1,21 +1,68 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 
 function assert(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
+const canonicalMigrationsUrl = new URL("../../../../supabase/migrations/", import.meta.url);
 const idempotentMigration = await readFile(
-  new URL("./migrations/202607160004_auth_trigger_idempotent.sql", import.meta.url),
+  new URL("20260716000400_auth_trigger_idempotent.sql", canonicalMigrationsUrl),
   "utf8"
 );
 const userDomainMigration = await readFile(
-  new URL("./migrations/202607180001_user_domain_persistence.sql", import.meta.url),
+  new URL("20260718000100_user_domain_persistence.sql", canonicalMigrationsUrl),
   "utf8"
 );
-const profileSchema = await readFile(new URL("./profile-schema.sql", import.meta.url), "utf8");
+const profileSchema = await readFile(
+  new URL("20260715000000_profile_foundation.sql", canonicalMigrationsUrl),
+  "utf8"
+);
+const inboxGroupsMigration = await readFile(
+  new URL("20260718000200_inbox_groups.sql", canonicalMigrationsUrl),
+  "utf8"
+);
 const profileRepository = await readFile(
   new URL("./profile-repository.ts", import.meta.url),
   "utf8"
+);
+const canonicalMigrationFiles = (await readdir(canonicalMigrationsUrl))
+  .filter((fileName) => fileName.endsWith(".sql"))
+  .sort();
+
+assert(
+  canonicalMigrationFiles.length === new Set(canonicalMigrationFiles).size,
+  "Canonical Supabase migration names must be unique."
+);
+for (const fileName of canonicalMigrationFiles) {
+  assert(
+    /^\d{14}_[a-z0-9_]+\.sql$/.test(fileName),
+    `Supabase migration ${fileName} must use a 14-digit timestamp and snake_case name.`
+  );
+}
+
+const canonicalSql = (
+  await Promise.all(
+    canonicalMigrationFiles.map((fileName) =>
+      readFile(new URL(fileName, canonicalMigrationsUrl), "utf8")
+    )
+  )
+).join("\n");
+
+assert(
+  /create\s+table\s+if\s+not\s+exists\s+inbox_messages/i.test(profileSchema),
+  "The core foundation must create inbox_messages for recent-contact queries."
+);
+assert(
+  !/update\s+public\.users\s+set\s+handle\s*=\s*lower/i.test(
+    await readFile(new URL("20260715000100_auth_identity.sql", canonicalMigrationsUrl), "utf8")
+  ),
+  "Auth identity migration must not silently rewrite existing handles."
+);
+assert(
+  !/\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?(?:public\.)?(posts|post_comments|poem_drafts|poem_relay_threads)\b/i.test(
+    canonicalSql
+  ),
+  "Canonical cloud migrations must not silently promote deferred Post, Poem, or Compose persistence."
 );
 
 for (const [label, sql] of [
@@ -50,6 +97,19 @@ assert(
   "User domain migration must not introduce Feed, Poem, or comment tables."
 );
 
+for (const required of [
+  /create\s+table\s+if\s+not\s+exists\s+public\.inbox_groups/i,
+  /create\s+table\s+if\s+not\s+exists\s+public\.inbox_group_members/i,
+  /create\s+table\s+if\s+not\s+exists\s+public\.inbox_group_messages/i,
+  /validate_inbox_group_invitee/i,
+  /mutual connections/i,
+  /alter\s+table\s+public\.inbox_group_members\s+enable\s+row\s+level\s+security/i,
+  /invitees respond to invitations/i,
+  /active members send group messages/i
+] as const) {
+  assert(required.test(inboxGroupsMigration), `Inbox group migration is missing ${required}.`);
+}
+
 assert(
   !/SUPABASE_SERVICE_ROLE_KEY/.test(profileRepository),
   "ProfileRepository must never use the Service Role key."
@@ -77,5 +137,5 @@ assert(
 );
 
 process.stdout.write(
-  "Database migration check passed: auth profile provisioning and user-domain RLS/RPC contracts are present.\n"
+  "Database migration check passed: canonical Supabase migrations contain only the Auth/user domain and preserve RLS/RPC contracts.\n"
 );

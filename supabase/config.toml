@@ -1,0 +1,9 @@
+project_id = "linespace"
+
+[db]
+# Keep this aligned with the hosted Supabase project's PostgreSQL major version.
+major_version = 15
+
+[auth]
+site_url = "http://localhost:8081"
+additional_redirect_urls = ["http://localhost:8081/auth/confirm"]

@@ -1,6 +1,7 @@
--- PostgreSQL profile-domain schema.
--- Counters are stored for fast mobile reads and must be updated in the same
--- transaction as the corresponding relationship or engagement row.
+-- Canonical Supabase foundation for the Auth, public profile, relationship,
+-- and recent-contact domains.
+-- Feed, Post, Poem, Comment, Compose, and content-engagement persistence are
+-- deliberately excluded from this cloud migration chain.
 
 create table if not exists users (
   id text primary key,
@@ -115,6 +116,24 @@ create index if not exists user_follows_follower_created_idx
 create index if not exists user_follows_following_created_idx
   on user_follows (following_user_id, created_at desc);
 
+-- The user-domain repository only needs participants and timestamps to derive
+-- recent contacts. post_id stays an opaque reference until Post persistence is
+-- promoted through a separately reviewed migration.
+create table if not exists inbox_messages (
+  id text primary key,
+  sender_user_id text not null references users(id) on delete cascade,
+  recipient_user_id text not null references users(id) on delete cascade,
+  kind varchar(24) not null check (kind in ('text', 'shared-post')),
+  text_body text,
+  post_id text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists inbox_messages_sender_created_idx
+  on inbox_messages (sender_user_id, created_at desc);
+create index if not exists inbox_messages_recipient_created_idx
+  on inbox_messages (recipient_user_id, created_at desc);
+
 create table if not exists user_profile_visibility (
   user_id text primary key references users(id) on delete cascade,
   posts_public boolean not null default true,
@@ -123,41 +142,6 @@ create table if not exists user_profile_visibility (
   saves_public boolean not null default true,
   updated_at timestamptz not null default now()
 );
-
-create table if not exists user_profile_content (
-  id text primary key,
-  user_id text not null references users(id) on delete cascade,
-  content_id text,
-  section varchar(16) not null check (section in ('posts', 'threads', 'comments', 'saves')),
-  content_kind varchar(16) not null default 'post' check (content_kind in ('post', 'thread', 'comment')),
-  thread_relation varchar(16) check (thread_relation in ('started', 'participated')),
-  collection_kind varchar(16) check (collection_kind in ('liked', 'saved')),
-  reference_content_id text,
-  reference_text text,
-  title text not null,
-  excerpt text not null,
-  tags jsonb not null default '[]'::jsonb,
-  finished_at timestamptz not null,
-  highlight_count bigint,
-  artwork_url text,
-  muted boolean not null default false,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists user_profile_content_section_created_idx
-  on user_profile_content (user_id, section, created_at desc);
-
-create table if not exists content_engagements (
-  user_id text not null references users(id) on delete cascade,
-  owner_user_id text not null references users(id) on delete cascade,
-  content_id text not null,
-  kind varchar(16) not null check (kind in ('liked', 'saved')),
-  created_at timestamptz not null default now(),
-  primary key (user_id, content_id, kind)
-);
-
-create index if not exists content_engagements_owner_kind_idx
-  on content_engagements (owner_user_id, kind, created_at desc);
 
 create or replace function ensure_user_profile_stats()
 returns trigger language plpgsql as $$
@@ -212,65 +196,9 @@ create trigger user_follows_sync_counters
 after insert or delete on user_follows
 for each row execute function sync_follow_counters();
 
-create or replace function sync_profile_content_counters()
-returns trigger language plpgsql as $$
-declare
-  delta integer := case when tg_op = 'INSERT' then 1 else -1 end;
-  owner_id text := case when tg_op = 'INSERT' then new.user_id else old.user_id end;
-  content_section text := case when tg_op = 'INSERT' then new.section else old.section end;
-begin
-  update user_profile_stats set
-    posts_count = greatest(0, posts_count + case when content_section = 'posts' then delta else 0 end),
-    comments_count = greatest(0, comments_count + case when content_section = 'comments' then delta else 0 end),
-    threads_count = greatest(0, threads_count + case when content_section = 'threads' then delta else 0 end),
-    updated_at = now()
-  where user_id = owner_id;
-  if tg_op = 'DELETE' then
-    return old;
-  end if;
-  return new;
-end;
-$$;
-
-drop trigger if exists user_profile_content_sync_counters on user_profile_content;
-create trigger user_profile_content_sync_counters
-after insert or delete on user_profile_content
-for each row execute function sync_profile_content_counters();
-
-create or replace function sync_engagement_counters()
-returns trigger language plpgsql as $$
-declare
-  delta integer := case when tg_op = 'INSERT' then 1 else -1 end;
-  actor_id text := case when tg_op = 'INSERT' then new.user_id else old.user_id end;
-  owner_id text := case when tg_op = 'INSERT' then new.owner_user_id else old.owner_user_id end;
-  engagement_kind text := case when tg_op = 'INSERT' then new.kind else old.kind end;
-begin
-  update user_profile_stats set
-    likes_received_count = greatest(0, likes_received_count + case when engagement_kind = 'liked' then delta else 0 end),
-    saves_received_count = greatest(0, saves_received_count + case when engagement_kind = 'saved' then delta else 0 end),
-    updated_at = now()
-  where user_id = owner_id;
-
-  if engagement_kind = 'saved' then
-    update user_profile_stats
-      set saves_count = greatest(0, saves_count + delta), updated_at = now()
-      where user_id = actor_id;
-  end if;
-
-  if tg_op = 'DELETE' then
-    return old;
-  end if;
-  return new;
-end;
-$$;
-
-drop trigger if exists content_engagements_sync_counters on content_engagements;
-create trigger content_engagements_sync_counters
-after insert or delete on content_engagements
-for each row execute function sync_engagement_counters();
-
 -- API mapping:
 -- followers          = user_profile_stats.followers_count
 -- following          = user_profile_stats.following_count
 -- likesAndSaves      = likes_received_count + saves_received_count
--- Posts/threads/comments/saves = matching *_count, visibility, and content rows.
+-- Content counters remain zero until their separately reviewed persistence
+-- migrations and atomic counter triggers are promoted.

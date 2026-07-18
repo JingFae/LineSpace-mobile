@@ -1,3 +1,4 @@
+-- DEFERRED: not part of the canonical Supabase migration chain.
 -- Create-flow metadata for post and poem-relay drafts.
 -- Audience membership is stored as user ids so visibility can be enforced at publish time.
 

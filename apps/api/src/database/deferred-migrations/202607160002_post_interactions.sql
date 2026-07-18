@@ -1,3 +1,5 @@
+-- DEFERRED: not part of the canonical Supabase migration chain. Rebase this
+-- migration against the core inbox_messages table before promoting it.
 -- Durable post detail, comment, share and inbox message records.
 -- Media bytes stay in object storage; these tables keep the relationships and
 -- counters required by the mobile detail experience.

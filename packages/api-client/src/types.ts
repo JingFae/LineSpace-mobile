@@ -517,7 +517,8 @@ export type SharePoemResult = {
 export type InboxConversationMessage = {
   id: string;
   sender: UserProfile;
-  recipient: UserProfile;
+  recipient?: UserProfile;
+  groupId?: string;
   createdAt: string;
   kind: "text" | "shared-post";
   text?: string;
@@ -529,6 +530,59 @@ export type InboxConversationMessage = {
     author: UserProfile;
     artworkUrl?: string;
   };
+};
+
+export type SendInboxMessageInput = {
+  senderId: string;
+  text: string;
+  recipientId?: string;
+  groupId?: string;
+};
+
+export type InboxGroupMemberStatus = "invited" | "active" | "declined";
+
+export type InboxGroupMember = {
+  user: UserProfile;
+  role: "owner" | "member";
+  status: InboxGroupMemberStatus;
+  invitedBy?: UserProfile;
+  invitedAt: string;
+  joinedAt?: string;
+};
+
+export type InboxGroup = {
+  id: string;
+  name: string;
+  ownerId: string;
+  members: InboxGroupMember[];
+  createdAt: string;
+  updatedAt: string;
+  lastMessage?: InboxConversationMessage;
+  unreadCount?: number;
+};
+
+export type CreateInboxGroupInput = {
+  ownerId: string;
+  name: string;
+  inviteeIds: string[];
+};
+
+export type UpdateInboxGroupInput = {
+  groupId: string;
+  userId: string;
+  name: string;
+};
+
+export type InviteInboxGroupMembersInput = {
+  groupId: string;
+  inviterId: string;
+  inviteeIds: string[];
+};
+
+export type RespondInboxGroupInviteInput = {
+  groupId: string;
+  userId: string;
+  accept: boolean;
 };
 
 export type FeedQuery = {

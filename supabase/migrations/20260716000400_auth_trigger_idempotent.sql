@@ -1,4 +1,4 @@
--- Make auth -> business-profile provisioning safe when the Supabase trigger
+-- Keep auth -> business-profile provisioning safe when the Supabase trigger
 -- and a backend reconciliation attempt observe the same auth user concurrently.
 -- Existing profile values are never overwritten; a conflicting handle still
 -- fails the transaction and must be repaired explicitly.

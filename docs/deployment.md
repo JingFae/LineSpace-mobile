@@ -88,7 +88,7 @@ Supabase Dashboard 的 Redirect URLs 还需要包含 `https://your-domain.exampl
 
 在将 `EXPO_PUBLIC_USE_MOCKS` 设为 `false` 前，必须在目标 Supabase 项目按
 `docs/environment.md` 的顺序执行全部用户资料迁移，最后执行
-`202607180001_user_domain_persistence.sql`。该迁移只负责
+`supabase/migrations/20260718000100_user_domain_persistence.sql`。该迁移只负责
 `public.users` 的资料读取/更新、`user_follows`、用户资料统计/可见性、
 `badges`/`user_badges` 和 `inbox_messages` 的 RLS 与用户域查询 RPC；
 Feed、Poem、Post、评论和 Compose 不会因此变成 PostgreSQL 持久化。
@@ -108,3 +108,26 @@ Redirect URL，并在隔离数据库中执行迁移幂等性与 RLS 测试。当
 2. `pnpm check`
 
 `pnpm check` 包含全仓 TypeScript、API 契约冒烟检查和 Expo Web 生产导出。
+
+## Canonical database deployment
+
+For the current browser/cloud phase, deploy only the canonical user-domain
+migrations in `supabase/migrations/`. The deferred SQL under
+`apps/api/src/database/deferred-migrations/` is not part of the cloud push and
+must not be copied into the migration directory:
+
+```bash
+pnpm exec supabase login
+pnpm exec supabase link --project-ref <staging-project-ref>
+pnpm db:push:dry-run
+pnpm db:push
+```
+
+The first deployment should target a dedicated Staging project. Review the
+dry-run output and verify the Supabase migration history before pushing.
+Production should use a separate linked project. Never run
+`supabase db reset --linked` against production.
+
+If a project already has schema changes applied manually, reconcile the remote
+schema and `supabase_migrations.schema_migrations` first with
+`supabase db pull` or a deliberately reviewed `supabase migration repair`.

@@ -1,6 +1,6 @@
--- Adds Supabase Auth identity linkage to the existing LineSpace profile schema.
+-- Adds Supabase Auth identity linkage to the canonical LineSpace profile schema.
 -- The business user id remains text so existing API contracts do not need to change.
--- Apply after profile-schema.sql when upgrading an existing environment.
+-- Apply after 20260715000000_profile_foundation.sql.
 
 alter table public.users
   add column if not exists auth_user_id uuid;
@@ -29,6 +29,14 @@ begin
   if exists (
     select 1
     from public.users
+    where handle is distinct from lower(trim(handle))
+  ) then
+    raise exception 'existing handles must already be normalized; repair handle values before auth migration';
+  end if;
+
+  if exists (
+    select 1
+    from public.users
     group by lower(trim(handle))
     having count(*) > 1
   ) then
@@ -45,10 +53,6 @@ begin
   end if;
 end;
 $$;
-
-update public.users
-set handle = lower(trim(handle))
-where handle is distinct from lower(trim(handle));
 
 create unique index if not exists users_handle_case_insensitive_idx
   on public.users (lower(handle));

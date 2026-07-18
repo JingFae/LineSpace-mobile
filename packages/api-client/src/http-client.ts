@@ -2,6 +2,7 @@ import type {
   AiAssistRequest,
   AiAssistResponse,
   CreatePoemCommentInput,
+  CreateInboxGroupInput,
   ContinuationDetail,
   CreateContinuationInput,
   CreatePoemDraftInput,
@@ -10,7 +11,9 @@ import type {
   DraftOperationInput,
   FeedQuery,
   InboxActivitySummary,
+  InboxGroup,
   InviteDraftCollaboratorInput,
+  InviteInboxGroupMembersInput,
   PoemDesignCatalog,
   PoemDraft,
   PoemEngagementResult,
@@ -24,6 +27,7 @@ import type {
   PublishThreadDraftResult,
   SharePoemInput,
   SharePoemResult,
+  SendInboxMessageInput,
   SavePoemDraftInput,
   ThreadContinuation,
   ThreadDetail,
@@ -31,6 +35,7 @@ import type {
   ThreadShareResult,
   ThreadShareTarget,
   UpdatePoemDraftInput,
+  UpdateInboxGroupInput,
   UpdatePoemCollectionInput,
   UpdateContinuationLikeInput,
   UpdateUserFollowInput,
@@ -47,6 +52,7 @@ import type {
   UserSearchPage,
   UserSearchQuery,
   InboxConversationMessage,
+  RespondInboxGroupInviteInput,
   UpdateCommentCollectionInput,
   UserDraftPage,
   UpdateUserProfileInput
@@ -207,6 +213,74 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     const params = new URLSearchParams({ contactId });
     return this.getJson<InboxConversationMessage[]>(
       `/v1/users/${encodeURIComponent(userId)}/inbox/messages?${params.toString()}`
+    );
+  }
+
+  async sendInboxMessage(input: SendInboxMessageInput): Promise<InboxConversationMessage> {
+    if (input.groupId) {
+      return this.postJson<InboxConversationMessage>(
+        `/v1/inbox/groups/${encodeURIComponent(input.groupId)}/messages`,
+        { text: input.text }
+      );
+    }
+    return this.postJson<InboxConversationMessage>(
+      `/v1/users/${encodeURIComponent(input.senderId)}/inbox/messages`,
+      { recipientId: input.recipientId, text: input.text }
+    );
+  }
+
+  async listInboxGroups(_userId: string): Promise<InboxGroup[]> {
+    return this.getJson<InboxGroup[]>("/v1/inbox/groups");
+  }
+
+  async listInboxGroupInvites(_userId: string): Promise<InboxGroup[]> {
+    return this.getJson<InboxGroup[]>("/v1/inbox/group-invites");
+  }
+
+  async getInboxGroup(groupId: string, _userId: string): Promise<InboxGroup | null> {
+    return this.getJson<InboxGroup | null>(
+      `/v1/inbox/groups/${encodeURIComponent(groupId)}`
+    );
+  }
+
+  async createInboxGroup(input: CreateInboxGroupInput): Promise<InboxGroup> {
+    return this.postJson<InboxGroup>("/v1/inbox/groups", {
+      name: input.name,
+      inviteeIds: input.inviteeIds
+    });
+  }
+
+  async updateInboxGroup(input: UpdateInboxGroupInput): Promise<InboxGroup> {
+    return this.putJson<InboxGroup>(
+      `/v1/inbox/groups/${encodeURIComponent(input.groupId)}`,
+      { name: input.name }
+    );
+  }
+
+  async inviteInboxGroupMembers(
+    input: InviteInboxGroupMembersInput
+  ): Promise<InboxGroup> {
+    return this.postJson<InboxGroup>(
+      `/v1/inbox/groups/${encodeURIComponent(input.groupId)}/invitations`,
+      { inviteeIds: input.inviteeIds }
+    );
+  }
+
+  async respondInboxGroupInvite(
+    input: RespondInboxGroupInviteInput
+  ): Promise<InboxGroup> {
+    return this.putJson<InboxGroup>(
+      `/v1/inbox/groups/${encodeURIComponent(input.groupId)}/invitations/respond`,
+      { accept: input.accept }
+    );
+  }
+
+  async listInboxGroupMessages(
+    groupId: string,
+    _userId: string
+  ): Promise<InboxConversationMessage[]> {
+    return this.getJson<InboxConversationMessage[]>(
+      `/v1/inbox/groups/${encodeURIComponent(groupId)}/messages`
     );
   }
 

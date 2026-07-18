@@ -13,6 +13,7 @@ import type {
   AiAssistRequest,
   AiAssistResponse,
   CreatePoemCommentInput,
+  CreateInboxGroupInput,
   ContinuationDetail,
   CreateContinuationInput,
   CreatePoemDraftInput,
@@ -21,7 +22,9 @@ import type {
   DraftOperationInput,
   FeedQuery,
   InboxActivitySummary,
+  InboxGroup,
   InviteDraftCollaboratorInput,
+  InviteInboxGroupMembersInput,
   PoemCollectionKind,
   PoemComment,
   PoemCreditPerson,
@@ -36,6 +39,7 @@ import type {
   PublishThreadDraftResult,
   SharePoemInput,
   SharePoemResult,
+  SendInboxMessageInput,
   SavePoemDraftInput,
   PoemSummary,
   ThreadContinuation,
@@ -44,6 +48,7 @@ import type {
   ThreadShareResult,
   ThreadShareTarget,
   UpdatePoemDraftInput,
+  UpdateInboxGroupInput,
   UpdatePoemCollectionInput,
   UpdateContinuationLikeInput,
   UpdateUserFollowInput,
@@ -61,6 +66,7 @@ import type {
   UserSearchQuery,
   UserSearchPage,
   InboxConversationMessage,
+  RespondInboxGroupInviteInput,
   UpdateCommentCollectionInput,
   UserDraftPage,
   UpdateUserProfileInput
@@ -113,6 +119,15 @@ export interface LineSpaceApi {
   searchUsers(query: string, viewerId: string, options?: UserSearchQuery): Promise<UserSearchPage>;
   sharePoem(input: SharePoemInput): Promise<SharePoemResult>;
   listInboxMessages(userId: string, contactId: string): Promise<InboxConversationMessage[]>;
+  sendInboxMessage(input: SendInboxMessageInput): Promise<InboxConversationMessage>;
+  listInboxGroups(userId: string): Promise<InboxGroup[]>;
+  listInboxGroupInvites(userId: string): Promise<InboxGroup[]>;
+  getInboxGroup(groupId: string, userId: string): Promise<InboxGroup | null>;
+  createInboxGroup(input: CreateInboxGroupInput): Promise<InboxGroup>;
+  updateInboxGroup(input: UpdateInboxGroupInput): Promise<InboxGroup>;
+  inviteInboxGroupMembers(input: InviteInboxGroupMembersInput): Promise<InboxGroup>;
+  respondInboxGroupInvite(input: RespondInboxGroupInviteInput): Promise<InboxGroup>;
+  listInboxGroupMessages(groupId: string, userId: string): Promise<InboxConversationMessage[]>;
 }
 
 type MutableUserCollections = Record<PoemCollectionKind, Set<string>>;
@@ -130,11 +145,19 @@ export class MockLineSpaceApi implements LineSpaceApi {
   private readonly commentLikesByUser = new Map<string, Set<string>>();
   private readonly commentSavesByUser = new Map<string, Set<string>>();
   private readonly inboxMessages: InboxConversationMessage[] = [];
+  private readonly inboxGroups = new Map<string, InboxGroup>();
+  private readonly inboxGroupMessages: InboxConversationMessage[] = [];
   private readonly followingByUser = new Map<string, Set<string>>();
   private draftSequence = 0;
   private continuationSequence = 0;
   private shareSequence = 0;
+  private inboxMessageSequence = 0;
+  private inboxGroupSequence = 0;
   private threadSequence = 0;
+
+  constructor() {
+    this.seedInbox();
+  }
 
   async getPoemDesignCatalog(): Promise<PoemDesignCatalog> {
     return cloneDesignCatalog(mockPoemDesignCatalog);
@@ -495,10 +518,10 @@ export class MockLineSpaceApi implements LineSpaceApi {
       .filter((profile) => profile.id !== viewerId)
       .map((profile) => ({
         ...profileToUser(profile),
-        isFriend: profile.id === "user-ray" || profile.id === "user-lili",
+        isFriend: this.isMutualConnection(viewerId, profile.id),
         hasRecentChat: this.inboxMessages.some((message) =>
-          (message.sender.id === viewerId && message.recipient.id === profile.id) ||
-          (message.recipient.id === viewerId && message.sender.id === profile.id)
+          (message.sender.id === viewerId && message.recipient?.id === profile.id) ||
+          (message.recipient?.id === viewerId && message.sender.id === profile.id)
         )
       }))
       .filter((profile) => !normalized || `${profile.displayName} ${profile.handle}`.toLowerCase().includes(normalized));
@@ -545,9 +568,206 @@ export class MockLineSpaceApi implements LineSpaceApi {
   async listInboxMessages(userId: string, contactId: string): Promise<InboxConversationMessage[]> {
     return this.inboxMessages
       .filter((message) =>
-        (message.sender.id === userId && message.recipient.id === contactId) ||
-        (message.recipient.id === userId && message.sender.id === contactId)
+        (message.sender.id === userId && message.recipient?.id === contactId) ||
+        (message.recipient?.id === userId && message.sender.id === contactId)
       )
+      .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt))
+      .map(cloneInboxMessage);
+  }
+
+  async sendInboxMessage(input: SendInboxMessageInput): Promise<InboxConversationMessage> {
+    const text = input.text.trim();
+    const sender = this.findAnyProfile(input.senderId);
+    if (!sender || !text) throw new Error("A sender and message body are required");
+
+    if (input.groupId) {
+      const group = this.requireInboxGroup(input.groupId);
+      this.requireActiveGroupMember(group, input.senderId);
+      const now = new Date().toISOString();
+      const message: InboxConversationMessage = {
+        id: `group-message-${++this.inboxMessageSequence}`,
+        sender: profileToUser(sender),
+        groupId: group.id,
+        createdAt: now,
+        kind: "text",
+        text
+      };
+      group.updatedAt = now;
+      group.lastMessage = cloneInboxMessage(message);
+      this.inboxGroupMessages.push(message);
+      return cloneInboxMessage(message);
+    }
+
+    const recipient = input.recipientId
+      ? this.findAnyProfile(input.recipientId)
+      : undefined;
+    if (!recipient) throw new Error("A recipient is required");
+    const message: InboxConversationMessage = {
+      id: `message-${++this.inboxMessageSequence}`,
+      sender: profileToUser(sender),
+      recipient: profileToUser(recipient),
+      createdAt: new Date().toISOString(),
+      kind: "text",
+      text
+    };
+    this.inboxMessages.push(message);
+    return cloneInboxMessage(message);
+  }
+
+  async listInboxGroups(userId: string): Promise<InboxGroup[]> {
+    return [...this.inboxGroups.values()]
+      .filter((group) =>
+        group.members.some(
+          (member) => member.user.id === userId && member.status === "active"
+        )
+      )
+      .sort(
+        (left, right) =>
+          Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+      )
+      .map(cloneInboxGroup);
+  }
+
+  async listInboxGroupInvites(userId: string): Promise<InboxGroup[]> {
+    return [...this.inboxGroups.values()]
+      .filter((group) =>
+        group.members.some(
+          (member) => member.user.id === userId && member.status === "invited"
+        )
+      )
+      .sort(
+        (left, right) =>
+          Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+      )
+      .map(cloneInboxGroup);
+  }
+
+  async getInboxGroup(groupId: string, userId: string): Promise<InboxGroup | null> {
+    const group = this.inboxGroups.get(groupId);
+    if (
+      !group ||
+      !group.members.some(
+        (member) => member.user.id === userId && member.status === "active"
+      )
+    ) {
+      return null;
+    }
+    return cloneInboxGroup(group);
+  }
+
+  async createInboxGroup(input: CreateInboxGroupInput): Promise<InboxGroup> {
+    const owner = this.findAnyProfile(input.ownerId);
+    const name = input.name.trim();
+    if (!owner || !name) throw new Error("A group owner and name are required");
+
+    const now = new Date().toISOString();
+    const invitees = [...new Set(input.inviteeIds)]
+      .filter(
+        (userId) =>
+          userId !== input.ownerId &&
+          this.isMutualConnection(input.ownerId, userId)
+      )
+      .map((userId) => this.findAnyProfile(userId))
+      .filter((profile): profile is UserProfileDetails => Boolean(profile));
+    if (invitees.length === 0) {
+      throw new Error("Invite at least one mutual connection");
+    }
+
+    const group: InboxGroup = {
+      id: `group-${++this.inboxGroupSequence}`,
+      name: name.slice(0, 80),
+      ownerId: input.ownerId,
+      members: [
+        {
+          user: profileToUser(owner),
+          role: "owner",
+          status: "active",
+          invitedAt: now,
+          joinedAt: now
+        },
+        ...invitees.map((invitee) => ({
+          user: profileToUser(invitee),
+          role: "member" as const,
+          status: "invited" as const,
+          invitedBy: profileToUser(owner),
+          invitedAt: now
+        }))
+      ],
+      createdAt: now,
+      updatedAt: now
+    };
+    this.inboxGroups.set(group.id, group);
+    return cloneInboxGroup(group);
+  }
+
+  async updateInboxGroup(input: UpdateInboxGroupInput): Promise<InboxGroup> {
+    const group = this.requireInboxGroup(input.groupId);
+    const actor = group.members.find(
+      (member) =>
+        member.user.id === input.userId &&
+        member.status === "active" &&
+        member.role === "owner"
+    );
+    const name = input.name.trim();
+    if (!actor || !name) throw new Error("Only the group owner can rename it");
+    group.name = name.slice(0, 80);
+    group.updatedAt = new Date().toISOString();
+    return cloneInboxGroup(group);
+  }
+
+  async inviteInboxGroupMembers(
+    input: InviteInboxGroupMembersInput
+  ): Promise<InboxGroup> {
+    const group = this.requireInboxGroup(input.groupId);
+    const inviter = this.requireActiveGroupMember(group, input.inviterId).user;
+    const existingIds = new Set(group.members.map((member) => member.user.id));
+    const now = new Date().toISOString();
+
+    for (const userId of [...new Set(input.inviteeIds)]) {
+      if (
+        existingIds.has(userId) ||
+        !this.isMutualConnection(input.inviterId, userId)
+      ) {
+        continue;
+      }
+      const invitee = this.findAnyProfile(userId);
+      if (!invitee) continue;
+      group.members.push({
+        user: profileToUser(invitee),
+        role: "member",
+        status: "invited",
+        invitedBy: { ...inviter },
+        invitedAt: now
+      });
+    }
+
+    group.updatedAt = now;
+    return cloneInboxGroup(group);
+  }
+
+  async respondInboxGroupInvite(
+    input: RespondInboxGroupInviteInput
+  ): Promise<InboxGroup> {
+    const group = this.requireInboxGroup(input.groupId);
+    const member = group.members.find(
+      (item) => item.user.id === input.userId && item.status === "invited"
+    );
+    if (!member) throw new Error("A pending invitation was not found");
+    const now = new Date().toISOString();
+    member.status = input.accept ? "active" : "declined";
+    member.joinedAt = input.accept ? now : undefined;
+    group.updatedAt = now;
+    return cloneInboxGroup(group);
+  }
+
+  async listInboxGroupMessages(
+    groupId: string,
+    userId: string
+  ): Promise<InboxConversationMessage[]> {
+    const group = this.requireInboxGroup(groupId);
+    this.requireActiveGroupMember(group, userId);
+    return this.inboxGroupMessages
+      .filter((message) => message.groupId === groupId)
       .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt))
       .map(cloneInboxMessage);
   }
@@ -1044,6 +1264,121 @@ export class MockLineSpaceApi implements LineSpaceApi {
     });
   }
 
+  private seedInbox() {
+    const lili = this.findAnyProfile("user-lili");
+    const ray = this.findAnyProfile("user-ray");
+    const jinghe = this.findAnyProfile("user-jinghe");
+    if (!lili || !ray || !jinghe) return;
+
+    this.inboxMessages.push({
+      id: "message-ray-lili-rain",
+      sender: profileToUser(ray),
+      recipient: profileToUser(lili),
+      createdAt: "2026-07-18T06:28:00.000Z",
+      kind: "text",
+      text: "I loved the line about rain becoming a window."
+    });
+
+    const activeCreatedAt = "2026-07-17T10:00:00.000Z";
+    const activeMessage: InboxConversationMessage = {
+      id: "group-message-weekend-1",
+      sender: profileToUser(ray),
+      groupId: "group-weekend-lines",
+      createdAt: "2026-07-18T05:42:00.000Z",
+      kind: "text",
+      text: "I added two lines to the shared draft."
+    };
+    this.inboxGroups.set("group-weekend-lines", {
+      id: "group-weekend-lines",
+      name: "Weekend Line Workshop",
+      ownerId: lili.id,
+      members: [
+        {
+          user: profileToUser(lili),
+          role: "owner",
+          status: "active",
+          invitedAt: activeCreatedAt,
+          joinedAt: activeCreatedAt
+        },
+        {
+          user: profileToUser(ray),
+          role: "member",
+          status: "active",
+          invitedBy: profileToUser(lili),
+          invitedAt: activeCreatedAt,
+          joinedAt: activeCreatedAt
+        }
+      ],
+      createdAt: activeCreatedAt,
+      updatedAt: activeMessage.createdAt,
+      lastMessage: cloneInboxMessage(activeMessage),
+      unreadCount: 2
+    });
+    this.inboxGroupMessages.push(activeMessage);
+
+    const inviteCreatedAt = "2026-07-18T04:15:00.000Z";
+    this.inboxGroups.set("group-midnight-draft", {
+      id: "group-midnight-draft",
+      name: "Midnight Draft Club",
+      ownerId: ray.id,
+      members: [
+        {
+          user: profileToUser(ray),
+          role: "owner",
+          status: "active",
+          invitedAt: inviteCreatedAt,
+          joinedAt: inviteCreatedAt
+        },
+        {
+          user: profileToUser(jinghe),
+          role: "member",
+          status: "active",
+          invitedBy: profileToUser(ray),
+          invitedAt: inviteCreatedAt,
+          joinedAt: inviteCreatedAt
+        },
+        {
+          user: profileToUser(lili),
+          role: "member",
+          status: "invited",
+          invitedBy: profileToUser(ray),
+          invitedAt: inviteCreatedAt
+        }
+      ],
+      createdAt: inviteCreatedAt,
+      updatedAt: inviteCreatedAt
+    });
+  }
+
+  private isMutualConnection(userId: string, targetUserId: string) {
+    const connections = mockUserConnections[userId];
+    if (connections) {
+      const followerIds = new Set(
+        connections.followers.map((profile) => profile.id)
+      );
+      const followingIds = this.getFollowingIds(userId);
+      return followerIds.has(targetUserId) && followingIds.has(targetUserId);
+    }
+    return (
+      this.getFollowingIds(userId).has(targetUserId) &&
+      this.getFollowingIds(targetUserId).has(userId)
+    );
+  }
+
+  private requireInboxGroup(groupId: string) {
+    const group = this.inboxGroups.get(groupId);
+    if (!group) throw new Error(`Inbox group ${groupId} was not found`);
+    return group;
+  }
+
+  private requireActiveGroupMember(group: InboxGroup, userId: string) {
+    const member = group.members.find(
+      (item) => item.user.id === userId && item.status === "active"
+    );
+    if (!member) throw new Error("Active group membership is required");
+    return member;
+  }
+
   private deriveInboxTotals(userId: string): InboxActivitySummary["totals"] {
     const profile = this.profiles.find((item) => item.id === userId);
     const authoredPoems = this.poems.filter((poem) => poem.author.id === userId);
@@ -1242,13 +1577,27 @@ function cloneInboxMessage(message: InboxConversationMessage): InboxConversation
   return {
     ...message,
     sender: { ...message.sender },
-    recipient: { ...message.recipient },
+    recipient: message.recipient ? { ...message.recipient } : undefined,
     sharedPost: message.sharedPost
       ? {
           ...message.sharedPost,
           author: { ...message.sharedPost.author },
           tags: [...message.sharedPost.tags]
         }
+      : undefined
+  };
+}
+
+function cloneInboxGroup(group: InboxGroup): InboxGroup {
+  return {
+    ...group,
+    members: group.members.map((member) => ({
+      ...member,
+      user: { ...member.user },
+      invitedBy: member.invitedBy ? { ...member.invitedBy } : undefined
+    })),
+    lastMessage: group.lastMessage
+      ? cloneInboxMessage(group.lastMessage)
       : undefined
   };
 }

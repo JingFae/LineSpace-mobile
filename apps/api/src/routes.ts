@@ -415,6 +415,152 @@ export async function handleApiRequest(
     if (!contactId) return json(400, { code: "CONTACT_REQUIRED" });
     return json(200, await api.listInboxMessages(actor.user.id, contactId));
   }
+  if (method === "POST" && inboxMessagesUserId) {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
+    if (actor.user.id !== inboxMessagesUserId) {
+      return json(403, { code: "FORBIDDEN" });
+    }
+    const request = body as { recipientId?: unknown; text?: unknown } | undefined;
+    if (
+      typeof request?.recipientId !== "string" ||
+      typeof request.text !== "string" ||
+      !request.text.trim()
+    ) {
+      return json(400, { code: "INVALID_MESSAGE" });
+    }
+    return json(
+      201,
+      await api.sendInboxMessage({
+        senderId: actor.user.id,
+        recipientId: request.recipientId,
+        text: request.text
+      })
+    );
+  }
+
+  if (pathname === "/v1/inbox/groups" && (method === "GET" || method === "POST")) {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
+    if (method === "GET") {
+      return json(200, await api.listInboxGroups(actor.user.id));
+    }
+    const request = body as { name?: unknown; inviteeIds?: unknown } | undefined;
+    if (
+      typeof request?.name !== "string" ||
+      !request.name.trim() ||
+      !Array.isArray(request.inviteeIds) ||
+      !request.inviteeIds.every((id) => typeof id === "string")
+    ) {
+      return json(400, { code: "INVALID_GROUP" });
+    }
+    try {
+      return json(
+        201,
+        await api.createInboxGroup({
+          ownerId: actor.user.id,
+          name: request.name,
+          inviteeIds: request.inviteeIds
+        })
+      );
+    } catch {
+      return json(400, { code: "GROUP_CREATE_FAILED" });
+    }
+  }
+
+  if (method === "GET" && pathname === "/v1/inbox/group-invites") {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
+    return json(200, await api.listInboxGroupInvites(actor.user.id));
+  }
+
+  const inboxGroupRoute = parseInboxGroupRoute(pathname);
+  if (inboxGroupRoute) {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
+    try {
+      if (inboxGroupRoute.resource === "group") {
+        if (method === "GET") {
+          return json(
+            200,
+            await api.getInboxGroup(inboxGroupRoute.groupId, actor.user.id)
+          );
+        }
+        if (method === "PUT") {
+          const request = body as { name?: unknown } | undefined;
+          if (typeof request?.name !== "string" || !request.name.trim()) {
+            return json(400, { code: "INVALID_GROUP_NAME" });
+          }
+          return json(
+            200,
+            await api.updateInboxGroup({
+              groupId: inboxGroupRoute.groupId,
+              userId: actor.user.id,
+              name: request.name
+            })
+          );
+        }
+      }
+      if (inboxGroupRoute.resource === "messages") {
+        if (method === "GET") {
+          return json(
+            200,
+            await api.listInboxGroupMessages(
+              inboxGroupRoute.groupId,
+              actor.user.id
+            )
+          );
+        }
+        if (method === "POST") {
+          const request = body as { text?: unknown } | undefined;
+          if (typeof request?.text !== "string" || !request.text.trim()) {
+            return json(400, { code: "INVALID_MESSAGE" });
+          }
+          return json(
+            201,
+            await api.sendInboxMessage({
+              senderId: actor.user.id,
+              groupId: inboxGroupRoute.groupId,
+              text: request.text
+            })
+          );
+        }
+      }
+      if (inboxGroupRoute.resource === "invitations" && method === "POST") {
+        const request = body as { inviteeIds?: unknown } | undefined;
+        if (
+          !Array.isArray(request?.inviteeIds) ||
+          !request.inviteeIds.every((id) => typeof id === "string")
+        ) {
+          return json(400, { code: "INVALID_INVITATIONS" });
+        }
+        return json(
+          200,
+          await api.inviteInboxGroupMembers({
+            groupId: inboxGroupRoute.groupId,
+            inviterId: actor.user.id,
+            inviteeIds: request.inviteeIds
+          })
+        );
+      }
+      if (inboxGroupRoute.resource === "invite-response" && method === "PUT") {
+        const request = body as { accept?: unknown } | undefined;
+        if (typeof request?.accept !== "boolean") {
+          return json(400, { code: "INVALID_INVITE_RESPONSE" });
+        }
+        return json(
+          200,
+          await api.respondInboxGroupInvite({
+            groupId: inboxGroupRoute.groupId,
+            userId: actor.user.id,
+            accept: request.accept
+          })
+        );
+      }
+    } catch {
+      return json(403, { code: "GROUP_ACCESS_DENIED" });
+    }
+  }
 
   const inboxSummaryUserId = parseInboxSummaryRoute(pathname);
   if (method === "GET" && inboxSummaryUserId) {
@@ -824,6 +970,40 @@ function parseInboxMessagesRoute(pathname: string): string | null {
   return segments.length === 5 && segments[0] === "v1" && segments[1] === "users" && segments[3] === "inbox" && segments[4] === "messages"
     ? segments[2] ?? null
     : null;
+}
+
+type ParsedInboxGroupRoute = {
+  groupId: string;
+  resource: "group" | "messages" | "invitations" | "invite-response";
+};
+
+function parseInboxGroupRoute(pathname: string): ParsedInboxGroupRoute | null {
+  const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  if (
+    segments[0] !== "v1" ||
+    segments[1] !== "inbox" ||
+    segments[2] !== "groups" ||
+    !segments[3]
+  ) {
+    return null;
+  }
+  if (segments.length === 4) {
+    return { groupId: segments[3], resource: "group" };
+  }
+  if (segments.length === 5 && segments[4] === "messages") {
+    return { groupId: segments[3], resource: "messages" };
+  }
+  if (segments.length === 5 && segments[4] === "invitations") {
+    return { groupId: segments[3], resource: "invitations" };
+  }
+  if (
+    segments.length === 6 &&
+    segments[4] === "invitations" &&
+    segments[5] === "respond"
+  ) {
+    return { groupId: segments[3], resource: "invite-response" };
+  }
+  return null;
 }
 
 type ParsedUserProfileRoute =

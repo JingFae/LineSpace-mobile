@@ -389,56 +389,6 @@ begin
 end;
 $$;
 
-create or replace function public.sync_profile_content_counters()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  delta integer := case when tg_op = 'INSERT' then 1 else -1 end;
-  owner_id text := case when tg_op = 'INSERT' then new.user_id else old.user_id end;
-  content_section text := case when tg_op = 'INSERT' then new.section else old.section end;
-begin
-  update public.user_profile_stats
-  set posts_count = greatest(0, posts_count + case when content_section = 'posts' then delta else 0 end),
-      comments_count = greatest(0, comments_count + case when content_section = 'comments' then delta else 0 end),
-      threads_count = greatest(0, threads_count + case when content_section = 'threads' then delta else 0 end),
-      updated_at = now()
-  where user_id = owner_id;
-
-  return case when tg_op = 'INSERT' then new else old end;
-end;
-$$;
-
-create or replace function public.sync_engagement_counters()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  delta integer := case when tg_op = 'INSERT' then 1 else -1 end;
-  actor_id text := case when tg_op = 'INSERT' then new.user_id else old.user_id end;
-  owner_id text := case when tg_op = 'INSERT' then new.owner_user_id else old.owner_user_id end;
-  engagement_kind text := case when tg_op = 'INSERT' then new.kind else old.kind end;
-begin
-  update public.user_profile_stats
-  set likes_received_count = greatest(0, likes_received_count + case when engagement_kind = 'liked' then delta else 0 end),
-      saves_received_count = greatest(0, saves_received_count + case when engagement_kind = 'saved' then delta else 0 end),
-      updated_at = now()
-  where user_id = owner_id;
-
-  if engagement_kind = 'saved' then
-    update public.user_profile_stats
-    set saves_count = greatest(0, saves_count + delta), updated_at = now()
-    where user_id = actor_id;
-  end if;
-
-  return case when tg_op = 'INSERT' then new else old end;
-end;
-$$;
-
 alter table public.user_profile_stats enable row level security;
 drop policy if exists "public profile stats are readable" on public.user_profile_stats;
 create policy "public profile stats are readable"

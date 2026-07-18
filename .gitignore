@@ -16,3 +16,5 @@ yarn-error.log*
 _tmp_*
 /outputs/
 /work/*.log
+supabase/.branches/
+supabase/.temp/
