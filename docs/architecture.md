@@ -1,181 +1,396 @@
-# LineSpace 架构与 Pipeline
+# LineSpace 架构与代码边界
 
-## 1. 设计与素材进入路径
+本文说明 LineSpace 的工程分层、模块职责、依赖方向、数据流和扩展规则。
+它与 [README.md](../README.md) 配套使用：README 负责快速启动，本文负责
+工程级设计约束。
 
-Figma Frame、设计上下文、截图、变量和导出素材先经过设计交接。重复视觉值进入 `packages/tokens`；可复用组件和代码化图标进入 `packages/ui`；只属于 App 的位图进入 `apps/mobile/assets/<domain>`。素材用途无法确认时保留，不以“未被当前页面引用”为唯一删除依据。
-
-## 2. UI Token 与组件层
+## 1. 总体分层
 
 ```text
-packages/tokens ──> packages/ui ──> apps/mobile
+┌──────────────────────────────────────────────────────────────┐
+│ apps/mobile                                                   │
+│ Expo Router + Feature Screens + AuthSessionProvider           │
+└───────────────┬───────────────────────────────┬──────────────┘
+                │                               │
+                │ shared contract               │ shared visual system
+                ▼                               ▼
+┌─────────────────────────┐       ┌────────────────────────────┐
+│ packages/api-client     │       │ packages/ui + packages/tokens│
+│ types / Mock / HTTP      │       │ components / icons / tokens │
+└───────────────┬─────────┘       └────────────────────────────┘
+                │
+                ▼
+┌──────────────────────────────────────────────────────────────┐
+│ apps/api                                                       │
+│ routes -> auth / repositories -> Supabase Auth / PostgreSQL RLS│
+└──────────────────────────────────────────────────────────────┘
 ```
 
-- `packages/tokens`：颜色、排版、间距、圆角等平台无关常量。
-- `packages/ui`：React Native 复用组件和图标，只依赖 tokens、React Native 与绘图能力。
-- `packages/ui` 不读取环境变量，不访问 `lineSpaceApi`，也不发起网络请求。
-- 页面示例内容不进入通用 UI；它属于 `packages/api-client/src/mock-data.ts`。
+核心原则：
 
-## 3. Expo Router 与 Feature 页面层
+1. 路由、页面和通用 UI 分离。
+2. 前后端共享 API 契约，不共享服务端密钥和数据库客户端。
+3. 普通业务查询使用请求 JWT 和数据库 RLS。
+4. Mock 和 HTTP 实现必须保持 `LineSpaceApi` 方法兼容。
+5. 数据库权限由 JWT 推导身份，不能信任前端传入的 actor ID。
 
-`apps/mobile/app` 是 Expo Router 文件路由入口；`apps/mobile/src/features` 是页面实现。路由文件只读取参数并渲染 Screen，根布局只提供 Query Client 和 Stack。
+## 2. Monorepo 工作区
 
-| Expo 路由 | 路由文件 | Screen / 作用 |
+| 工作区 | 包名 | 职责 |
 | --- | --- | --- |
-| `/` / `/(tabs)` | `app/(tabs)/index.tsx` | `LineSpaceHomeScreen` |
-| `/(tabs)/discover` | `app/(tabs)/discover.tsx` | `PlaceholderScreen`（待实现） |
-| `/(tabs)/compose` | `app/(tabs)/compose.tsx` | 读取 `session`，渲染 `ComposeScreen` |
-| `/(tabs)/comments` | `app/(tabs)/comments.tsx` | `PlaceholderScreen`（待实现） |
-| `/(tabs)/profile` | `app/(tabs)/profile.tsx` | `ProfileScreen` |
-| `/compose-preview` | `app/compose-preview.tsx` | 透传预览参数到 `ComposePreviewScreen` |
-| `/compose/collaborate/[id]` | `app/compose/collaborate/[id].tsx` | 读取草稿 `id`，渲染 `CollaborativeComposeScreen` |
-| `/poem/[id]` | `app/poem/[id].tsx` | 读取诗歌 `id`，渲染 `PoemDetailScreen` |
-| `/profile/edit` | `app/profile/edit.tsx` | `ProfileEditScreen` |
+| `apps/mobile` | `@linespace/mobile` | Expo App、Expo Web、路由和 Feature |
+| `apps/api` | `@linespace/api` | Node/Vercel API、认证、Repository、迁移检查 |
+| `packages/api-client` | `@linespace/api-client` | API 类型、Mock Client、HTTP Client、Auth Client |
+| `packages/ui` | `@linespace/ui` | 无业务网络依赖的 React Native 组件和图标 |
+| `packages/tokens` | `@linespace/tokens` | 颜色、字体、间距、圆角等设计变量 |
 
-`app/_layout.tsx` 提供 `QueryClientProvider`、`AuthSessionProvider`、会话初始化加载态和根 Stack；`app/(tabs)/_layout.tsx` 提供隐藏原生 Tab Bar 的 Expo Tabs，实际底部导航由共享 UI 组件渲染。
-
-## 4. `lineSpaceApi` 的 Mock / HTTP 选择
-
-唯一选择点是 `apps/mobile/src/services/lineSpaceApi.ts`：
+允许的依赖方向：
 
 ```text
-EXPO_PUBLIC_USE_MOCKS !== "false" ──> createMockLineSpaceApi()
-EXPO_PUBLIC_USE_MOCKS === "false"
-  + EXPO_PUBLIC_API_BASE_URL 存在 ──> HttpLineSpaceApi
-  + API 地址缺失                 ──> createMockLineSpaceApi()
-```
-
-Screen 只依赖 `LineSpaceApi`，不直接调用 `fetch`。Mock 模式继续用 `EXPO_PUBLIC_CURRENT_USER_ID`（默认 `user-lili`）；HTTP 模式的 `currentUserId` 由 `AuthSessionProvider` 在登录或刷新成功后写入，不能由环境变量提供。
-
-认证流由 `packages/api-client/src/auth-client.ts` 访问 `/v1/auth/*`，移动端 `AuthSessionProvider` 只在内存保存 Access Token。Native 使用 Expo SecureStore 保存 Refresh Token，Web 只使用 `sessionStorage`（会话范围有限但仍有 XSS 风险）。`HttpLineSpaceApi` 通过 `getAccessToken` 自动附加 Bearer Token，401 时调用单飞 Refresh 并最多重试原请求一次。
-
-Mock 流：
-
-```text
-Feature Screen
-  -> lineSpaceApi
-  -> MockLineSpaceApi
-  -> packages/api-client/src/mock-data.ts + 进程内可变状态
-```
-
-HTTP 流：
-
-```text
-Feature Screen
-  -> lineSpaceApi
-  -> HttpLineSpaceApi
-  -> apps/api/src/server.ts
-  -> apps/api/src/routes.ts
-  -> 当前仍为服务端进程内 MockLineSpaceApi
-```
-
-因此 HTTP 模式验证了网络与端点边界，但当前仍不提供数据库持久化。
-
-## 5. `packages/api-client` 接口契约
-
-- `types.ts`：请求、响应和领域类型。
-- `client.ts`：公开 `LineSpaceApi` 接口、Mock 实现及进程内状态。
-- `mock-data.ts`：开发示例数据和设计目录。
-- `http-client.ts`：保持相同方法签名的 HTTP 实现。
-- `index.ts`：唯一公共导出面。
-
-HTTP 客户端与本地 API 的端点对应：
-
-| `LineSpaceApi` 方法 | HTTP | `apps/api` 路由 |
-| --- | --- | --- |
-| `getPoemDesignCatalog` | GET | `/v1/compose/design-catalog` |
-| `createPoemDraft` | POST | `/v1/drafts` |
-| `getPoemDraft` | GET | `/v1/drafts/:draftId` |
-| `updatePoemDraft` | PUT | `/v1/drafts/:draftId` |
-| `applyDraftOperation` | POST | `/v1/drafts/:draftId/operations` |
-| `listDraftInviteCandidates` | GET | `/v1/users/:userId/invite-candidates` |
-| `inviteDraftCollaborator` | POST | `/v1/drafts/:draftId/invitations` |
-| `publishPoemDraft` | POST | `/v1/drafts/:draftId/publish` |
-| `listFeed` | GET | `/v1/feed?section&filter&viewerId` |
-| `getPoem` | GET | `/v1/poems/:poemId?viewerId` |
-| `setPoemCollection` | PUT | `/v1/users/:userId/poem-collections/:kind/:poemId` |
-| `getUserPoemCollections` | GET | `/v1/users/:userId/poem-collections` |
-| `getUserProfile` | GET | `/v1/users/:userId/profile` |
-| `updateUserProfile` | PUT | `/v1/users/:userId/profile` |
-| `listUserProfileContent` | GET | `/v1/users/:userId/profile-content/:section` |
-| `listUserConnections` | GET | `/v1/users/:userId/:followers-or-following` |
-| `requestAiAssist` | POST | `/v1/ai/assist`（当前返回 501） |
-
-`apps/api/src/smoke-check.ts` 使用内存 Fetch 适配器让真实 `HttpLineSpaceApi` 逐项访问 `handleApiRequest`，避免仅凭字符串扫描判断契约一致性。
-
-## 6. `apps/api` 与未来服务边界
-
-当前结构：
-
-- `server.ts`：Node HTTP、JSON Body 与 CORS 适配。
-- `routes.ts`：HTTP 方法、路径、输入校验与 `LineSpaceApi` 调用。
-- `database/*.sql`：PostgreSQL 领域 Schema 草案，不会在启动时自动执行。
-- `smoke-check.ts`：开发和 CI 契约检查，不进入产品运行时。
-
-未来数据库 Repository、认证、对象存储、AI、审核、限流和实时协作应作为 `apps/api/src/services` 或等价服务层加入，再由路由调用。不要把服务端 SDK 或密钥移动到 `packages/api-client`、`packages/ui` 或 `apps/mobile`。
-
-数据库草案若转为正式迁移，应先创建 profile/users 相关表，再创建引用 `users(id)` 的 compose 表，并通过迁移工具记录顺序；目前 SQL 文件只是设计草案。
-
-## 7. Expo Web 导出与 Vercel
-
-```text
-pnpm build:web
-  -> @linespace/mobile export:web
-  -> expo export --platform web
-  -> apps/mobile/dist
-  -> Vercel 静态发布
-  -> 未命中静态文件的路径重写到 /index.html
-```
-
-`apps/mobile/app.json` 使用 Metro 和 `web.output = "single"`；`metro.config.cjs` 监视 Workspace 根目录并解析根与 App 的 `node_modules`。`vercel.json` 不包含 Node Function 或 `apps/api` 构建，因此不能把本地 API 描述为 Vercel 后端。
-
-## 依赖方向保护
-
-```text
-apps/mobile ──> packages/ui ──> packages/tokens
 apps/mobile ──> packages/api-client
+apps/mobile ──> packages/ui ──> packages/tokens
 apps/api    ──> packages/api-client
 ```
 
-禁止反向依赖：tokens 不依赖 UI；UI 不依赖 API；api-client 不依赖 App；后端不导入移动端 Screen。
+禁止的依赖：
 
-## 用户域 Repository 与数据库边界
+- `packages/ui` 依赖 `apps/mobile` 或 API。
+- `packages/tokens` 依赖 React、页面或网络。
+- `packages/api-client` 依赖 React Native 页面。
+- `apps/api` 导入移动端 Screen、Assets 或 Expo 运行时。
+- 移动端直接导入 Supabase Service Role 或数据库客户端。
 
-HTTP 模式的用户资料、搜索、关注关系和最近联系人由
-`apps/api/src/database/profile-repository.ts` 访问 PostgreSQL。Repository
-按请求创建 Supabase Client，并只使用当前请求的 Bearer JWT 和
-Publishable/Anon Key；Service Role 不参与普通资料、搜索或关系读写。
-Feed、Poem、Post、评论和 Compose 仍然保持现有 Mock 路径。
+## 3. 移动端目录约定
 
-`ProfileRepository` 提供 `getProfile`、`updateProfile`、`searchUsers`、
-`listConnections`、`listRecentContacts` 和 `setUserFollow`。路由只负责认证、
-输入校验和稳定错误映射，不拼接 SQL；Repository 不依赖 React Native。
-测试可以通过 `AuthRequestContext.profileRepository` 注入替身，生产环境则由
-`createProfileRepositoryForRequest` 创建 request-scoped Supabase Client。
+### 3.1 `app/`：路由适配层
 
-`public.users` 保存公开业务资料，`auth.users` 只保存认证身份。JWT 的
-`auth.uid()` 通过 `public.current_linespace_user_id()` 映射到业务用户
-`users.id`。资料更新、关注写入和 Inbox 读取均同时受服务端身份校验与
-PostgreSQL RLS 保护。搜索使用 `search_public_users` RPC，连接列表使用
-`list_public_connections` RPC，均为 `SECURITY INVOKER`，返回列是明确的公开字段。
-资料字段与可见性通过 `update_my_profile` 在同一数据库事务中更新。
+`apps/mobile/app` 是 Expo Router 的文件路由目录。路由文件只负责：
 
-新增迁移 `202607180001_user_domain_persistence.sql` 必须在
-`202607160004_auth_trigger_idempotent.sql` 之后执行。它只补充用户关系域的
-索引、RLS、受控计数器函数和搜索/连接 RPC，不创建或修改 Feed、Poem、Post、
-评论表。
+- 读取动态参数和查询参数；
+- 配置公开/受保护路由；
+- 把参数传给 Feature Screen；
+- 保持 Stack、Tabs 和回跳地址稳定。
 
-用户域 HTTP 契约：
+业务请求、复杂状态和页面布局应放到 `src/features`，不要堆积在路由文件中。
 
-- `GET /v1/users/:id/profile`
-- `PUT /v1/users/:id/profile`
-- `GET /v1/users/search?query&limit&cursor`
-- `GET /v1/users/:id/connections?kind=followers|following`
-- `GET /v1/users/:id/followers` 与 `/following`（兼容旧路径）
-- `PUT|DELETE /v1/users/:id/follow`
+主要路由分区：
 
-## 审计后的文件分类
+```text
+app/
+├─ _layout.tsx                 # QueryClient、AuthSession、RouteGuard
+├─ (tabs)/
+│  ├─ index.tsx                # Feed 首页
+│  ├─ discover.tsx             # Discover 占位
+│  ├─ compose.tsx              # Compose 入口
+│  ├─ comments.tsx             # Comments/Notes 占位
+│  ├─ profile.tsx              # 当前用户 Profile
+│  └─ _layout.tsx              # Expo Tabs 容器
+├─ auth/confirm.tsx             # 邮箱确认回跳
+├─ login.tsx / register.tsx     # 公开认证页面
+├─ compose-preview.tsx          # 草稿预览
+├─ compose/collaborate/[id].tsx # 协作草稿
+├─ poem/[id].tsx                # 诗歌详情
+├─ poem/share/[id].tsx          # 诗歌分享
+├─ profile/[id].tsx             # 用户资料
+├─ profile/edit.tsx             # 资料编辑
+├─ profile/drafts.tsx            # 草稿列表
+└─ thread/...                    # Thread、继续创作和版本
+```
 
-- 必须保留：`apps/mobile`、所有路由和 Feature、共享包、数据库草案、当前图片、根构建与部署配置。
-- 可以整理：文档口径、根脚本、CI、忽略规则；本次未进行无收益的源码搬家。
-- 可以确认删除：`work/mobile-web.*.log` 三份临时启动日志，以及空的 `outputs/mobile-web-check`。
-- 待确认并保留：`packages/ui/src/icon/*.svg`。当前运行时使用 `index.tsx` 的代码化图标，独立 SVG 未被 import，但它们可能是 Figma 原始交付资产，缺少产品确认时不删除。
+### 3.2 `src/features/`：按产品领域拆分
+
+```text
+src/features/
+├─ auth/       # 登录、注册、邮箱确认 UI
+├─ compose/    # 草稿、图片、协作者、预览、发布
+├─ feed/       # 首页 Feed
+├─ inbox/      # Inbox 活动与会话
+├─ poem/       # 诗歌详情、评论、分享、互动
+├─ profile/    # 资料、连接、编辑、草稿
+└─ thread/     # Thread Relay、继续创作、版本树
+```
+
+每个 Feature 内部推荐按照以下顺序组织：
+
+```text
+Screen
+  ├─ query/mutation hooks
+  ├─ domain-specific view components
+  ├─ local formatters / helpers
+  └─ styles
+```
+
+Feature 可以依赖 `lineSpaceApi`、`useAuth`、`packages/ui` 和 `packages/tokens`，
+不能直接访问 `fetch`、Supabase 或服务端环境变量。
+
+### 3.3 `src/auth/`：认证基础设施
+
+| 文件 | 职责 |
+| --- | --- |
+| `AuthSessionProvider.tsx` | Session 状态、启动恢复、登录、注册、刷新、退出 |
+| `authStorage.ts` | Native SecureStore / Web sessionStorage |
+| `session-store.ts` | 内存 Access Token 和 Refresh single-flight |
+| `emailConfirmation.ts` | 邮箱确认回跳处理 |
+
+认证状态初始化完成前，`RouteGuard` 只显示加载态，不能短暂渲染受保护页面。
+
+## 4. API Client 分层
+
+`packages/api-client/src` 是客户端唯一公共 API 面：
+
+```text
+types.ts
+  ├─ client.ts       # LineSpaceApi + MockLineSpaceApi
+  ├─ http-client.ts  # HttpLineSpaceApi
+  ├─ auth-client.ts  # HttpAuthClient
+  └─ mock-data.ts    # Mock 数据和本地状态种子
+```
+
+### `LineSpaceApi`
+
+所有 Feature 只依赖这个接口。该接口覆盖：
+
+- Auth 之外的资料和用户关系；
+- Feed、Poem、Thread、Compose；
+- 评论、喜欢、收藏、分享；
+- Inbox 和草稿流程。
+
+新增方法时必须同时考虑：
+
+1. `types.ts` 请求/响应类型；
+2. `MockLineSpaceApi` 行为；
+3. `HttpLineSpaceApi` 路径、方法和错误；
+4. `apps/api/src/routes.ts` 路由；
+5. API smoke check。
+
+### HTTP 认证行为
+
+`HttpLineSpaceApi` 通过 `getAccessToken` 附加：
+
+```http
+Authorization: Bearer <access-token>
+```
+
+收到 401 时最多执行一次 single-flight Refresh，再重试原请求一次。登录、
+注册和 Refresh 不通过业务请求的自动重试机制无限重试。
+
+## 5. 服务端分层
+
+### 5.1 `auth/`
+
+```text
+auth/
+├─ routes.ts              # /v1/auth/* 路由和 AuthRequestContext
+├─ service.ts             # AuthService 接口
+├─ supabase-auth-service.ts
+├─ validation.ts
+├─ errors.ts
+└─ index.ts
+```
+
+认证服务负责：
+
+- username 到 email 的服务端映射；
+- Supabase Auth 注册、登录、Refresh、Logout 和 `/me`；
+- JWT 验证；
+- 通用错误；
+- Service Role 的严格服务端边界。
+
+Service Role 不得被移动端、`packages/api-client` 或 `packages/ui` 引用。
+
+### 5.2 `routes.ts`
+
+路由层只做四件事：
+
+1. 解析 HTTP 方法、路径和参数；
+2. 认证受保护请求；
+3. 校验输入并转换为类型化输入；
+4. 调用 Mock API 或 Repository，并映射稳定错误。
+
+路由层不应：
+
+- 拼接 SQL；
+- 读取 Service Role Key；
+- 把 Supabase 内部错误直接返回给客户端；
+- 用请求体中的 `userId` 作为权限依据。
+
+### 5.3 `database/`
+
+```text
+database/
+├─ profile-repository.ts        # 用户资料、搜索、关系和最近联系人
+├─ profile-schema.sql            # Profile 域基础 schema
+├─ compose-schema.sql            # Compose 域 schema 草案
+├─ migrations/                  # 按时间排序的正式迁移
+└─ migration-check.ts            # 静态迁移契约检查
+```
+
+Repository 通过 request-scoped Supabase Client 访问数据库：
+
+```text
+Bearer JWT
+  -> Supabase Client
+  -> auth.uid()
+  -> current_linespace_user_id()
+  -> public.users.id
+  -> RLS / RPC / table constraints
+```
+
+用户域使用：
+
+- `public.users`
+- `user_profile_stats`
+- `user_profile_visibility`
+- `badges`
+- `user_badges`
+- `user_follows`
+- `inbox_messages`
+
+搜索、连接列表和资料更新使用受控 RPC；普通写入不使用 Service Role。
+
+## 6. 用户域 API 边界
+
+```text
+GET    /v1/users/:id/profile
+PUT    /v1/users/:id/profile
+GET    /v1/users/search?query&limit&cursor
+GET    /v1/users/:id/connections?kind=followers|following
+GET    /v1/users/:id/followers
+GET    /v1/users/:id/following
+PUT    /v1/users/:id/follow
+DELETE /v1/users/:id/follow
+```
+
+### 身份规则
+
+- URL 中的目标用户只表示资源目标。
+- 当前用户从 JWT 推导。
+- `viewerId` 不能成为 HTTP 权限依据。
+- Repository 接收 actor/target 是为了避免路由遗漏校验，但数据库 RLS 是最终权限边界。
+
+### 搜索规则
+
+- 只搜索 `handle` 和 `display_name`；
+- 查询最多 64 字符；
+- limit 限制为 1–50；
+- 使用稳定 keyset cursor，不使用无限 offset；
+- 当前用户默认排除；
+- `recent` 由当前用户 Inbox 参与者推导；
+- `friends` 必须是双方互相关注；
+- 不返回 email、auth_user_id、密码、Token 或认证 metadata。
+
+### 关注和计数
+
+`user_follows` 使用联合主键或唯一约束防重复，禁止自关注。关注计数由数据库
+Trigger 与关系写操作同步，不采用 Node 端“读取计数后加一”的竞态实现。
+
+## 7. 数据模式选择
+
+### Mock
+
+```text
+EXPO_PUBLIC_USE_MOCKS !== "false"
+  -> createMockLineSpaceApi()
+  -> mock-data.ts + 进程内状态
+```
+
+Mock 模式适用于无 Supabase 环境的 UI 和 Feature 开发，并继续支持
+`EXPO_PUBLIC_CURRENT_USER_ID`。
+
+### HTTP
+
+```text
+EXPO_PUBLIC_USE_MOCKS=false
+  -> HttpLineSpaceApi
+  -> apps/api
+  -> Auth Service / ProfileRepository
+  -> Supabase Auth / PostgreSQL
+```
+
+HTTP 模式下，`EXPO_PUBLIC_CURRENT_USER_ID` 不再是可信身份来源。若服务端未
+配置 Supabase，用户域 Repository 会返回不可用，不能把该状态误认为生产数据库
+已连接；本地开发可以继续使用 Mock。
+
+## 8. 数据库迁移顺序
+
+```text
+profile-schema.sql
+202607150001_auth_identity.sql
+202607160001_profile_architecture.sql
+202607160002_post_interactions.sql
+202607160003_create_visibility.sql
+202607160004_auth_trigger_idempotent.sql
+202607180001_user_domain_persistence.sql
+```
+
+迁移要求：
+
+- 按顺序执行；
+- 已有非法数据必须明确失败；
+- 不能静默覆盖已有资料；
+- 使用 `if exists`、`if not exists` 或 catalog 检查；
+- 不关闭 RLS；
+- 不修改 Feed/Poem/Post/评论的持久化范围；
+- 通过 `pnpm check:api` 运行静态契约检查。
+
+具备隔离 Supabase CLI 或 PostgreSQL 时，再执行真实 Migration 和双用户 RLS 测试。
+没有真实数据库环境时，不得声称 SQL/RLS 已完成端到端验证。
+
+## 9. 请求与部署流
+
+本地 API：
+
+```text
+pnpm dev:api
+  -> apps/api/src/server.ts
+  -> apps/api/src/routes.ts
+```
+
+Vercel：
+
+```text
+/api/*
+  -> api/[...path].ts
+  -> apps/api route handler
+```
+
+Web 静态导出：
+
+```text
+pnpm build:web
+  -> expo export --platform web
+  -> apps/mobile/dist
+  -> Vercel SPA fallback
+```
+
+Vercel API Function 和静态 Web 构建必须分别配置环境变量。任何
+`EXPO_PUBLIC_*` 变量都会进入客户端 Bundle。
+
+## 10. 新增模块的实施规则
+
+新增一个产品域时按以下顺序：
+
+1. 明确域边界：页面、API、数据表和权限。
+2. 在 `packages/api-client/src/types.ts` 定义请求/响应。
+3. 为 Mock 和 HTTP 实现相同的 `LineSpaceApi` 方法。
+4. 在 `apps/api/src/routes.ts` 增加最小路由编排。
+5. 需要持久化时新增 Repository 和 Migration。
+6. 为数据库补充 RLS、索引、约束和幂等行为。
+7. 在 `smoke-check.ts` 和 `migration-check.ts` 增加契约检查。
+8. 更新 README、architecture、environment 和 deployment 文档。
+9. 运行 `pnpm check`。
+
+不应为了一个 Feature 引入第二套大型状态管理框架，也不应把服务端 SDK、
+数据库类型或密钥复制到移动端。
+
+## 11. 检查命令
+
+```bash
+pnpm typecheck
+pnpm check:api
+pnpm build:web
+pnpm check
+```
+
+`pnpm check` 是当前 CI 级综合检查，包含 TypeScript、Auth/API 契约和 Expo Web
+导出。当前仓库没有独立 ESLint，`pnpm lint` 兼容执行 TypeScript 检查。
