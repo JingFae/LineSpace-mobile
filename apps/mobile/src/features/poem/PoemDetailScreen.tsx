@@ -21,17 +21,18 @@ import {
   CommentIcon,
   EmptyState,
   PoemEngagementBar,
+  PoemLayoutCard,
   SearchIcon
 } from "@linespace/ui";
 import { colors, radius, spacing } from "@linespace/tokens";
 import type { PoemComment, PoemCreditPerson, PoemSummary } from "@linespace/api-client";
 import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
+import { getPoemLayoutPresentation } from "./poemPresentation";
 import { usePoemEngagement } from "./usePoemEngagement";
 
 declare const require: (path: string) => ImageSourcePropType;
 
 const waterArtwork = require("../../../assets/preview-water.png");
-const detailBackground = "#F6F7F7";
 const figmaAccent = "#FF0038";
 
 type PoemDetailScreenProps = {
@@ -217,24 +218,72 @@ function PoemDetailContent({
   onCommentLike: (comment: PoemComment) => void;
   onCommentSave: (comment: PoemComment) => void;
 }) {
+  const layoutPresentation = getPoemLayoutPresentation(poem);
+
   return (
     <View>
-      <HeroArtwork poem={poem} />
-      <View style={[styles.poemPanel, targetKind === "post" && styles.targetHighlight]}>
-        <View style={styles.titleRow}>
-          <Text style={styles.bulbEmoji}>💡</Text>
-          <Text style={styles.poemTitle}>{poem.title}</Text>
-        </View>
+      {layoutPresentation ? (
+        <PoemLayoutCard
+          backgroundRole={layoutPresentation.backgroundRole}
+          mediaAspectRatio={layoutPresentation.mediaAspectRatio}
+          mediaSource={layoutPresentation.mediaSource}
+          poem={{
+            title: poem.title,
+            lines: poem.lines,
+            tags: poem.tags,
+            byline: poem.author.displayName,
+            startedAtLabel: formatPoemDate(poem.startedAt)
+          }}
+          stickerSymbols={layoutPresentation.stickerSymbols}
+          style={[
+            styles.detailLayoutCard,
+            targetKind === "post" && styles.targetLayoutHighlight
+          ]}
+          typographyRole={layoutPresentation.typographyRole}
+        />
+      ) : (
+        <HeroArtwork poem={poem} />
+      )}
+      <View
+        style={[
+          styles.poemPanel,
+          layoutPresentation && styles.designedConversation,
+          targetKind === "post" && styles.targetHighlight
+        ]}
+      >
+        {!layoutPresentation ? (
+          <>
+            <View style={styles.titleRow}>
+              <Text style={styles.titleMark}>✦</Text>
+              <Text style={styles.poemTitle}>{poem.title}</Text>
+            </View>
 
-        <View style={styles.lineStack}>
-          {poem.lines.map((line) => (
-            <Text key={line} style={styles.poemLine}>
-              {line}
-            </Text>
-          ))}
-        </View>
+            <View style={styles.lineStack}>
+              {poem.lines.map((line, index) => (
+                <Text key={`${line}-${index}`} style={styles.poemLine}>
+                  {line}
+                </Text>
+              ))}
+            </View>
 
-        <View style={styles.tagRow}>{poem.tags.map((tag) => <Pressable key={tag} accessibilityRole="button" onPress={() => router.push({ pathname: "/(tabs)/discover", params: { tag } } as never)}><Text style={styles.tag}>#{tag}</Text></Pressable>)}</View>
+            <View style={styles.tagRow}>
+              {poem.tags.map((tag) => (
+                <Pressable
+                  accessibilityRole="button"
+                  key={tag}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/(tabs)/discover",
+                      params: { tag }
+                    } as never)
+                  }
+                >
+                  <Text style={styles.tag}>#{tag}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </>
+        ) : null}
 
         <View style={styles.divider} />
 
@@ -528,21 +577,23 @@ const fallbackPalette = {
 
 const styles = StyleSheet.create({
   safeArea: {
-    backgroundColor: detailBackground
+    backgroundColor: colors.surface
   },
   screen: {
     flex: 1,
-    backgroundColor: detailBackground
+    backgroundColor: colors.surface
   },
   header: {
-    height: 100,
+    minHeight: 78,
     backgroundColor: colors.surface,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingLeft: 25,
-    paddingRight: 20,
-    paddingTop: 30
+    paddingHorizontal: spacing.lg,
+    paddingTop: 30,
+    paddingBottom: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.line
   },
   headerLeft: {
     flexDirection: "row",
@@ -551,13 +602,14 @@ const styles = StyleSheet.create({
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 18
+    gap: 8
   },
   backButton: {
-    width: 24,
+    width: 40,
     height: 44,
-    justifyContent: "flex-start",
-    marginRight: 4
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 2
   },
   chevronLeft: {
     width: 18,
@@ -587,10 +639,10 @@ const styles = StyleSheet.create({
     marginRight: 8
   },
   headerName: {
-    fontSize: 20,
+    fontSize: 16,
     lineHeight: 24,
     color: colors.ink,
-    fontWeight: "400"
+    fontWeight: "600"
   },
   followButton: {
     height: 24,
@@ -608,14 +660,14 @@ const styles = StyleSheet.create({
     fontWeight: "400"
   },
   searchButton: {
-    width: 42,
+    width: 40,
     height: 42,
     alignItems: "center",
     justifyContent: "center"
   },
   scroll: {
     flex: 1,
-    backgroundColor: detailBackground
+    backgroundColor: colors.surface
   },
   scrollContent: {
     paddingBottom: 330
@@ -629,7 +681,7 @@ const styles = StyleSheet.create({
   },
   heroImage: {
     width: "100%",
-    height: 197,
+    height: 206,
     backgroundColor: colors.surfaceMuted
   },
   heroFallback: {
@@ -659,6 +711,27 @@ const styles = StyleSheet.create({
     paddingTop: 19,
     paddingBottom: 32
   },
+  designedConversation: {
+    minHeight: 460,
+    marginTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line
+  },
+  detailLayoutCard: {
+    marginHorizontal: spacing.lg,
+    marginTop: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(21,21,21,0.12)",
+    shadowColor: colors.black,
+    shadowOpacity: 0.09,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4
+  },
+  targetLayoutHighlight: {
+    borderColor: "#F2C94C",
+    borderWidth: 1
+  },
   targetHighlight: {
     backgroundColor: "#FFF7D7",
     borderColor: "#F2C94C",
@@ -671,9 +744,10 @@ const styles = StyleSheet.create({
     gap: 6,
     marginBottom: 29
   },
-  bulbEmoji: {
-    fontSize: 28,
-    lineHeight: 32
+  titleMark: {
+    fontSize: 16,
+    lineHeight: 22,
+    color: colors.profileMuted
   },
   poemTitle: {
     fontSize: 26,

@@ -97,6 +97,9 @@ export type PoemDraftMedia = {
   uri: string;
   kind: "image" | "video";
   name: string;
+  width?: number;
+  height?: number;
+  mimeType?: string;
 };
 
 export type PoemDraftSettings = {
@@ -450,6 +453,8 @@ export type PoemSummary = {
   startedAt: string;
   editedAt?: string;
   artworkUrl?: string;
+  media?: PoemDraftMedia;
+  layout?: PoemLayoutConfig;
   metrics: PoemMetrics;
   viewer: PoemViewerEngagement;
   artworkTone: "water" | "paper" | "night";

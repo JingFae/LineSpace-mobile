@@ -1,8 +1,15 @@
-import { Pressable, StyleSheet, Text, View, type ImageSourcePropType } from "react-native";
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type ImageSourcePropType
+} from "react-native";
 import { colors, radius } from "@linespace/tokens";
+import { Avatar } from "./Avatar";
 import { PoemArtwork, type ArtworkTone } from "./PoemArtwork";
 import { PoemEngagementBar } from "./PoemEngagementBar";
-import { Avatar } from "./Avatar";
+import { PoemLayoutCard } from "./PoemLayoutCard";
 
 export type PoemCardModel = {
   id: string;
@@ -33,6 +40,13 @@ export type PoemCardModel = {
   };
   artworkTone: ArtworkTone;
   artworkSource?: ImageSourcePropType;
+  layout?: {
+    backgroundRole: "ruled" | "kraft" | "postcard" | "dark";
+    typographyRole: "serif" | "script" | "sans";
+    stickerSymbols: string[];
+    mediaSource?: ImageSourcePropType;
+    mediaAspectRatio?: number;
+  };
 };
 
 type PoemCardProps = {
@@ -58,63 +72,114 @@ export function PoemCard({
 }: PoemCardProps) {
   return (
     <View style={styles.root}>
-      <Pressable onPress={() => onPress?.(poem.id)} style={styles.contentPressable}>
+      <Pressable
+        onPress={() => onPress?.(poem.id)}
+        style={styles.contentPressable}
+      >
         <View style={styles.authorRow}>
-          <Pressable accessibilityRole="button" onPress={() => onAuthorPress?.(poem.author.id)} style={styles.authorIdentity}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => onAuthorPress?.(poem.author.id)}
+            style={styles.authorIdentity}
+          >
             <Avatar
               color={poem.author.avatarColor}
-              imageSource={poem.author.avatarUrl ? { uri: poem.author.avatarUrl } : undefined}
+              imageSource={
+                poem.author.avatarUrl ? { uri: poem.author.avatarUrl } : undefined
+              }
               label={poem.author.displayName}
-              size={29}
+              size={32}
             />
-            <Text style={styles.authorName}>{poem.author.displayName}</Text>
-          </Pressable>
-          <Text style={styles.contributors}>with {poem.contributorsCount} contributors</Text>
-        </View>
-
-        <View style={styles.dots} pointerEvents="none">
-          {Array.from({ length: 13 }).map((_, index) => (
-            <View key={index} style={styles.dot} />
-          ))}
-        </View>
-
-        <View style={styles.artworkWrap}>
-          <PoemArtwork tone={poem.artworkTone} imageSource={poem.artworkSource} />
-        </View>
-
-        <View style={styles.body}>
-          <View style={styles.titleRow}>
-            <Text style={styles.bulbEmoji}>💡</Text>
-            <Text style={styles.title}>{poem.title}</Text>
-          </View>
-
-          <View style={styles.lines}>
-            {poem.lines.map((line) => (
-              <Text key={line} style={styles.poemLine}>
-                {line}
+            <View style={styles.authorCopy}>
+              <Text numberOfLines={1} style={styles.authorName}>
+                {poem.author.displayName}
               </Text>
-            ))}
-          </View>
-
-          <Text style={styles.tags}>{poem.tags.map((tag) => `#${tag}`).join("  |  ")}</Text>
-
-          <Text style={styles.startedMeta}>started {poem.startedAtLabel}</Text>
+              <Text numberOfLines={1} style={styles.authorHandle}>
+                @{poem.author.handle}
+              </Text>
+            </View>
+          </Pressable>
+          <Text numberOfLines={1} style={styles.contributors}>
+            {poem.contributorsCount > 1
+              ? `${poem.contributorsCount} contributors`
+              : "original post"}
+          </Text>
         </View>
+
+        {poem.layout ? (
+          <PoemLayoutCard
+            backgroundRole={poem.layout.backgroundRole}
+            mediaAspectRatio={poem.layout.mediaAspectRatio}
+            mediaSource={poem.layout.mediaSource}
+            poem={{
+              title: poem.title,
+              lines: poem.lines,
+              tags: poem.tags,
+              byline: poem.author.displayName,
+              startedAtLabel: poem.startedAtLabel
+            }}
+            stickerSymbols={poem.layout.stickerSymbols}
+            style={styles.layoutCard}
+            typographyRole={poem.layout.typographyRole}
+          />
+        ) : (
+          <>
+            <View style={styles.artworkWrap}>
+              <PoemArtwork
+                imageSource={poem.artworkSource}
+                tone={poem.artworkTone}
+              />
+            </View>
+
+            <View style={styles.body}>
+              <View style={styles.titleRow}>
+                <Text style={styles.titleMark}>✦</Text>
+                <Text style={styles.title}>{poem.title}</Text>
+              </View>
+
+              <View style={styles.lines}>
+                {poem.lines.map((line, index) => (
+                  <Text key={`${line}-${index}`} style={styles.poemLine}>
+                    {line}
+                  </Text>
+                ))}
+              </View>
+
+              {poem.tags.length > 0 ? (
+                <Text style={styles.tags}>
+                  {poem.tags.map((tag) => `#${tag}`).join("   ")}
+                </Text>
+              ) : null}
+
+              <Text style={styles.startedMeta}>
+                started {poem.startedAtLabel}
+              </Text>
+            </View>
+          </>
+        )}
       </Pressable>
 
       <PoemEngagementBar
         disabled={interactionsDisabled}
         liked={poem.viewer?.liked}
         metrics={poem.metrics}
-        onCommentPress={onCommentPress ? () => onCommentPress(poem.id) : undefined}
+        onCommentPress={
+          onCommentPress ? () => onCommentPress(poem.id) : undefined
+        }
         onContributionPress={
-          onContributionPress ? () => onContributionPress(poem.id) : undefined
+          onContributionPress
+            ? () => onContributionPress(poem.id)
+            : undefined
         }
         onLikePress={
-          onLikePress ? () => onLikePress(poem.id, !(poem.viewer?.liked ?? false)) : undefined
+          onLikePress
+            ? () => onLikePress(poem.id, !(poem.viewer?.liked ?? false))
+            : undefined
         }
         onSavePress={
-          onSavePress ? () => onSavePress(poem.id, !(poem.viewer?.saved ?? false)) : undefined
+          onSavePress
+            ? () => onSavePress(poem.id, !(poem.viewer?.saved ?? false))
+            : undefined
         }
         saved={poem.viewer?.saved}
       />
@@ -124,69 +189,73 @@ export function PoemCard({
 
 const styles = StyleSheet.create({
   root: {
-    marginBottom: 24
+    marginBottom: 22,
+    backgroundColor: colors.surface
   },
   contentPressable: {
-    borderRadius: radius.md
+    borderRadius: radius.lg
   },
   authorRow: {
+    minHeight: 56,
+    paddingHorizontal: 4,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    height: 45,
-    paddingHorizontal: 0,
-    zIndex: 2
+    justifyContent: "space-between"
   },
   authorIdentity: {
+    flex: 1,
+    minWidth: 0,
     flexDirection: "row",
     alignItems: "center",
     gap: 10
   },
-  avatarDot: {
-    width: 39,
-    height: 39,
-    borderRadius: 20
+  authorCopy: {
+    flex: 1,
+    minWidth: 0
   },
   authorName: {
-    fontSize: 20,
-    lineHeight: 25,
-    fontWeight: "400",
-    color: colors.ink,
-    fontStyle: "italic",
-    fontFamily: "Brush Script MT"
-  },
-  contributors: {
     fontSize: 15,
-    lineHeight: 17,
-    fontWeight: "400",
+    lineHeight: 18,
+    fontWeight: "600",
     color: colors.ink
   },
-  dots: {
-    position: "absolute",
-    top: 32,
-    left: 54,
-    right: 2,
-    zIndex: 3,
-    flexDirection: "row",
-    justifyContent: "space-between"
+  authorHandle: {
+    marginTop: 1,
+    fontSize: 11,
+    lineHeight: 14,
+    color: colors.profileMuted
   },
-  dot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: "#F4F4F4"
+  contributors: {
+    maxWidth: "42%",
+    marginLeft: 10,
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.profileMuted
+  },
+  layoutCard: {
+    width: "100%",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(21,21,21,0.10)",
+    shadowColor: colors.black,
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 7 },
+    elevation: 3
   },
   artworkWrap: {
-    marginTop: 0
+    overflow: "hidden",
+    borderRadius: radius.lg
   },
   body: {
-    minHeight: 298,
-    marginTop: 0,
-    borderRadius: radius.md,
+    minHeight: 260,
+    marginTop: 8,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.line,
+    borderRadius: radius.lg,
     backgroundColor: colors.surface,
-    paddingHorizontal: 23,
-    paddingTop: 18,
-    paddingBottom: 14,
     shadowColor: colors.black,
     shadowOpacity: 0.04,
     shadowRadius: 12,
@@ -194,70 +263,47 @@ const styles = StyleSheet.create({
     elevation: 1
   },
   titleRow: {
+    marginBottom: 20,
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    marginBottom: 25
+    gap: 7
   },
-  bulbEmoji: {
-    fontSize: 28,
-    lineHeight: 31
+  titleMark: {
+    fontSize: 16,
+    lineHeight: 22,
+    color: colors.profileMuted
   },
   title: {
-    fontSize: 26,
-    lineHeight: 30,
-    fontWeight: "400",
-    color: colors.ink,
-    fontStyle: "italic"
+    flex: 1,
+    fontFamily: "Georgia",
+    fontSize: 24,
+    lineHeight: 29,
+    fontWeight: "500",
+    color: colors.ink
   },
   lines: {
-    gap: 16,
-    marginBottom: 31
+    marginBottom: 24,
+    gap: 10
   },
   poemLine: {
-    fontSize: 20,
-    lineHeight: 22,
-    fontWeight: "400",
-    color: colors.ink,
-    fontStyle: "italic"
+    fontFamily: "Georgia",
+    fontSize: 18,
+    lineHeight: 27,
+    color: colors.ink
   },
   tags: {
-    fontSize: 20,
-    lineHeight: 22,
-    fontWeight: "400",
-    color: colors.muted,
-    marginBottom: 11
-  },
-  startedMeta: { marginTop: 15, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line, color: colors.muted, fontSize: 12, lineHeight: 16 },
-  status: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.line,
-    paddingTop: 8
-  },
-  statusTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4
-  },
-  sproutMark: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: colors.success,
-    transform: [{ rotate: "-20deg" }]
-  },
-  statusTitle: {
-    fontSize: 16,
+    marginBottom: 11,
+    fontSize: 13,
     lineHeight: 18,
-    fontWeight: "400",
-    color: colors.ink,
-    fontStyle: "italic"
+    color: colors.muted
   },
-  statusMeta: {
-    fontSize: 15,
-    lineHeight: 17,
-    fontWeight: "400",
-    color: colors.muted,
-    fontStyle: "italic"
+  startedMeta: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line,
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.muted
   }
 });

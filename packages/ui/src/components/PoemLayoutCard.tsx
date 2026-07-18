@@ -25,6 +25,7 @@ type PoemLayoutCardProps = {
   typographyRole: "serif" | "script" | "sans";
   stickerSymbols?: string[];
   mediaSource?: ImageSourcePropType;
+  mediaAspectRatio?: number;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -35,16 +36,32 @@ export function PoemLayoutCard({
   typographyRole,
   stickerSymbols = [],
   mediaSource,
+  mediaAspectRatio,
   style
 }: PoemLayoutCardProps) {
   const dark = backgroundRole === "dark";
   const textColor = dark ? "#F5EFE3" : colors.ink;
   const typeStyle = typographyStyles[typographyRole];
+  const mediaHeight = getMediaHeight(mediaAspectRatio);
 
   return (
-    <View style={[styles.card, backgroundStyles[backgroundRole], style]}>
+    <View
+      style={[
+        styles.card,
+        backgroundStyles[backgroundRole],
+        mediaSource ? styles.cardWithMedia : undefined,
+        style
+      ]}
+    >
       <PaperTexture role={backgroundRole} />
-      {mediaSource ? <Image resizeMode="cover" source={mediaSource} style={styles.media} /> : null}
+      {mediaSource ? (
+        <Image
+          accessibilityLabel="Attached poem image"
+          resizeMode="cover"
+          source={mediaSource}
+          style={[styles.media, { height: mediaHeight }]}
+        />
+      ) : null}
       <View style={styles.body}>
         <View style={styles.stickers}>
           {stickerSymbols.map((symbol, index) => (
@@ -98,8 +115,16 @@ const backgroundStyles: Record<PoemLayoutCardProps["backgroundRole"], ViewStyle>
   dark: { backgroundColor: "#213142" }
 };
 
+function getMediaHeight(aspectRatio?: number) {
+  if (!aspectRatio) return 210;
+  if (aspectRatio >= 1.65) return 176;
+  if (aspectRatio >= 1.05) return 218;
+  return 282;
+}
+
 const styles = StyleSheet.create({
   card: { minHeight: 470, overflow: "hidden", borderRadius: radius.lg },
+  cardWithMedia: { minHeight: 540 },
   texture: { ...StyleSheet.absoluteFillObject, overflow: "hidden" },
   ruledLine: { position: "absolute", left: 0, right: 0, height: StyleSheet.hairlineWidth, backgroundColor: "rgba(88,111,129,0.16)" },
   kraftWash: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(92,58,29,0.05)" },
@@ -109,7 +134,12 @@ const styles = StyleSheet.create({
   postcardStamp: { position: "absolute", right: 18, top: 20, width: 48, height: 38, borderWidth: 1, borderColor: "rgba(118,72,57,0.52)", alignItems: "center", justifyContent: "center", transform: [{ rotate: "5deg" }] },
   postcardStampText: { color: "rgba(118,72,57,0.62)", fontSize: 9, letterSpacing: 1 },
   moonGlow: { position: "absolute", right: -25, top: -20, width: 150, height: 150, borderRadius: 75, backgroundColor: "rgba(242,231,199,0.08)" },
-  media: { width: "100%", height: 150 },
+  media: {
+    width: "100%",
+    backgroundColor: colors.surfaceMuted,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(21,21,21,0.12)"
+  },
   body: { flex: 1, minHeight: 320, paddingHorizontal: 24, paddingTop: 24, paddingBottom: 18 },
   stickers: { position: "absolute", right: 20, top: 16, flexDirection: "row", gap: 4, opacity: 0.65 },
   sticker: { fontSize: 24, lineHeight: 29 },

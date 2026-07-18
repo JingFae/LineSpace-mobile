@@ -30,6 +30,7 @@ import type {
   PoemDraftSettings
 } from "@linespace/api-client";
 import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
+import { getMediaAspectRatio } from "@/features/poem/poemPresentation";
 import { VisibilityAudienceSheet } from "./VisibilityAudienceSheet";
 
 type SearchParamValue = string | string[] | undefined;
@@ -205,6 +206,7 @@ function LayoutWorkspace({
       <ScrollView contentContainerStyle={styles.canvas} showsVerticalScrollIndicator={false}>
         <PoemLayoutCard
           backgroundRole={background.role}
+          mediaAspectRatio={getMediaAspectRatio(draft.media)}
           mediaSource={mediaSource}
           poem={{
             title: draft.title || "untitled line",

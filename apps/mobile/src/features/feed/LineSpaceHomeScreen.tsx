@@ -6,6 +6,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Text,
   View,
   type ImageSourcePropType
 } from "react-native";
@@ -13,27 +14,25 @@ import {
   AppScreen,
   BottomNavigation,
   EmptyState,
+  LineSpaceLogoIcon,
   PoemCard,
   SearchIcon,
-  SegmentTabs,
-  type PoemCardModel,
-  type SegmentTab
+  type PoemCardModel
 } from "@linespace/ui";
 import { colors, spacing } from "@linespace/tokens";
 import type { FeedSection, PoemSummary } from "@linespace/api-client";
 import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
 import { mainTabs, tabRoutes } from "@/navigation/tabs";
 import { usePoemEngagement } from "@/features/poem/usePoemEngagement";
+import { getPoemLayoutPresentation } from "@/features/poem/poemPresentation";
 
 declare const require: (path: string) => ImageSourcePropType;
 
 const waterArtwork = require("../../../assets/preview-water.png");
-const homeBackground = "#F6F7F7";
-
-const sectionTabs: SegmentTab<FeedSection>[] = [
+const sectionTabs: Array<{ value: FeedSection; label: string }> = [
   { value: "latest", label: "Latest" },
   { value: "popular", label: "Popular" },
-  { value: "following", label: "follow" }
+  { value: "following", label: "Follow" }
 ];
 
 export function LineSpaceHomeScreen() {
@@ -63,19 +62,32 @@ export function LineSpaceHomeScreen() {
     >
       <View style={styles.topChrome}>
         <View style={styles.header}>
-          <View style={styles.sectionTabs}>
-            <SegmentTabs tabs={sectionTabs} value={section} onChange={setSection} />
-          </View>
+          <View style={styles.headerButton} />
+          <LineSpaceLogoIcon color={colors.black} width={54} height={31} />
           <SearchButton />
         </View>
-
+        <View style={styles.sortRow}>
+          {sectionTabs.map((tab) => {
+            const active = tab.value === section;
+            return (
+              <Pressable
+                accessibilityRole="tab"
+                accessibilityState={{ selected: active }}
+                key={tab.value}
+                onPress={() => setSection(tab.value)}
+                style={styles.sortTab}
+              >
+                <Text style={[styles.sortText, active && styles.sortTextActive]}>
+                  {tab.label}
+                </Text>
+                {active ? <View style={styles.sortIndicator} /> : null}
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
 
-      <ScrollView
-        style={styles.feed}
-        contentContainerStyle={styles.feedContent}
-        showsVerticalScrollIndicator={false}
-      >
+      <ScrollView style={styles.feed} contentContainerStyle={styles.feedContent} showsVerticalScrollIndicator={false}>
         {feedQuery.isLoading ? (
           <View style={styles.loadingWrap}>
             <ActivityIndicator color={colors.accent} />
@@ -172,7 +184,12 @@ function mapPoemToCard(poem: PoemSummary): PoemCardModel {
     metrics: { ...poem.metrics, contributions: poem.metrics.shares ?? poem.metrics.contributions },
     viewer: poem.viewer,
     artworkTone: poem.artworkTone,
-    artworkSource: poem.artworkTone === "water" ? waterArtwork : undefined
+    artworkSource: poem.artworkUrl
+      ? { uri: poem.artworkUrl }
+      : poem.artworkTone === "water"
+        ? waterArtwork
+        : undefined,
+    layout: getPoemLayoutPresentation(poem)
   };
 }
 
@@ -188,49 +205,75 @@ function formatPoemDate(value: string) {
 
 const styles = StyleSheet.create({
   safeArea: {
-    backgroundColor: homeBackground
+    backgroundColor: colors.surface
   },
   screen: {
-    backgroundColor: homeBackground
+    backgroundColor: colors.surface
   },
   topChrome: {
-    height: 144,
+    height: 122,
     backgroundColor: colors.surface
   },
   header: {
-    height: 101,
+    height: 78,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingLeft: 73,
-    paddingRight: 28,
-    paddingTop: 44,
+    paddingHorizontal: spacing.lg,
+    paddingTop: 30,
     backgroundColor: colors.surface
   },
-  sectionTabs: {
-    flex: 1,
-    paddingRight: 12
+  headerButton: {
+    width: 44,
+    height: 44
   },
   searchButton: {
-    width: 46,
-    height: 46,
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center"
   },
-  filterWrap: {
+  sortRow: {
+    height: 44,
+    paddingHorizontal: spacing.lg,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "center",
+    gap: 30,
     backgroundColor: colors.surface,
-    height: 43,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#F8F8F8",
-    paddingHorizontal: 25
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.line
+  },
+  sortTab: {
+    minWidth: 62,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "flex-start",
+    paddingTop: 4
+  },
+  sortText: {
+    fontSize: 14,
+    lineHeight: 19,
+    color: colors.profileMuted
+  },
+  sortTextActive: {
+    color: colors.ink,
+    fontWeight: "600"
+  },
+  sortIndicator: {
+    width: 20,
+    height: 2,
+    marginTop: 7,
+    borderRadius: 1,
+    backgroundColor: colors.ink
   },
   feed: {
     flex: 1,
-    backgroundColor: homeBackground
+    backgroundColor: colors.surface
   },
   feedContent: {
     paddingHorizontal: 18,
-    paddingTop: 10,
+    paddingTop: 14,
     paddingBottom: 96
   },
   loadingWrap: {

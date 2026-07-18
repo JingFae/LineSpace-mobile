@@ -293,6 +293,8 @@ export class MockLineSpaceApi implements LineSpaceApi {
       metrics: { comments: 0, likes: 0, shares: 0, contributions: 0, saves: 0 },
       viewer: { liked: false, saved: false },
       artworkTone: draft.layout.backgroundId === "midnight" ? "night" : "paper",
+      media: draft.media ? { ...draft.media } : undefined,
+      layout: cloneLayout(draft.layout),
       credits: {
         startedBy: profileToUser(owner),
         commentContributors: draft.collaborators
@@ -395,8 +397,29 @@ export class MockLineSpaceApi implements LineSpaceApi {
   }
 
   async listFeed(query: FeedQuery = {}): Promise<PoemSummary[]> {
-    const { filter, viewerId } = query;
+    const { filter, viewerId, section } = query;
     let poems = this.poems.filter((poem) => canViewContent(poem.visibility, poem.audienceUserIds, poem.author.id, viewerId));
+
+    if (section === "following" && viewerId) {
+      const followingIds = this.getFollowingIds(viewerId);
+      poems = poems.filter((poem) => followingIds.has(poem.author.id));
+    } else if (section === "popular") {
+      poems = [...poems].sort(
+        (left, right) =>
+          right.metrics.likes +
+          (right.metrics.comments ?? 0) +
+          (right.metrics.shares ?? right.metrics.contributions) -
+          (left.metrics.likes +
+            (left.metrics.comments ?? 0) +
+            (left.metrics.shares ?? left.metrics.contributions))
+      );
+    } else {
+      poems = [...poems].sort(
+        (left, right) =>
+          Date.parse(right.editedAt ?? right.startedAt) -
+          Date.parse(left.editedAt ?? left.startedAt)
+      );
+    }
 
     if (filter === "final") {
       poems = poems.filter((poem) => poem.status === "final");
@@ -1237,6 +1260,8 @@ function clonePoem(poem: PoemSummary): PoemSummary {
     tags: [...poem.tags],
     mentions: poem.mentions ? [...poem.mentions] : undefined,
     audienceUserIds: poem.audienceUserIds ? [...poem.audienceUserIds] : undefined,
+    media: poem.media ? { ...poem.media } : undefined,
+    layout: poem.layout ? cloneLayout(poem.layout) : undefined,
     metrics: { ...poem.metrics },
     viewer: { ...poem.viewer },
     credits: poem.credits
