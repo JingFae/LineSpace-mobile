@@ -47,6 +47,8 @@ import type {
   ThreadFeedQuery,
   ThreadShareResult,
   ThreadShareTarget,
+  ShareThreadInput,
+  UpdateThreadCollectionInput,
   UpdatePoemDraftInput,
   UpdateInboxGroupInput,
   UpdatePoemCollectionInput,
@@ -112,7 +114,9 @@ export interface LineSpaceApi {
   createContinuation(input: CreateContinuationInput): Promise<ThreadContinuation>;
   setThreadLike(input: UpdateThreadLikeInput): Promise<PoetryThread>;
   setContinuationLike(input: UpdateContinuationLikeInput): Promise<ThreadContinuation>;
+  setThreadCollection(input: UpdateThreadCollectionInput): Promise<PoetryThread>;
   recordThreadShare(target: ThreadShareTarget): Promise<ThreadShareResult>;
+  shareThread(input: ShareThreadInput): Promise<ThreadShareResult>;
   requestAiAssist(request: AiAssistRequest): Promise<AiAssistResponse>;
   createPoemComment(input: CreatePoemCommentInput): Promise<PoemComment>;
   setCommentCollection(input: UpdateCommentCollectionInput): Promise<PoemCommentEngagementResult>;
@@ -141,6 +145,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
   private readonly invitations: DraftInvitation[] = [];
   private readonly collectionsByUser = new Map<string, MutableUserCollections>();
   private readonly likedThreadsByUser = new Map<string, Set<string>>();
+  private readonly savedThreadsByUser = new Map<string, Set<string>>();
   private readonly likedContinuationsByUser = new Map<string, Set<string>>();
   private readonly commentLikesByUser = new Map<string, Set<string>>();
   private readonly commentSavesByUser = new Map<string, Set<string>>();
@@ -221,6 +226,12 @@ export class MockLineSpaceApi implements LineSpaceApi {
     if (input.byline !== undefined) draft.byline = input.byline;
     if (input.tags !== undefined) draft.tags = [...input.tags];
     if (input.mentions !== undefined) draft.mentions = [...input.mentions];
+    if (input.versionLines !== undefined) {
+      draft.versionLines = input.versionLines.map((line) => ({
+        ...line,
+        author: { ...line.author }
+      }));
+    }
     if (input.media !== undefined) draft.media = input.media ? { ...input.media } : undefined;
     if (input.settings) draft.settings = { ...draft.settings, ...input.settings };
     if (input.layout) draft.layout = cloneLayout(input.layout);
@@ -1189,6 +1200,25 @@ export class MockLineSpaceApi implements LineSpaceApi {
     return this.withContinuationViewer(continuation, input.userId);
   }
 
+  async setThreadCollection(input: UpdateThreadCollectionInput): Promise<PoetryThread> {
+    const thread = this.threads.find((item) => item.id === input.threadId);
+    if (!thread) throw new Error(`Thread ${input.threadId} was not found`);
+    const saved = this.getSavedThreadSet(input.userId);
+    const wasActive = saved.has(input.threadId);
+    if (wasActive !== input.isActive) {
+      input.isActive ? saved.add(input.threadId) : saved.delete(input.threadId);
+      thread.metrics.saves = Math.max(0, (thread.metrics.saves ?? 0) + (input.isActive ? 1 : -1));
+      const profile = this.profiles.find((item) => item.id === input.userId);
+      if (profile) {
+        profile.contentCounts.saves = Math.max(
+          0,
+          profile.contentCounts.saves + (input.isActive ? 1 : -1)
+        );
+      }
+    }
+    return this.withThreadViewer(thread, input.userId);
+  }
+
   async recordThreadShare(target: ThreadShareTarget): Promise<ThreadShareResult> {
     if (target.kind === "thread") {
       const thread = this.threads.find((item) => item.id === target.threadId);
@@ -1203,6 +1233,59 @@ export class MockLineSpaceApi implements LineSpaceApi {
     if (!continuation) throw new Error(`Continuation ${target.continuationId} was not found`);
     continuation.metrics.shares += 1;
     return { targetId: continuation.id, shareCount: continuation.metrics.shares };
+  }
+
+  async shareThread(input: ShareThreadInput): Promise<ThreadShareResult> {
+    const targetThread = input.threadId
+      ? this.threads.find((item) => item.id === input.threadId)
+      : undefined;
+    const targetContinuation = input.continuationId
+      ? this.continuations.find((item) => item.id === input.continuationId)
+      : undefined;
+    const thread = targetThread ?? (targetContinuation
+      ? this.threads.find((item) => item.id === targetContinuation.threadId)
+      : undefined);
+    const sender = this.findAnyProfile(input.senderId) ?? createTransientProfile(input.senderId);
+    const recipients = [...new Set(input.recipientIds)]
+      .map((id) => this.findAnyProfile(id) ?? createTransientProfile(id));
+    if (!thread || !sender || recipients.length === 0) {
+      throw new Error("A thread and at least one recipient are required");
+    }
+
+    const targetId = targetContinuation?.id ?? thread.id;
+    const excerpt = targetContinuation?.content ?? thread.content;
+    const lineNumber = targetContinuation
+      ? targetContinuation.lineNumber ?? this.getContinuationPath(targetContinuation).length + 2
+      : undefined;
+    thread.metrics.shares += recipients.length;
+    if (targetContinuation) targetContinuation.metrics.shares += recipients.length;
+
+    const messages = recipients.map((recipient) => {
+      const message: InboxConversationMessage = {
+        id: `shared-thread-${++this.shareSequence}`,
+        sender: profileToUser(sender),
+        recipient: profileToUser(recipient),
+        createdAt: new Date().toISOString(),
+        kind: targetContinuation ? "shared-continuation" : "shared-thread",
+        text: input.note?.trim() || undefined,
+        sharedThread: {
+          threadId: thread.id,
+          continuationId: targetContinuation?.id,
+          title: thread.title || "Untitled thread",
+          excerpt,
+          lineNumber,
+          author: profileToUser(thread.author)
+        }
+      };
+      this.inboxMessages.unshift(message);
+      return cloneInboxMessage(message);
+    });
+    return {
+      targetId,
+      shareCount: targetContinuation?.metrics.shares ?? thread.metrics.shares,
+      recipientIds: recipients.map((recipient) => recipient.id),
+      messages
+    };
   }
 
   async requestAiAssist(request: AiAssistRequest): Promise<AiAssistResponse> {
@@ -1283,6 +1366,15 @@ export class MockLineSpaceApi implements LineSpaceApi {
     const dynamicItems = this.poems
       .filter((poem) => savedIds.has(poem.id) && !samplePoemIds.has(poem.id))
       .map(profileContentFromPoem);
+    const dynamicThreads = [...(this.savedThreadsByUser.get(userId) ?? new Set<string>())]
+      .map((threadId) => this.threads.find((thread) => thread.id === threadId))
+      .filter((thread): thread is PoetryThread => Boolean(thread))
+      .map((thread) => ({
+        ...profileContentFromThread(thread, "started"),
+        id: `saved-thread-${thread.id}`,
+        collection: "saved" as const,
+        threadRelation: undefined
+      }));
     const commentKeys = collection === "liked"
       ? this.commentLikesByUser.get(userId) ?? new Set<string>()
       : this.commentSavesByUser.get(userId) ?? new Set<string>();
@@ -1315,6 +1407,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
           : item.poemId && savedIds.has(item.poemId)
       ),
       ...dynamicItems,
+      ...dynamicThreads,
       ...dynamicComments
     ];
     return items.filter((item) => {
@@ -1504,10 +1597,17 @@ export class MockLineSpaceApi implements LineSpaceApi {
     author: UserProfile;
     content: string;
   }) {
+    const parent = input.parentContinuationId
+      ? this.continuations.find((item) => item.id === input.parentContinuationId)
+      : undefined;
+    const lineNumber = parent
+      ? parent.lineNumber ?? this.getContinuationPath(parent).length + 2
+      : 1;
     const continuation: ThreadContinuation = {
       id: `continue-new-${++this.continuationSequence}`,
       threadId: input.threadId,
       parentContinuationId: input.parentContinuationId,
+      lineNumber: lineNumber + 1,
       author: { ...input.author },
       content: input.content,
       createdAt: new Date().toISOString(),
@@ -1552,12 +1652,21 @@ export class MockLineSpaceApi implements LineSpaceApi {
     return created;
   }
 
+  private getSavedThreadSet(userId: string) {
+    const existing = this.savedThreadsByUser.get(userId);
+    if (existing) return existing;
+    const created = new Set<string>();
+    this.savedThreadsByUser.set(userId, created);
+    return created;
+  }
+
   private withThreadViewer(thread: PoetryThread, viewerId?: string): PoetryThread {
     const liked = viewerId ? this.getLikedThreadSet(viewerId).has(thread.id) : false;
+    const saved = viewerId ? this.getSavedThreadSet(viewerId).has(thread.id) : false;
     return {
       ...cloneThread(thread),
       author: profileToUser(findProfile(this.profiles, thread.author)),
-      viewer: { liked }
+      viewer: { liked, saved }
     };
   }
 
@@ -1656,8 +1765,26 @@ function cloneThread(thread: PoetryThread): PoetryThread {
     mentions: thread.mentions ? [...thread.mentions] : undefined,
     audienceUserIds: thread.audienceUserIds ? [...thread.audienceUserIds] : undefined,
     cover: thread.cover ? { ...thread.cover } : undefined,
+    media: thread.media ? { ...thread.media } : undefined,
     metrics: { ...thread.metrics },
     viewer: { ...thread.viewer }
+  };
+}
+
+function createTransientProfile(userId: string): UserProfileDetails {
+  const shortId = userId.replace(/[^a-z0-9]/gi, "").slice(-8) || "member";
+  return {
+    id: userId,
+    handle: `member_${shortId}`,
+    displayName: "LineSpace member",
+    avatarColor: "#B8B0A4",
+    linespaceId: `member_${shortId}`,
+    level: 1,
+    experience: emptyExperience(),
+    badges: [],
+    stats: { followers: 0, following: 0, likesAndSaves: 0 },
+    contentCounts: { posts: 0, threads: 0, comments: 0, saves: 0 },
+    visibility: { posts: true, threads: true, comments: true, saves: true }
   };
 }
 
@@ -1688,6 +1815,13 @@ function cloneInboxMessage(message: InboxConversationMessage): InboxConversation
           ...message.sharedPost,
           author: { ...message.sharedPost.author },
           tags: [...message.sharedPost.tags]
+        }
+      : undefined
+    ,
+    sharedThread: message.sharedThread
+      ? {
+          ...message.sharedThread,
+          author: { ...message.sharedThread.author }
         }
       : undefined
   };
@@ -1869,6 +2003,10 @@ function cloneDraft(draft: PoemDraft): PoemDraft {
     ...draft,
     tags: [...draft.tags],
     mentions: [...draft.mentions],
+    versionLines: draft.versionLines?.map((line) => ({
+      ...line,
+      author: { ...line.author }
+    })),
     media: draft.media ? { ...draft.media } : undefined,
     settings: { ...draft.settings, audienceUserIds: [...draft.settings.audienceUserIds] },
     layout: cloneLayout(draft.layout),

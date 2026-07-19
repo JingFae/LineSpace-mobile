@@ -131,6 +131,12 @@ export type PoemDraft = {
   byline: string;
   tags: string[];
   mentions: string[];
+  versionLines?: Array<{
+    lineNumber: number;
+    text: string;
+    author: UserProfile;
+    likes?: number;
+  }>;
   media?: PoemDraftMedia;
   settings: PoemDraftSettings;
   layout: PoemLayoutConfig;
@@ -153,6 +159,7 @@ export type UpdatePoemDraftInput = {
   byline?: string;
   tags?: string[];
   mentions?: string[];
+  versionLines?: PoemDraft["versionLines"];
   media?: PoemDraftMedia | null;
   settings?: Partial<PoemDraftSettings>;
   layout?: PoemLayoutConfig;
@@ -536,13 +543,22 @@ export type InboxConversationMessage = {
   recipient?: UserProfile;
   groupId?: string;
   createdAt: string;
-  kind: "text" | "shared-post";
+  kind: "text" | "shared-post" | "shared-thread" | "shared-continuation";
   text?: string;
   sharedPost?: {
     id: string;
     title: string;
     excerpt: string;
     tags: string[];
+    author: UserProfile;
+    artworkUrl?: string;
+  };
+  sharedThread?: {
+    threadId: string;
+    continuationId?: string;
+    title: string;
+    excerpt: string;
+    lineNumber?: number;
     author: UserProfile;
     artworkUrl?: string;
   };
@@ -616,6 +632,7 @@ export type ThreadSort = "top" | "latest" | "following";
 
 export type ThreadViewerState = {
   liked: boolean;
+  saved?: boolean;
 };
 
 export type ThreadMetrics = {
@@ -623,6 +640,7 @@ export type ThreadMetrics = {
   continuations: number;
   shares: number;
   views?: number;
+  saves?: number;
 };
 
 export type PoetryThread = {
@@ -630,6 +648,7 @@ export type PoetryThread = {
   author: UserProfile;
   title?: string;
   content: string;
+  startingContent?: string;
   rules?: string;
   tags?: string[];
   mentions?: string[];
@@ -642,6 +661,7 @@ export type PoetryThread = {
   cover?: {
     tone: "water" | "paper" | "night";
   };
+  media?: PoemDraftMedia;
   metrics: ThreadMetrics;
   viewer: ThreadViewerState;
 };
@@ -650,6 +670,7 @@ export type ThreadContinuation = {
   id: string;
   threadId: string;
   parentContinuationId?: string;
+  lineNumber?: number;
   author: UserProfile;
   content: string;
   createdAt: string;
@@ -705,6 +726,47 @@ export type ThreadShareTarget =
 export type ThreadShareResult = {
   targetId: string;
   shareCount: number;
+  recipientIds?: string[];
+  messages?: InboxConversationMessage[];
+};
+
+export type UpdateThreadCollectionInput = {
+  threadId: string;
+  userId: string;
+  isActive: boolean;
+};
+
+export type ShareThreadInput = {
+  kind: "thread" | "continuation";
+  threadId?: string;
+  continuationId?: string;
+  senderId: string;
+  recipientIds: string[];
+  note?: string;
+};
+
+export type ThreadVersionKind = "recommended" | "most-popular" | "longest" | "custom";
+
+export type ThreadVersionLine = {
+  lineNumber: number;
+  text: string;
+  author: UserProfile;
+  continuationId?: string;
+  parentContinuationId?: string;
+  likes: number;
+  isStartingContent: boolean;
+};
+
+export type ThreadVersion = {
+  id: string;
+  threadId: string;
+  kind: ThreadVersionKind;
+  title: string;
+  lines: ThreadVersionLine[];
+  contributorIds: string[];
+  totalLikes: number;
+  updatedAt: string;
+  aiRationale?: string;
 };
 
 export type AiAssistIntent =

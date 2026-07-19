@@ -9,6 +9,7 @@ export type ThreadMediaPreset = {
   textColor: string;
   mutedTextColor: string;
   overlayColor: string;
+  uri?: string;
 };
 
 export type CreativeThreadViewModel = {
@@ -26,9 +27,13 @@ export type PoemVersionLineViewModel = {
   text: string;
   author: UserProfile;
   isStartingContent: boolean;
+  lineNumber: number;
+  likes: number;
+  continuationId?: string;
+  parentContinuationId?: string;
 };
 
-export type PoemVersionCriterion = "longest" | "mostLiked";
+export type PoemVersionCriterion = "recommended" | "mostPopular" | "longest" | "custom";
 
 export type PoemVersionViewModel = {
   id: string;
@@ -43,6 +48,7 @@ export type PoemVersionViewModel = {
   totalLikeScore: number;
   totalTextLength: number;
   updatedAt: string;
+  aiRationale?: string;
 };
 
 type CreativeThreadPreset = {
@@ -164,7 +170,10 @@ export function getThreadStartingContent(thread: PoetryThread) {
 
 export function getThreadMedia(thread: PoetryThread) {
   const mediaId = creativeThreadPresets[thread.id]?.mediaId ?? toneToMediaId(thread.cover?.tone);
-  return threadMediaPresets[mediaId] ?? getDefaultMediaPreset();
+  return {
+    ...(threadMediaPresets[mediaId] ?? getDefaultMediaPreset()),
+    uri: thread.media?.uri
+  };
 }
 
 export function adaptThreadToCreativeViewModel(thread: PoetryThread): CreativeThreadViewModel {
@@ -246,8 +255,31 @@ export function selectRepresentativeVersions(versions: readonly PoemVersionViewM
   const longest = { ...byLongest[0]!, criterion: "longest" as const };
   const mostLikedCandidate = byMostLiked.find((version) => version.id !== longest.id);
   return mostLikedCandidate
-    ? [longest, { ...mostLikedCandidate, criterion: "mostLiked" as const }]
+    ? [longest, { ...mostLikedCandidate, criterion: "mostPopular" as const }]
     : [longest];
+}
+
+export function buildCustomPoemVersion(
+  thread: PoetryThread,
+  continuations: readonly ThreadContinuation[],
+  selectedContinuationIds: readonly string[]
+) {
+  const byId = new Map(continuations.map((item) => [item.id, item]));
+  const selected = new Set(selectedContinuationIds);
+  const selectedPath: ThreadContinuation[] = [];
+  const appendWithAncestors = (item: ThreadContinuation) => {
+    if (selectedPath.some((entry) => entry.id === item.id)) return;
+    if (item.parentContinuationId) {
+      const parent = byId.get(item.parentContinuationId);
+      if (parent) appendWithAncestors(parent);
+    }
+    selectedPath.push(item);
+  };
+  for (const id of selected) {
+    const item = byId.get(id);
+    if (item) appendWithAncestors(item);
+  }
+  return buildVersionFromPath(adaptThreadToCreativeViewModel(thread), selectedPath, "custom");
 }
 
 export function getVersionContentHash(text: string) {
@@ -283,20 +315,27 @@ export function getFullPoemText(version: PoemVersionViewModel) {
 
 function buildVersionFromPath(
   creativeThread: CreativeThreadViewModel,
-  path: readonly ThreadContinuation[]
+  path: readonly ThreadContinuation[],
+  criterion?: PoemVersionCriterion
 ): PoemVersionViewModel {
   const lines: PoemVersionLineViewModel[] = [
     {
       id: `${creativeThread.id}:starting-content`,
       text: creativeThread.startingContent,
       author: creativeThread.author,
-      isStartingContent: true
+      isStartingContent: true,
+      lineNumber: 1,
+      likes: 0
     },
     ...path.map((continuation) => ({
       id: continuation.id,
       text: continuation.content,
       author: continuation.author,
-      isStartingContent: false
+      isStartingContent: false,
+      lineNumber: continuation.lineNumber ?? path.indexOf(continuation) + 2,
+      likes: continuation.metrics.likes,
+      continuationId: continuation.id,
+      parentContinuationId: continuation.parentContinuationId
     }))
   ];
   const titleResult = generateMockPoemTitle(lines);
@@ -309,6 +348,7 @@ function buildVersionFromPath(
     leafContinuationId: leaf?.id ?? null,
     title: titleResult.title,
     titleSource: titleResult.titleSource,
+    criterion,
     lines,
     contributorIds: getVersionContributors(lines),
     continuationCount: path.length,

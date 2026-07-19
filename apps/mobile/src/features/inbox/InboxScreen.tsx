@@ -719,10 +719,42 @@ function GroupChatPage({
 }
 
 function MessageItem({ message, own }: { message: InboxConversationMessage; own: boolean }) {
+  const sharedThread = message.sharedThread;
+  const openSharedThread = () => {
+    if (!sharedThread) return;
+    router.push(
+      sharedThread.continuationId
+        ? ({
+            pathname: "/thread/continue/[id]",
+            params: { id: sharedThread.continuationId }
+          } as unknown as Href)
+        : ({
+            pathname: "/thread/[id]",
+            params: { id: sharedThread.threadId }
+          } as unknown as Href)
+    );
+  };
   return (
     <View style={[styles.messageBlock, own ? styles.messageBlockOwn : styles.messageBlockIncoming]}>
       <View style={[styles.messageBubble, own ? styles.messageBubbleOwn : styles.messageBubbleIncoming]}>
-        {message.sharedPost ? (
+        {sharedThread ? (
+          <Pressable accessibilityRole="link" onPress={openSharedThread}>
+            <Text style={[styles.sharedLabel, own && styles.sharedLabelOwn]}>
+              {sharedThread.continuationId
+                ? `Shared continuation · line ${sharedThread.lineNumber ?? "—"}`
+                : "Shared thread"}
+            </Text>
+            <Text style={[styles.messageText, own && styles.messageTextOwn]}>
+              {sharedThread.title}
+            </Text>
+            <Text style={[styles.sharedExcerpt, own && styles.sharedExcerptOwn]}>
+              {sharedThread.excerpt}
+            </Text>
+            <Text style={[styles.sharedOpenHint, own && styles.sharedExcerptOwn]}>
+              Open thread →
+            </Text>
+          </Pressable>
+        ) : message.sharedPost ? (
           <View>
             <Text style={[styles.sharedLabel, own && styles.sharedLabelOwn]}>Shared post</Text>
             <Text style={[styles.messageText, own && styles.messageTextOwn]}>{message.sharedPost.title}</Text>
@@ -1046,6 +1078,7 @@ const styles = StyleSheet.create({
   sharedLabel: { ...typography.caption, color: colors.profileMuted, fontSize: 9, fontWeight: "700", letterSpacing: 1, marginBottom: 7 },
   sharedLabelOwn: { color: "#B9B9B9" },
   sharedExcerpt: { ...typography.caption, color: colors.profileMuted, lineHeight: 18, marginTop: 4 },
+  sharedOpenHint: { ...typography.caption, color: colors.accent, marginTop: 8, fontWeight: "600" },
   sharedExcerptOwn: { color: "#D1D1D1" },
   groupMessageLine: { alignItems: "flex-end", flexDirection: "row", gap: 8 },
   groupMessageLineOwn: { justifyContent: "flex-end" },

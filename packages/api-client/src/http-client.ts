@@ -34,6 +34,8 @@ import type {
   ThreadFeedQuery,
   ThreadShareResult,
   ThreadShareTarget,
+  ShareThreadInput,
+  UpdateThreadCollectionInput,
   UpdatePoemDraftInput,
   UpdateInboxGroupInput,
   UpdatePoemCollectionInput,
@@ -433,6 +435,13 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     );
   }
 
+  async setThreadCollection(input: UpdateThreadCollectionInput): Promise<PoetryThread> {
+    return this.putJson<PoetryThread>(
+      `/v1/threads/${encodeURIComponent(input.threadId)}/save`,
+      { userId: input.userId, isActive: input.isActive }
+    );
+  }
+
   async recordThreadShare(target: ThreadShareTarget): Promise<ThreadShareResult> {
     if (target.kind === "thread") {
       return this.postJson<ThreadShareResult>(
@@ -444,6 +453,17 @@ export class HttpLineSpaceApi implements LineSpaceApi {
       `/v1/continuations/${encodeURIComponent(target.continuationId)}/share`,
       { userId: target.userId }
     );
+  }
+
+  async shareThread(input: ShareThreadInput): Promise<ThreadShareResult> {
+    const resource = input.kind === "thread"
+      ? `/v1/threads/${encodeURIComponent(input.threadId ?? "")}/share-recipients`
+      : `/v1/continuations/${encodeURIComponent(input.continuationId ?? "")}/share-recipients`;
+    return this.postJson<ThreadShareResult>(resource, {
+      senderId: input.senderId,
+      recipientIds: input.recipientIds,
+      note: input.note
+    });
   }
 
   async requestAiAssist(request: AiAssistRequest): Promise<AiAssistResponse> {

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import {
   ActivityIndicator,
+  Image,
   Modal,
   Pressable,
   Share,
@@ -15,6 +16,7 @@ import {
 } from "react-native";
 import {
   AppScreen,
+  Avatar,
   BackgroundPaperIcon,
   PoemLayoutCard,
   TemplateIcon,
@@ -204,7 +206,15 @@ function LayoutWorkspace({
   return (
     <View style={styles.workspace}>
       <ScrollView contentContainerStyle={styles.canvas} showsVerticalScrollIndicator={false}>
-        <PoemLayoutCard
+        {draft.versionLines?.length ? (
+          <VersionLayoutCard
+            backgroundColor={background.swatch}
+            draft={draft}
+            mediaSource={mediaSource}
+            style={styles.previewCard}
+            typographyColor={typography.swatch}
+          />
+        ) : <PoemLayoutCard
           backgroundRole={background.role}
           mediaAspectRatio={getMediaAspectRatio(draft.media)}
           mediaSource={mediaSource}
@@ -218,7 +228,7 @@ function LayoutWorkspace({
           stickerSymbols={stickerSymbols}
           style={styles.previewCard}
           typographyRole={typography.role}
-        />
+        />}
       </ScrollView>
 
       <OptionTray
@@ -233,6 +243,52 @@ function LayoutWorkspace({
         <ToolButton active={activeTool === "typography"} label="Typography" onPress={() => onToolChange("typography")}><TypographyIcon /></ToolButton>
         <ToolButton active={activeTool === "background"} label="Paper" onPress={() => onToolChange("background")}><BackgroundPaperIcon /></ToolButton>
       </View>
+    </View>
+  );
+}
+
+function VersionLayoutCard({
+  draft,
+  mediaSource,
+  backgroundColor,
+  typographyColor,
+  style
+}: {
+  draft: PoemDraft;
+  mediaSource?: ImageSourcePropType;
+  backgroundColor: string;
+  typographyColor: string;
+  style?: object;
+}) {
+  const lines = draft.versionLines ?? [];
+  return (
+    <View style={[styles.versionLayoutCard, { backgroundColor }, style]}>
+      {mediaSource ? <Image resizeMode="cover" source={mediaSource} style={styles.versionLayoutImage} /> : null}
+      <View style={styles.versionLayoutWash} />
+      <Text style={[styles.versionLayoutTitle, { color: typographyColor }]}>
+        {draft.title || "untitled line"}
+      </Text>
+      {lines.map((line) => (
+        <View key={`${line.lineNumber}-${line.author.id}`} style={styles.versionLayoutLine}>
+          <Avatar
+            color={line.author.avatarColor}
+            imageSource={line.author.avatarUrl ? { uri: line.author.avatarUrl } : undefined}
+            label={line.author.displayName}
+            size={28}
+          />
+          <View style={styles.versionLayoutLineCopy}>
+            <Text style={[styles.versionLayoutAuthor, { color: typographyColor }]}>
+              {line.lineNumber}. @{line.author.handle}
+            </Text>
+            <Text style={[styles.versionLayoutText, { color: typographyColor }]}>
+              {line.text}
+            </Text>
+          </View>
+        </View>
+      ))}
+      <Text style={[styles.versionLayoutByline, { color: typographyColor }]}>
+        by {draft.byline}
+      </Text>
     </View>
   );
 }
@@ -302,6 +358,44 @@ function formatPoemDate(value: string) {
 }
 
 const styles = StyleSheet.create({
+  versionLayoutCard: {
+    position: "relative",
+    overflow: "hidden",
+    width: "100%",
+    minHeight: 520,
+    paddingHorizontal: 24,
+    paddingVertical: 30,
+    borderRadius: 26
+  },
+  versionLayoutImage: { ...StyleSheet.absoluteFillObject, width: "100%", height: "100%", opacity: 0.32 },
+  versionLayoutWash: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(255,255,255,.32)" },
+  versionLayoutTitle: {
+    position: "relative",
+    marginBottom: 18,
+    fontFamily: "Georgia",
+    fontSize: 30,
+    lineHeight: 37,
+    fontWeight: "700"
+  },
+  versionLayoutLine: {
+    position: "relative",
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    paddingVertical: 9
+  },
+  versionLayoutLineCopy: { flex: 1, minWidth: 0 },
+  versionLayoutAuthor: { fontSize: 11, lineHeight: 14, fontWeight: "700", opacity: 0.72 },
+  versionLayoutText: { marginTop: 4, fontFamily: "Georgia", fontSize: 17, lineHeight: 25 },
+  versionLayoutByline: {
+    position: "relative",
+    marginTop: 22,
+    paddingTop: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(0,0,0,.22)",
+    fontSize: 11,
+    fontWeight: "600"
+  },
   safeArea: { backgroundColor: colors.profileCanvas },
   screen: { flex: 1, paddingBottom: 0, backgroundColor: colors.profileCanvas },
   header: { height: 101, paddingBottom: 11, backgroundColor: colors.white, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" },

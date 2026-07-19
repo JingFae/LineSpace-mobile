@@ -33,6 +33,7 @@ import {
   createProfileRepositoryForRequest,
   ProfileRepositoryError
 } from "./database/profile-repository";
+import { requestThreadVersionRecommendation } from "./ai/thread-version-recommendation";
 
 const api = createMockLineSpaceApi();
 
@@ -110,6 +111,23 @@ export async function handleApiRequest(
         );
       }
 
+      if (threadRoute.resource === "save" && method === "PUT") {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        const request = body as { isActive?: boolean } | undefined;
+        if (typeof request?.isActive !== "boolean") {
+          return json(400, { code: "INVALID_THREAD_SAVE" });
+        }
+        return json(
+          200,
+          await api.setThreadCollection({
+            threadId: threadRoute.threadId,
+            userId: actor.user.id,
+            isActive: request.isActive
+          })
+        );
+      }
+
       if (threadRoute.resource === "share" && method === "POST") {
         const actor = await authenticateRequest(context);
         if (!actor.ok) return actor.response;
@@ -119,6 +137,28 @@ export async function handleApiRequest(
             kind: "thread",
             threadId: threadRoute.threadId,
             userId: actor.user.id
+          })
+        );
+      }
+
+      if (threadRoute.resource === "share-recipients" && method === "POST") {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        const request = body as { recipientIds?: unknown; note?: unknown } | undefined;
+        if (
+          !Array.isArray(request?.recipientIds) ||
+          request.recipientIds.some((id) => typeof id !== "string")
+        ) {
+          return json(400, { code: "INVALID_THREAD_SHARE_RECIPIENTS" });
+        }
+        return json(
+          200,
+          await api.shareThread({
+            kind: "thread",
+            threadId: threadRoute.threadId,
+            senderId: actor.user.id,
+            recipientIds: request.recipientIds as string[],
+            note: typeof request.note === "string" ? request.note : undefined
           })
         );
       }
@@ -183,6 +223,28 @@ export async function handleApiRequest(
             kind: "continuation",
             continuationId: continuationRoute.continuationId,
             userId: actor.user.id
+          })
+        );
+      }
+
+      if (continuationRoute.resource === "share-recipients" && method === "POST") {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        const request = body as { recipientIds?: unknown; note?: unknown } | undefined;
+        if (
+          !Array.isArray(request?.recipientIds) ||
+          request.recipientIds.some((id) => typeof id !== "string")
+        ) {
+          return json(400, { code: "INVALID_CONTINUATION_SHARE_RECIPIENTS" });
+        }
+        return json(
+          200,
+          await api.shareThread({
+            kind: "continuation",
+            continuationId: continuationRoute.continuationId,
+            senderId: actor.user.id,
+            recipientIds: request.recipientIds as string[],
+            note: typeof request.note === "string" ? request.note : undefined
           })
         );
       }
@@ -748,12 +810,17 @@ export async function handleApiRequest(
     const actor = await authenticateRequest(context);
     if (!actor.ok) return actor.response;
     const request = body as AiAssistRequest;
-    return json(501, {
-      code: "LLM_NOT_CONFIGURED",
-      message:
-        "The LLM boundary is reserved here. Add OpenAI client calls, rate limits, and moderation before enabling this route.",
-      intent: request.intent
-    });
+    try {
+      return json(200, await requestThreadVersionRecommendation(request));
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "LLM_NOT_CONFIGURED";
+      return json(501, {
+        code: code.startsWith("LLM_") ? code : "LLM_REQUEST_FAILED",
+        message:
+          "AI recommendation is unavailable. The version page will use its deterministic fallback.",
+        intent: request.intent
+      });
+    }
   }
 
   return json(404, { code: "NOT_FOUND" });
@@ -829,7 +896,7 @@ type ParsedCollectionRoute = {
 
 type ParsedThreadRoute = {
   threadId: string;
-  resource: "thread" | "continuations" | "like" | "share";
+  resource: "thread" | "continuations" | "like" | "save" | "share" | "share-recipients";
 };
 
 function parseThreadRoute(pathname: string): ParsedThreadRoute | null {
@@ -841,7 +908,13 @@ function parseThreadRoute(pathname: string): ParsedThreadRoute | null {
   const resource = segments[3];
   if (
     segments.length === 4 &&
-    (resource === "continuations" || resource === "like" || resource === "share")
+    (
+      resource === "continuations" ||
+      resource === "like" ||
+      resource === "save" ||
+      resource === "share" ||
+      resource === "share-recipients"
+    )
   ) {
     return { threadId: segments[2], resource };
   }
@@ -850,7 +923,7 @@ function parseThreadRoute(pathname: string): ParsedThreadRoute | null {
 
 type ParsedContinuationRoute = {
   continuationId: string;
-  resource: "continuation" | "continuations" | "like" | "share";
+  resource: "continuation" | "continuations" | "like" | "share" | "share-recipients";
 };
 
 function parseContinuationRoute(pathname: string): ParsedContinuationRoute | null {
@@ -864,7 +937,12 @@ function parseContinuationRoute(pathname: string): ParsedContinuationRoute | nul
   const resource = segments[3];
   if (
     segments.length === 4 &&
-    (resource === "continuations" || resource === "like" || resource === "share")
+    (
+      resource === "continuations" ||
+      resource === "like" ||
+      resource === "share" ||
+      resource === "share-recipients"
+    )
   ) {
     return { continuationId: segments[2], resource };
   }

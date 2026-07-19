@@ -14,12 +14,15 @@ import {
 } from "react-native";
 import { AppScreen, InviteIcon } from "@linespace/ui";
 import { colors, radius, spacing } from "@linespace/tokens";
-import type { PoemDraftMedia, PoemDraftSettings } from "@linespace/api-client";
+import type { PoemDraft, PoemDraftMedia, PoemDraftSettings } from "@linespace/api-client";
 import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
 import { getMediaAspectRatio } from "@/features/poem/poemPresentation";
 import { InviteCollaboratorsSheet } from "./InviteCollaboratorsSheet";
 
-type ComposeScreenProps = { sessionKey: string };
+type ComposeScreenProps = {
+  sessionKey: string;
+  params?: Record<string, string | string[] | undefined>;
+};
 
 const initialSettings: PoemDraftSettings = {
   declareOriginal: false,
@@ -32,12 +35,22 @@ const initialSettings: PoemDraftSettings = {
   allowSave: true
 };
 
-export function ComposeScreen({ sessionKey }: ComposeScreenProps) {
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
+export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
+  const sourceVersionId = getParam(params.sourceVersionId);
+  const lockedVersionContent = getParam(params.lockedVersionContent) === "true";
+  const contributorHandles = parseList(getParam(params.contributorHandles));
+  const versionLines = parseVersionLines(getParam(params.versionLines));
+  const [title, setTitle] = useState(getParam(params.generatedTitle) ?? "");
+  const [body, setBody] = useState(getParam(params.fullPoemText) ?? "");
   const [tag, setTag] = useState("");
-  const [mention, setMention] = useState("");
-  const [media, setMedia] = useState<PoemDraftMedia | null>(null);
+  const [mention, setMention] = useState(contributorHandles.map((handle) => `@${handle}`).join(" "));
+  const [media, setMedia] = useState<PoemDraftMedia | null>(() => {
+    const uri = getParam(params.mediaUri);
+    const kind = getParam(params.mediaKind) as PoemDraftMedia["kind"] | undefined;
+    return uri && (kind === "image" || kind === "video")
+      ? { uri, kind, name: sourceVersionId ? "thread-version-media" : "media" }
+      : null;
+  });
   const [settings] = useState<PoemDraftSettings>(initialSettings);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,10 +71,13 @@ export function ComposeScreen({ sessionKey }: ComposeScreenProps) {
         userId: currentUserId,
         title: title.trim(),
         body: body.trim(),
-        byline: draftQuery.data?.collaborators[0]?.user.displayName ?? "",
+        byline: contributorHandles.length
+          ? [...contributorHandles].sort((left, right) => left.localeCompare(right)).join(", ")
+          : draftQuery.data?.collaborators[0]?.user.displayName ?? "",
         tags: parseTags(tag),
         mentions: parseMentions(mention),
         media,
+        versionLines,
         settings
       });
     },
@@ -173,7 +189,8 @@ export function ComposeScreen({ sessionKey }: ComposeScreenProps) {
 
       <View style={styles.editorPanel}>
         <TextInput
-          onChangeText={setTitle}
+        editable={!lockedVersionContent}
+        onChangeText={setTitle}
           placeholder="Title"
           placeholderTextColor={colors.tabMuted}
           returnKeyType="next"
@@ -184,7 +201,8 @@ export function ComposeScreen({ sessionKey }: ComposeScreenProps) {
         <View style={styles.divider} />
         <TextInput
           multiline
-          onChangeText={setBody}
+        editable={!lockedVersionContent}
+        onChangeText={setBody}
           placeholder="Write your lines"
           placeholderTextColor={colors.tabMuted}
           style={styles.lineInput}
@@ -205,6 +223,7 @@ export function ComposeScreen({ sessionKey }: ComposeScreenProps) {
         <View style={styles.divider} />
         <TextInput
           autoCapitalize="none"
+          editable={!lockedVersionContent}
           onChangeText={setMention}
           placeholder="@mention (optional)"
           placeholderTextColor={colors.tabMuted}
@@ -357,6 +376,38 @@ function parseMentions(value: string) {
     .split(/[,\s@|]+/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function getParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function parseList(value: string | undefined) {
+  return (value ?? "")
+    .split(",")
+    .map((item) => item.trim().replace(/^@/, ""))
+    .filter(Boolean);
+}
+
+function parseVersionLines(value: string | undefined): PoemDraft["versionLines"] {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value) as PoemDraft["versionLines"];
+    if (!Array.isArray(parsed)) return undefined;
+    return parsed
+      .filter(
+        (line): line is NonNullable<PoemDraft["versionLines"]>[number] =>
+          Boolean(line && typeof line.text === "string" && line.author)
+      )
+      .map((line) => ({
+        lineNumber: line.lineNumber,
+        text: line.text,
+        author: line.author,
+        likes: line.likes
+      }));
+  } catch {
+    return undefined;
+  }
 }
 
 const styles = StyleSheet.create({

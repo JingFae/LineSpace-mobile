@@ -8,6 +8,7 @@ import {
   Animated,
   BackHandler,
   Easing,
+  Image,
   Platform,
   Pressable,
   ScrollView,
@@ -26,6 +27,7 @@ import {
   LikeIcon,
   LineSpaceLogoIcon,
   MoreIcon,
+  SaveIcon,
   SearchIcon,
   ShareIcon
 } from "@linespace/ui";
@@ -36,7 +38,6 @@ import type {
   ThreadContinuation,
   ThreadDetail,
   ThreadSort,
-  ThreadShareTarget,
   UserProfileDetails
 } from "@linespace/api-client";
 import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
@@ -66,6 +67,7 @@ type FlattenedDescendantRow = {
 
 type ContinuationVisibleRow = {
   continuation: ThreadContinuation;
+  lineNumber: number;
   rootGroupId: string;
   actualDepth: number;
   isExpandedDescendant: boolean;
@@ -125,6 +127,7 @@ type ContinuationPathRenderNode = {
   content: string;
   metrics: PoetryThread["metrics"];
   liked: boolean;
+  lineNumber?: number;
   avatarSize: number;
   meta?: string;
   onOpen?: () => void;
@@ -145,7 +148,7 @@ export function ThreadFeedScreen() {
     queryFn: () => lineSpaceApi.listThreads({ sort, viewerId: currentUserId })
   });
   const likeMutation = useThreadLikeMutation();
-  const shareMutation = useShareMutation((notice) => setShareNotice(notice));
+  const saveMutation = useThreadSaveMutation();
 
   const threads = threadQuery.data ?? [];
 
@@ -199,6 +202,13 @@ export function ThreadFeedScreen() {
                   isActive: !thread.viewer.liked
                 })
               }
+              onSave={() =>
+                saveMutation.mutate({
+                  threadId: thread.id,
+                  userId: currentUserId,
+                  isActive: !thread.viewer.saved
+                })
+              }
               onOpen={() =>
                 router.push({ pathname: "/thread/[id]", params: { id: thread.id } } as unknown as Href)
               }
@@ -207,11 +217,10 @@ export function ThreadFeedScreen() {
               }
               onAuthorPress={() => router.push({ pathname: "/profile/[id]", params: { id: thread.author.id } } as unknown as Href)}
               onShare={() =>
-                shareMutation.mutate({
-                  kind: "thread",
-                  threadId: thread.id,
-                  userId: currentUserId
-                })
+                router.push({
+                  pathname: "/thread/share/[id]",
+                  params: { id: thread.id, kind: "thread" }
+                } as unknown as Href)
               }
             />
           ))
@@ -245,7 +254,15 @@ export function ThreadFeedScreen() {
   );
 }
 
-export function ThreadDetailScreen({ threadId }: { threadId?: string }) {
+export function ThreadDetailScreen({
+  threadId,
+  selectionMode = false,
+  initialSelectedIds
+}: {
+  threadId?: string;
+  selectionMode?: boolean;
+  initialSelectedIds?: string;
+}) {
   const queryClient = useQueryClient();
   const [composerTarget, setComposerTarget] = useState<ComposerTarget | null>(null);
   const [shareNotice, setShareNotice] = useState<ShareNotice | null>(null);
@@ -254,6 +271,7 @@ export function ThreadDetailScreen({ threadId }: { threadId?: string }) {
   const [expandedRootIds, setExpandedRootIds] = useState<Set<string>>(() => new Set());
   const [expandedDescendants, setExpandedDescendants] = useState<Record<string, FlattenedDescendantRow[]>>({});
   const [loadingRootIds, setLoadingRootIds] = useState<Set<string>>(() => new Set());
+  const [selectedByLine, setSelectedByLine] = useState<Record<number, string>>({});
   const detailQuery = useQuery({
     queryKey: ["thread-detail", threadId, currentUserId],
     enabled: Boolean(threadId),
@@ -261,7 +279,7 @@ export function ThreadDetailScreen({ threadId }: { threadId?: string }) {
   });
   const likeMutation = useThreadLikeMutation();
   const continuationLikeMutation = useContinuationLikeMutation();
-  const shareMutation = useShareMutation((notice) => setShareNotice(notice));
+  const saveMutation = useThreadSaveMutation();
   const detail = detailQuery.data ?? undefined;
   const versionTreeQuery = useQuery({
     queryKey: ["thread-version-tree", threadId, currentUserId, detail?.continuations.map((item) => item.id).join("|")],
@@ -274,14 +292,38 @@ export function ThreadDetailScreen({ threadId }: { threadId?: string }) {
   }, [continuationOrder, detail?.continuations]);
   const visibleContinuationGroups = useMemo(
     () =>
-      buildVisibleContinuationGroups(
-        sortedContinuations,
-        expandedDescendants,
-        expandedRootIds,
-        loadingRootIds
-      ),
-    [expandedDescendants, expandedRootIds, loadingRootIds, sortedContinuations]
+      selectionMode
+        ? buildSelectionContinuationGroups(
+            sortedContinuations,
+            allContinuations,
+            continuationOrder
+          )
+        : buildVisibleContinuationGroups(
+            sortedContinuations,
+            expandedDescendants,
+            expandedRootIds,
+            loadingRootIds
+          ),
+    [
+      allContinuations,
+      continuationOrder,
+      expandedDescendants,
+      expandedRootIds,
+      loadingRootIds,
+      selectionMode,
+      sortedContinuations
+    ]
   );
+  useEffect(() => {
+    if (!selectionMode || !initialSelectedIds || allContinuations.length === 0) return;
+    const next: Record<number, string> = {};
+    for (const id of initialSelectedIds.split(",").filter(Boolean)) {
+      const continuation = allContinuations.find((item) => item.id === id);
+      if (!continuation) continue;
+      next[getContinuationLineNumber(continuation, allContinuations)] = continuation.id;
+    }
+    setSelectedByLine(next);
+  }, [allContinuations, initialSelectedIds, selectionMode]);
   const resetExpandedContinuations = useCallback(() => {
     setExpandedRootIds(new Set());
     setExpandedDescendants({});
@@ -335,7 +377,7 @@ export function ThreadDetailScreen({ threadId }: { threadId?: string }) {
   return (
     <AppScreen scroll={false} padded={false} style={styles.safeArea} contentContainerStyle={styles.screen}>
       <DetailTopBar
-        title="Thread"
+        title={selectionMode ? "Build my version" : "Thread"}
         onNotify={() =>
           setShareNotice({
             id: detail?.thread.id ?? "thread-notify",
@@ -376,10 +418,16 @@ export function ThreadDetailScreen({ threadId }: { threadId?: string }) {
                 })
               }
               onShare={() =>
-                shareMutation.mutate({
-                  kind: "thread",
+                router.push({
+                  pathname: "/thread/share/[id]",
+                  params: { id: detail.thread.id, kind: "thread" }
+                } as unknown as Href)
+              }
+              onSave={() =>
+                saveMutation.mutate({
                   threadId: detail.thread.id,
-                  userId: currentUserId
+                  userId: currentUserId,
+                  isActive: !detail.thread.viewer.saved
                 })
               }
               onOpenVersion={() =>
@@ -414,13 +462,22 @@ export function ThreadDetailScreen({ threadId }: { threadId?: string }) {
                     } as unknown as Href)
                   }
                   onShare={(target) =>
-                    shareMutation.mutate({
-                      kind: "continuation",
-                      continuationId: target.id,
-                      userId: currentUserId
-                    })
+                    router.push({
+                      pathname: "/thread/share/[id]",
+                      params: { id: target.id, kind: "continuation" }
+                    } as unknown as Href)
                   }
                   onShowContinuations={handleShowContinuations}
+                  selectionMode={selectionMode}
+                  selectedByLine={selectedByLine}
+                  onSelect={(target, lineNumber) =>
+                    setSelectedByLine((current) => {
+                      const next = { ...current };
+                      if (next[lineNumber] === target.id) delete next[lineNumber];
+                      else next[lineNumber] = target.id;
+                      return next;
+                    })
+                  }
                 />
               ))
             )}
@@ -429,12 +486,31 @@ export function ThreadDetailScreen({ threadId }: { threadId?: string }) {
       </ScrollView>
       {detail ? (
         <FixedComposerButton
-          label="Continue this thread..."
-          onPress={() => setComposerTarget({ kind: "thread", thread: detail.thread })}
+          label={
+            selectionMode
+              ? `Finish custom version · ${Object.keys(selectedByLine).length} lines selected`
+              : "Continue this thread..."
+          }
+          onPress={() => {
+            if (selectionMode) {
+              router.replace({
+                pathname: "/thread/version/[id]",
+                params: {
+                  id: detail.thread.id,
+                  customSelectionIds: Object.entries(selectedByLine)
+                    .sort(([left], [right]) => Number(left) - Number(right))
+                    .map(([, id]) => id)
+                    .join(",")
+                }
+              } as unknown as Href);
+              return;
+            }
+            setComposerTarget({ kind: "thread", thread: detail.thread });
+          }}
           hidden={Boolean(composerTarget)}
         />
       ) : null}
-      <ContinueComposer
+      {!selectionMode ? <ContinueComposer
         onClose={() => setComposerTarget(null)}
         onSubmitted={(continuation, submittedTarget) => {
           setComposerTarget(null);
@@ -446,7 +522,7 @@ export function ThreadDetailScreen({ threadId }: { threadId?: string }) {
           }
         }}
         target={composerTarget}
-      />
+      /> : null}
       <ShareToast notice={shareNotice} onDismiss={() => setShareNotice(null)} />
     </AppScreen>
   );
@@ -467,7 +543,6 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
   });
   const likeMutation = useThreadLikeMutation();
   const continuationLikeMutation = useContinuationLikeMutation();
-  const shareMutation = useShareMutation((notice) => setShareNotice(notice));
   const detail = detailQuery.data ?? undefined;
   const sortedChildren = useMemo(() => {
     return sortContinuationItems(detail?.children ?? [], continuationOrder);
@@ -566,11 +641,10 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
                 })
               }
               onContinuationShare={(target) =>
-                shareMutation.mutate({
-                  kind: "continuation",
-                  continuationId: target.id,
-                  userId: currentUserId
-                })
+                router.push({
+                  pathname: "/thread/share/[id]",
+                  params: { id: target.id, kind: "continuation" }
+                } as unknown as Href)
               }
               onThreadContinue={() => setComposerTarget({ kind: "thread", thread: detail.thread })}
               onThreadLike={() =>
@@ -581,11 +655,10 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
                 })
               }
               onThreadShare={() =>
-                shareMutation.mutate({
-                  kind: "thread",
-                  threadId: detail.thread.id,
-                  userId: currentUserId
-                })
+                router.push({
+                  pathname: "/thread/share/[id]",
+                  params: { id: detail.thread.id, kind: "thread" }
+                } as unknown as Href)
               }
             />
             <ContinuationHeader order={continuationOrder} onChange={handleContinuationOrderChange} />
@@ -612,11 +685,10 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
                     } as unknown as Href)
                   }
                   onShare={(target) =>
-                    shareMutation.mutate({
-                      kind: "continuation",
-                      continuationId: target.id,
-                      userId: currentUserId
-                    })
+                    router.push({
+                      pathname: "/thread/share/[id]",
+                      params: { id: target.id, kind: "continuation" }
+                    } as unknown as Href)
                   }
                   onShowContinuations={handleShowContinuations}
                 />
@@ -697,6 +769,7 @@ function ThreadCard({
   onLike,
   onContinue,
   onShare,
+  onSave,
   onAuthorPress
 }: {
   thread: PoetryThread;
@@ -706,6 +779,7 @@ function ThreadCard({
   onLike: () => void;
   onContinue: () => void;
   onShare: () => void;
+  onSave?: () => void;
   onAuthorPress: () => void;
 }) {
   const showFullMeta = elevated;
@@ -734,10 +808,12 @@ function ThreadCard({
           />
           <ThreadActionBar
             liked={thread.viewer.liked}
+            saved={thread.viewer.saved}
             metrics={thread.metrics}
             onContinue={onContinue}
             onLike={onLike}
             onShare={onShare}
+            onSave={onSave}
           />
         </View>
       </View>
@@ -753,6 +829,7 @@ function ThreadDetailHero({
   onLike,
   onContinue,
   onShare,
+  onSave,
   onOpenVersion,
   onAuthorPress
 }: {
@@ -763,6 +840,7 @@ function ThreadDetailHero({
   onLike: () => void;
   onContinue: () => void;
   onShare: () => void;
+  onSave: () => void;
   onOpenVersion: () => void;
   onAuthorPress: () => void;
 }) {
@@ -800,10 +878,12 @@ function ThreadDetailHero({
       <ThreadActionBar
         compact
         liked={thread.viewer.liked}
+        saved={thread.viewer.saved}
         metrics={thread.metrics}
         onContinue={onContinue}
         onLike={onLike}
         onShare={onShare}
+        onSave={onSave}
       />
     </View>
   );
@@ -836,9 +916,19 @@ function StartingContentCard({
         { backgroundColor: media.backgroundColor }
       ]}
     >
+      {media.uri ? (
+        <Image
+          source={{ uri: media.uri }}
+          resizeMode="cover"
+          style={styles.startingContentMedia}
+        />
+      ) : null}
       <View pointerEvents="none" style={[styles.startingContentOverlay, { backgroundColor: media.overlayColor }]} />
       <View pointerEvents="none" style={[styles.mediaAccentOne, { backgroundColor: media.accentColor }]} />
       <View pointerEvents="none" style={[styles.mediaAccentTwo, { borderColor: media.accentColor }]} />
+      <View pointerEvents="none" style={styles.startingLineNumberPill}>
+        <Text style={styles.startingLineNumberText}>1</Text>
+      </View>
       <Text
         numberOfLines={detail ? 7 : 5}
         style={[
@@ -915,7 +1005,10 @@ function ExpandedContinuationGroup({
   onLike,
   onContinue,
   onShare,
-  onShowContinuations
+  onShowContinuations,
+  selectionMode = false,
+  selectedByLine = {},
+  onSelect
 }: {
   group: ContinuationVisibleGroup;
   order: ContinuationOrder;
@@ -924,6 +1017,9 @@ function ExpandedContinuationGroup({
   onContinue: (continuation: ThreadContinuation) => void;
   onShare: (continuation: ThreadContinuation) => void;
   onShowContinuations: (continuation: ThreadContinuation) => void;
+  selectionMode?: boolean;
+  selectedByLine?: Record<number, string>;
+  onSelect?: (continuation: ThreadContinuation, lineNumber: number) => void;
 }) {
   const [parentRowHeight, setParentRowHeight] = useState(0);
   const [firstChildCenterY, setFirstChildCenterY] = useState<number | null>(null);
@@ -966,6 +1062,9 @@ function ExpandedContinuationGroup({
           onOpen={onOpen}
           onShare={onShare}
           onShowContinuations={onShowContinuations}
+          selectionMode={selectionMode}
+          selected={selectedByLine[group.rootRow.lineNumber] === group.rootRow.continuation.id}
+          onSelect={onSelect}
         />
       </View>
       {hasChildren ? (
@@ -976,6 +1075,9 @@ function ExpandedContinuationGroup({
           onLike={onLike}
           onOpen={onOpen}
           onShare={onShare}
+          selectionMode={selectionMode}
+          selectedByLine={selectedByLine}
+          onSelect={onSelect}
         />
       ) : null}
     </View>
@@ -988,7 +1090,10 @@ function ChildContinuationGroup({
   onOpen,
   onLike,
   onContinue,
-  onShare
+  onShare,
+  selectionMode = false,
+  selectedByLine = {},
+  onSelect
 }: {
   rows: ContinuationVisibleRow[];
   onFirstChildCenter: (value: number | null) => void;
@@ -996,6 +1101,9 @@ function ChildContinuationGroup({
   onLike: (continuation: ThreadContinuation) => void;
   onContinue: (continuation: ThreadContinuation) => void;
   onShare: (continuation: ThreadContinuation) => void;
+  selectionMode?: boolean;
+  selectedByLine?: Record<number, string>;
+  onSelect?: (continuation: ThreadContinuation, lineNumber: number) => void;
 }) {
   const [rowLayouts, setRowLayouts] = useState<Record<string, { y: number; height: number }>>({});
   const firstRow = rows[0];
@@ -1045,6 +1153,9 @@ function ChildContinuationGroup({
             onLike={onLike}
             onOpen={onOpen}
             onShare={onShare}
+            selectionMode={selectionMode}
+            selected={selectedByLine[row.lineNumber] === row.continuation.id}
+            onSelect={onSelect}
           />
         </View>
       ))}
@@ -1060,7 +1171,10 @@ function ContinuationCard({
   onLike,
   onContinue,
   onShare,
-  onShowContinuations
+  onShowContinuations,
+  selectionMode = false,
+  selected = false,
+  onSelect
 }: {
   row: ContinuationVisibleRow;
   actionOrder?: ActionOrder;
@@ -1070,6 +1184,9 @@ function ContinuationCard({
   onContinue: (continuation: ThreadContinuation) => void;
   onShare: (continuation: ThreadContinuation) => void;
   onShowContinuations?: (continuation: ThreadContinuation) => void;
+  selectionMode?: boolean;
+  selected?: boolean;
+  onSelect?: (continuation: ThreadContinuation, lineNumber: number) => void;
 }) {
   const { continuation } = row;
   const avatarSize = row.isExpandedDescendant ? level1AvatarSize : level0AvatarSize;
@@ -1107,33 +1224,61 @@ function ContinuationCard({
         </View>
         <View style={[styles.continuationBody, row.isExpandedDescendant && styles.level1ContinuationBody]}>
           <View style={styles.continuationTopLine}>
+            <View style={styles.lineNumberPill}>
+              <Text style={styles.lineNumberText}>{row.lineNumber}</Text>
+            </View>
             <Pressable accessibilityRole="button" onPress={() => onOpen(continuation)} style={styles.continuationAuthorLine}>
               <Text numberOfLines={1} style={styles.continuationAuthorName}>{continuation.author.handle}</Text>
               <Text style={styles.continuationTime}>{formatRelative(continuation.createdAt)}</Text>
             </Pressable>
-            <Pressable accessibilityLabel="More continuation options" hitSlop={10} style={styles.continuationMoreButton}>
-              <MoreIcon color={colors.profileMuted} />
-            </Pressable>
+            {selectionMode ? (
+              <Pressable
+                accessibilityLabel={`Select line ${row.lineNumber}`}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: selected }}
+                hitSlop={10}
+                onPress={() => onSelect?.(continuation, row.lineNumber)}
+                style={[styles.versionSelectCircle, selected && styles.versionSelectCircleActive]}
+              >
+                {selected ? <Text style={styles.versionSelectCheck}>✓</Text> : null}
+              </Pressable>
+            ) : (
+              <Pressable accessibilityLabel="More continuation options" hitSlop={10} style={styles.continuationMoreButton}>
+                <MoreIcon color={colors.profileMuted} />
+              </Pressable>
+            )}
           </View>
-          <Pressable accessibilityRole="button" onPress={() => onOpen(continuation)} style={styles.continuationOpenArea}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() =>
+              selectionMode
+                ? onSelect?.(continuation, row.lineNumber)
+                : onOpen(continuation)
+            }
+            style={styles.continuationOpenArea}
+          >
             <Text style={styles.continuationContent}>{continuation.content}</Text>
           </Pressable>
-          <ThreadActionBar
+          {!selectionMode ? <ThreadActionBar
             actionOrder={actionOrder}
             compact
             liked={continuation.viewer.liked}
             metrics={continuation.metrics}
-            onContinue={() => onContinue(continuation)}
+            onContinue={() => onContinue({ ...continuation, lineNumber: row.lineNumber })}
             onLike={() => onLike(continuation)}
             onShare={() => onShare(continuation)}
-          />
+          /> : (
+            <Text style={styles.versionSelectionHint}>
+              Choose one option for line {row.lineNumber}
+            </Text>
+          )}
           {row.isLoadingDescendants ? (
             <View style={styles.continuationLoadingRow}>
               <ActivityIndicator color={colors.profileMuted} size="small" />
               <Text style={styles.continuationLoadingText}>Loading continuations</Text>
             </View>
           ) : null}
-          {row.showContinuationEntry && onShowContinuations ? (
+          {!selectionMode && row.showContinuationEntry && onShowContinuations ? (
             <ShowContinuationsRow
               continuation={continuation}
               order={order}
@@ -1197,20 +1342,21 @@ function ContinuationPath({
 }) {
   const [nodeLayouts, setNodeLayouts] = useState<Record<string, { y: number; height: number }>>({});
   const pathNodes = useMemo<ContinuationPathRenderNode[]>(() => {
-    const continuationNodes = [...detail.path, detail.current].map((continuation) => ({
+    const continuationNodes = [...detail.path, detail.current].map((continuation, index) => ({
       id: continuation.id,
       author: continuation.author,
       createdAt: continuation.createdAt,
       content: continuation.content,
       metrics: continuation.metrics,
       liked: continuation.viewer.liked,
+      lineNumber: index + 2,
       avatarSize: pathContinuationAvatarSize,
       onOpen: () =>
         router.push({
           pathname: "/thread/continue/[id]",
           params: { id: continuation.id }
         } as unknown as Href),
-      onContinue: () => onContinuationContinue(continuation),
+      onContinue: () => onContinuationContinue({ ...continuation, lineNumber: index + 2 }),
       onLike: () => onContinuationLike(continuation),
       onShare: () => onContinuationShare(continuation)
     }));
@@ -1223,6 +1369,7 @@ function ContinuationPath({
         content: detail.thread.content,
         metrics: detail.thread.metrics,
         liked: detail.thread.viewer.liked,
+        lineNumber: 1,
         avatarSize: pathRootAvatarSize,
         onOpen: () =>
           router.push({
@@ -1317,6 +1464,11 @@ function ContinuationPathNode({
         </Pressable>
       </View>
       <View style={styles.pathNodeBody}>
+        {node.lineNumber !== undefined ? (
+          <View style={styles.pathLineNumberPill}>
+            <Text style={styles.pathLineNumberText}>{node.lineNumber}</Text>
+          </View>
+        ) : null}
         <View style={styles.pathNodeTopLine}>
           <Pressable accessibilityRole="button" onPress={node.onOpen} style={styles.pathAuthorLine}>
             <Text numberOfLines={1} style={styles.pathAuthorName}>{node.author.handle}</Text>
@@ -1410,7 +1562,9 @@ function ThreadActionBar({
   compact = false,
   onLike,
   onContinue,
-  onShare
+  onShare,
+  onSave,
+  saved = false
 }: {
   metrics: PoetryThread["metrics"];
   liked: boolean;
@@ -1419,6 +1573,8 @@ function ThreadActionBar({
   onLike: () => void;
   onContinue: () => void;
   onShare: () => void;
+  onSave?: () => void;
+  saved?: boolean;
 }) {
   const continueButton = (
     <ActionButton
@@ -1448,13 +1604,23 @@ function ThreadActionBar({
       onPress={onShare}
     />
   );
+  const saveButton = onSave ? (
+    <ActionButton
+      key="save"
+      active={saved}
+      count={metrics.saves ?? 0}
+      icon={<SaveIcon filled={saved} activeColor={colors.saved} color={colors.inkSoft} width={17} height={21} />}
+      label={saved ? "Saved" : "Save"}
+      onPress={onSave}
+    />
+  ) : null;
   const buttons = actionOrder === "like-first"
-    ? [likeButton, continueButton, shareButton]
-    : [continueButton, likeButton, shareButton];
+    ? [likeButton, continueButton, shareButton, saveButton]
+    : [continueButton, likeButton, shareButton, saveButton];
 
   return (
     <View style={[styles.actionBar, compact && styles.compactActionBar]}>
-      {buttons}
+      {buttons.filter(Boolean)}
     </View>
   );
 }
@@ -1495,6 +1661,8 @@ function ContinueComposer({
   const targetKey = target ? composerTargetKey(target) : null;
   const targetAuthor = target?.kind === "thread" ? target.thread.author.handle : target?.continuation.author.handle;
   const preview = target?.kind === "thread" ? target.thread.content : target?.continuation.content;
+  const nextLineNumber =
+    target?.kind === "thread" ? 2 : (target?.continuation.lineNumber ?? 1) + 1;
   const trimmedContent = content.trim();
   const createThreadMutation = useMutation({
     mutationFn: () => {
@@ -1601,14 +1769,18 @@ function ContinueComposer({
         style={styles.inlineComposerDismissLayer}
       />
       <Animated.View style={[styles.inlineComposerPanel, { transform: [{ translateY }] }]}>
-        <ComposerContextPreview author={targetAuthor ?? "writer"} text={preview ?? ""} />
+        <ComposerContextPreview
+          author={targetAuthor ?? "writer"}
+          nextLineNumber={nextLineNumber}
+          text={preview ?? ""}
+        />
         <View style={styles.inlineInputRow}>
           <TextInput
             autoFocus
             multiline
             onChangeText={handleChangeText}
             onSubmitEditing={Platform.OS === "web" ? handleSubmit : undefined}
-            placeholder="Write the next line..."
+            placeholder={`Write line ${nextLineNumber}...`}
             placeholderTextColor={colors.profileMuted}
             scrollEnabled
             style={styles.inlineComposerInput}
@@ -1636,11 +1808,20 @@ function ContinueComposer({
   );
 }
 
-function ComposerContextPreview({ author, text }: { author: string; text: string }) {
+function ComposerContextPreview({
+  author,
+  text,
+  nextLineNumber
+}: {
+  author: string;
+  text: string;
+  nextLineNumber: number;
+}) {
   return (
     <View style={styles.composerContext}>
       <Text style={styles.composerContextLabel}>
-        Continuing from <Text style={styles.composerContextAuthor}>@{author}</Text>
+        Writing line {nextLineNumber} after{" "}
+        <Text style={styles.composerContextAuthor}>@{author}</Text>
       </Text>
       <Text numberOfLines={3} style={styles.composerContextText}>{text}</Text>
     </View>
@@ -1762,18 +1943,13 @@ function useContinuationLikeMutation() {
   });
 }
 
-function useShareMutation(onNotice: (notice: ShareNotice) => void) {
+function useThreadSaveMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (target: ThreadShareTarget) => lineSpaceApi.recordThreadShare(target),
-    onSuccess: (result) => {
-      onNotice({
-        id: result.targetId,
-        message: "Share link ready for this creative thread."
-      });
+    mutationFn: lineSpaceApi.setThreadCollection.bind(lineSpaceApi),
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["threads"] });
       void queryClient.invalidateQueries({ queryKey: ["thread-detail"] });
-      void queryClient.invalidateQueries({ queryKey: ["continuation-detail"] });
     }
   });
 }
@@ -1846,6 +2022,7 @@ function buildVisibleContinuationGroups(
     const descendants = isExpanded ? expandedDescendants[root.id] ?? [] : [];
     const rootRow: ContinuationVisibleRow = {
       continuation: root,
+      lineNumber: 2,
       rootGroupId: root.id,
       actualDepth: 0,
       isExpandedDescendant: false,
@@ -1859,6 +2036,7 @@ function buildVisibleContinuationGroups(
     };
     const descendantRows = descendants.map((item, index) => ({
       continuation: item.continuation,
+      lineNumber: item.actualDepth + 2,
       rootGroupId: root.id,
       actualDepth: item.actualDepth,
       isExpandedDescendant: true,
@@ -1873,6 +2051,60 @@ function buildVisibleContinuationGroups(
 
     return { rootRow, descendantRows };
   });
+}
+
+function buildSelectionContinuationGroups(
+  roots: readonly ThreadContinuation[],
+  allContinuations: readonly ThreadContinuation[],
+  order: ContinuationOrder
+) {
+  const childrenByParent = new Map<string, ThreadContinuation[]>();
+  for (const continuation of allContinuations) {
+    if (!continuation.parentContinuationId) continue;
+    const children = childrenByParent.get(continuation.parentContinuationId) ?? [];
+    children.push(continuation);
+    childrenByParent.set(continuation.parentContinuationId, children);
+  }
+  const expanded: Record<string, FlattenedDescendantRow[]> = {};
+  for (const root of roots) {
+    const rows: FlattenedDescendantRow[] = [];
+    const walk = (parent: ThreadContinuation, depth: number) => {
+      for (const child of sortContinuationItems(
+        childrenByParent.get(parent.id) ?? [],
+        order
+      )) {
+        rows.push({ continuation: child, actualDepth: depth });
+        walk(child, depth + 1);
+      }
+    };
+    walk(root, 1);
+    expanded[root.id] = rows;
+  }
+  return buildVisibleContinuationGroups(
+    roots,
+    expanded,
+    new Set(roots.map((root) => root.id)),
+    new Set()
+  );
+}
+
+function getContinuationLineNumber(
+  continuation: ThreadContinuation,
+  allContinuations: readonly ThreadContinuation[]
+) {
+  if (continuation.lineNumber) return continuation.lineNumber;
+  const byId = new Map(allContinuations.map((item) => [item.id, item]));
+  let lineNumber = 2;
+  let parentId = continuation.parentContinuationId;
+  const visited = new Set<string>();
+  while (parentId && !visited.has(parentId)) {
+    visited.add(parentId);
+    const parent = byId.get(parentId);
+    if (!parent) break;
+    lineNumber += 1;
+    parentId = parent.parentContinuationId;
+  }
+  return lineNumber;
 }
 
 function composerTargetKey(target: ComposerTarget) {
@@ -1991,6 +2223,7 @@ function appendExpandedDescendant(
 function createStandaloneContinuationRow(continuation: ThreadContinuation): ContinuationVisibleRow {
   return {
     continuation,
+    lineNumber: continuation.lineNumber ?? 2,
     rootGroupId: continuation.id,
     actualDepth: 0,
     isExpandedDescendant: false,
@@ -2151,6 +2384,10 @@ const styles = StyleSheet.create({
   startingContentOverlay: {
     ...StyleSheet.absoluteFillObject
   },
+  startingContentMedia: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.8
+  },
   mediaAccentOne: {
     position: "absolute",
     right: -28,
@@ -2176,6 +2413,20 @@ const styles = StyleSheet.create({
     lineHeight: 25,
     fontWeight: "600"
   },
+  startingLineNumberPill: {
+    position: "absolute",
+    top: 13,
+    right: 14,
+    zIndex: 2,
+    minWidth: 24,
+    height: 24,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,.55)"
+  },
+  startingLineNumberText: { color: colors.white, fontSize: 11, lineHeight: 14, fontWeight: "700" },
   startingContentTextCompact: {
     fontSize: 16,
     lineHeight: 22,
@@ -2352,6 +2603,17 @@ const styles = StyleSheet.create({
   continuationBody: { flex: 1, minWidth: 0, marginLeft: continuationContentGap },
   level1ContinuationBody: { marginLeft: level1ContentGap },
   continuationTopLine: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  lineNumberPill: {
+    minWidth: 22,
+    height: 22,
+    paddingHorizontal: 5,
+    marginRight: 6,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.ink
+  },
+  lineNumberText: { color: colors.white, fontSize: 11, lineHeight: 14, fontWeight: "700" },
   continuationAuthorLine: {
     flex: 1,
     minWidth: 0,
@@ -2363,6 +2625,27 @@ const styles = StyleSheet.create({
   continuationTime: { flexShrink: 0, marginLeft: 7, fontSize: 14, lineHeight: 19, color: colors.profileMuted },
   continuationOpenArea: { maxWidth: "100%" },
   continuationMoreButton: { width: 36, height: 30, alignItems: "flex-end", justifyContent: "center" },
+  versionSelectCircle: {
+    width: 25,
+    height: 25,
+    borderRadius: 13,
+    borderWidth: 1.5,
+    borderColor: colors.profileMuted,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surface
+  },
+  versionSelectCircleActive: {
+    borderColor: colors.ink,
+    backgroundColor: colors.ink
+  },
+  versionSelectCheck: { color: colors.white, fontSize: 14, lineHeight: 17, fontWeight: "700" },
+  versionSelectionHint: {
+    marginTop: 7,
+    color: colors.profileMuted,
+    fontSize: 11,
+    lineHeight: 15
+  },
   continuationContent: { marginTop: 2, fontSize: 16, lineHeight: 22, color: colors.ink },
   continuationLoadingRow: { minHeight: 32, marginTop: 2, flexDirection: "row", alignItems: "center" },
   continuationLoadingText: { marginLeft: 8, fontSize: 14, lineHeight: 18, color: colors.profileMuted },
@@ -2418,6 +2701,17 @@ const styles = StyleSheet.create({
     zIndex: 2
   },
   pathNodeBody: { flex: 1, minWidth: 0, marginLeft: pathBodyGap },
+  pathLineNumberPill: {
+    alignSelf: "flex-start",
+    minWidth: 24,
+    height: 24,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.ink
+  },
+  pathLineNumberText: { color: colors.white, fontSize: 11, lineHeight: 14, fontWeight: "700" },
   pathNodeTopLine: { minHeight: 21, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   pathAuthorLine: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center" },
   pathAuthorName: { flexShrink: 1, maxWidth: "72%", fontSize: 16, lineHeight: 20, fontWeight: "700", color: colors.ink },
