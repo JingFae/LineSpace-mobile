@@ -37,6 +37,7 @@ import type {
 } from "@linespace/api-client";
 import { mainTabs, tabRoutes, type MainTab } from "@/navigation/tabs";
 import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
+import { useAuth } from "@/auth/AuthSessionProvider";
 
 type InboxView =
   | { kind: "home" }
@@ -165,25 +166,31 @@ const fallbackActivity: Record<InboxActivityKind, InboxActivityPreview[]> = {
 };
 
 export function InboxScreen() {
+  const { user: authUser } = useAuth();
+  const currentUserId = authUser?.id ?? "";
   const [view, setView] = useState<InboxView>({ kind: "home" });
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [settingsGroupId, setSettingsGroupId] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const profileQuery = useQuery({
     queryKey: ["user-profile", currentUserId],
-    queryFn: () => lineSpaceApi.getUserProfile(currentUserId)
+    queryFn: () => lineSpaceApi.getUserProfile(currentUserId),
+    enabled: currentUserId.length > 0
   });
   const summaryQuery = useQuery({
     queryKey: ["inbox-summary", currentUserId],
-    queryFn: () => lineSpaceApi.getInboxActivitySummary(currentUserId)
+    queryFn: () => lineSpaceApi.getInboxActivitySummary(currentUserId),
+    enabled: currentUserId.length > 0
   });
   const groupsQuery = useQuery({
     queryKey: ["inbox-groups", currentUserId],
-    queryFn: () => lineSpaceApi.listInboxGroups(currentUserId)
+    queryFn: () => lineSpaceApi.listInboxGroups(currentUserId),
+    enabled: currentUserId.length > 0
   });
   const invitesQuery = useQuery({
     queryKey: ["inbox-group-invites", currentUserId],
-    queryFn: () => lineSpaceApi.listInboxGroupInvites(currentUserId)
+    queryFn: () => lineSpaceApi.listInboxGroupInvites(currentUserId),
+    enabled: currentUserId.length > 0
   });
 
   const respondInvite = useMutation({

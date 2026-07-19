@@ -4,7 +4,8 @@ import { StyleSheet, Text, View } from "react-native";
 import { AppScreen, BottomNavigation, EmptyState } from "@linespace/ui";
 import { colors, spacing, typography } from "@linespace/tokens";
 import { mainTabs, tabRoutes, type MainTab } from "@/navigation/tabs";
-import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
+import { lineSpaceApi } from "@/services/lineSpaceApi";
+import { useAuth } from "@/auth/AuthSessionProvider";
 
 type PlaceholderScreenProps = {
   activeTab: MainTab;
@@ -13,9 +14,12 @@ type PlaceholderScreenProps = {
 };
 
 export function PlaceholderScreen({ activeTab, title, body }: PlaceholderScreenProps) {
+  const { user: authUser } = useAuth();
+  const currentUserId = authUser?.id ?? "";
   const profileQuery = useQuery({
     queryKey: ["user-profile", currentUserId],
-    queryFn: () => lineSpaceApi.getUserProfile(currentUserId)
+    queryFn: () => lineSpaceApi.getUserProfile(currentUserId),
+    enabled: currentUserId.length > 0
   });
 
   return (

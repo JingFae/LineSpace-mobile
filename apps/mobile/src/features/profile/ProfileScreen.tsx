@@ -36,7 +36,7 @@ import type {
   UserThreadRelation
 } from "@linespace/api-client";
 import { mainTabs, tabRoutes } from "@/navigation/tabs";
-import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
+import { lineSpaceApi } from "@/services/lineSpaceApi";
 import { useAuth } from "@/auth/AuthSessionProvider";
 import { getMediaAspectRatio } from "@/features/poem/poemPresentation";
 
@@ -55,9 +55,11 @@ const contentTabs: Array<{ value: UserProfileContentSection; label: string }> = 
   { value: "comments", label: "Comments" }
 ];
 
-export function ProfileScreen({ userId = currentUserId }: ProfileScreenProps) {
-  const { logout } = useAuth();
-  const isOwner = userId === currentUserId;
+export function ProfileScreen({ userId }: ProfileScreenProps) {
+  const { logout, user: authUser } = useAuth();
+  const currentUserId = authUser?.id ?? "";
+  const profileUserId = userId ?? currentUserId;
+  const isOwner = profileUserId === currentUserId;
   const [section, setSection] = useState<UserProfileContentSection>("posts");
   const [threadRelation, setThreadRelation] = useState<UserThreadRelation>("started");
   const [saveCollection, setSaveCollection] = useState<UserCollectionKind>("liked");
@@ -67,29 +69,31 @@ export function ProfileScreen({ userId = currentUserId }: ProfileScreenProps) {
   const [showSettings, setShowSettings] = useState(false);
 
   const profileQuery = useQuery({
-    queryKey: ["user-profile", userId],
-    queryFn: () => lineSpaceApi.getUserProfile(userId)
+    queryKey: ["user-profile", profileUserId],
+    queryFn: () => lineSpaceApi.getUserProfile(profileUserId),
+    enabled: profileUserId.length > 0
   });
   const contentQuery = useQuery({
-    queryKey: ["user-profile-content", userId, section, threadRelation, saveCollection, saveKind],
+    queryKey: ["user-profile-content", profileUserId, section, threadRelation, saveCollection, saveKind],
     queryFn: () =>
-      lineSpaceApi.listUserProfileContent(userId, section, {
+      lineSpaceApi.listUserProfileContent(profileUserId, section, {
         viewerId: currentUserId,
         threadRelation: section === "threads" ? threadRelation : undefined,
         collection: section === "saves" ? saveCollection : undefined,
         contentKind: section === "saves" ? saveKind : undefined
-      })
+      }),
+    enabled: profileUserId.length > 0
   });
   const draftsQuery = useQuery({
-    queryKey: ["user-drafts", userId],
-    enabled: isOwner,
-    queryFn: () => lineSpaceApi.listUserDrafts(userId)
+    queryKey: ["user-drafts", profileUserId],
+    enabled: isOwner && profileUserId.length > 0,
+    queryFn: () => lineSpaceApi.listUserDrafts(profileUserId)
   });
   const connectionsQuery = useQuery({
-    queryKey: ["user-connections", userId, connectionKind],
-    enabled: connectionKind !== null,
+    queryKey: ["user-connections", profileUserId, connectionKind],
+    enabled: connectionKind !== null && profileUserId.length > 0,
     queryFn: () =>
-      lineSpaceApi.listUserConnections(userId, connectionKind!, {
+      lineSpaceApi.listUserConnections(profileUserId, connectionKind!, {
         limit: 20,
         viewerId: currentUserId
       })

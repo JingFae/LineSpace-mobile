@@ -44,6 +44,7 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
   const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const authClientRef = useRef<HttpAuthClient | null>(null);
+  const sessionUserIdRef = useRef<string | null>(null);
 
   if (!useMocks && !authClientRef.current) {
     const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
@@ -57,9 +58,11 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
     setAccessTokenState(null);
     setUser(null);
     setCurrentUserId(null);
+    sessionUserIdRef.current = null;
     setStatus("unauthenticated");
     await clearStoredRefreshToken();
-  }, []);
+    queryClient.clear();
+  }, [queryClient]);
 
   const applySession = useCallback(async (result: AuthSessionResult) => {
     if (!useMocks) {
@@ -71,10 +74,16 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
         setAccessTokenState(null);
         setUser(null);
         setCurrentUserId(null);
+        sessionUserIdRef.current = null;
         setStatus("unauthenticated");
+        queryClient.clear();
         throw new Error("Authentication is temporarily unavailable.");
       }
     }
+    if (sessionUserIdRef.current !== result.user.id) {
+      queryClient.clear();
+    }
+    sessionUserIdRef.current = result.user.id;
     setAccessToken(result.session.accessToken);
     setAccessTokenState(result.session.accessToken);
     setUser(result.user);
@@ -90,7 +99,7 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
         void refreshAccessToken();
       }, refreshInMs);
     }
-  }, []);
+  }, [queryClient]);
 
   const refreshSession = useCallback(async () => {
     if (refreshPromiseRef.current) return refreshPromiseRef.current;
@@ -197,9 +206,8 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
       // Local cleanup is mandatory even if the server is unavailable.
     } finally {
       await clearSession();
-      queryClient.clear();
     }
-  }, [clearSession, queryClient]);
+  }, [clearSession]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

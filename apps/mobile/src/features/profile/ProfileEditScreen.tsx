@@ -29,7 +29,8 @@ import type {
   UserProfileDetails,
   UserProfileVisibility
 } from "@linespace/api-client";
-import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
+import { lineSpaceApi } from "@/services/lineSpaceApi";
+import { useAuth } from "@/auth/AuthSessionProvider";
 
 declare const require: (path: string) => ImageSourcePropType;
 
@@ -40,6 +41,8 @@ type EditableField = "displayName" | "bio";
 
 export function ProfileEditScreen() {
   const queryClient = useQueryClient();
+  const { user: authUser } = useAuth();
+  const currentUserId = authUser?.id ?? "";
   const [activeField, setActiveField] = useState<EditableField | null>(null);
   const [draftValue, setDraftValue] = useState("");
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -49,7 +52,8 @@ export function ProfileEditScreen() {
 
   const profileQuery = useQuery({
     queryKey: ["user-profile", currentUserId],
-    queryFn: () => lineSpaceApi.getUserProfile(currentUserId)
+    queryFn: () => lineSpaceApi.getUserProfile(currentUserId),
+    enabled: currentUserId.length > 0
   });
 
   const updateProfileMutation = useMutation({

@@ -3,12 +3,16 @@ import { useQuery } from "@tanstack/react-query";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { AppScreen, EmptyState } from "@linespace/ui";
 import { colors, radius, spacing } from "@linespace/tokens";
-import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
+import { lineSpaceApi } from "@/services/lineSpaceApi";
+import { useAuth } from "@/auth/AuthSessionProvider";
 
 export function ProfileDraftsScreen() {
+  const { user: authUser } = useAuth();
+  const currentUserId = authUser?.id ?? "";
   const draftsQuery = useQuery({
     queryKey: ["user-drafts", currentUserId],
-    queryFn: () => lineSpaceApi.listUserDrafts(currentUserId)
+    queryFn: () => lineSpaceApi.listUserDrafts(currentUserId),
+    enabled: currentUserId.length > 0
   });
   return (
     <AppScreen contentContainerStyle={styles.screen} padded={false} scroll={false} style={styles.safeArea}>

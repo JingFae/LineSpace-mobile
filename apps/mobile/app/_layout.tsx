@@ -51,8 +51,15 @@ function RouteGuard({ children }: { children: ReactNode }) {
     }
   }, [isPublicRoute, rootNavigationState?.key, router, status]);
 
+  // Do not mount protected route screens until session restoration has
+  // finished. Those screens perform identity-scoped queries during mount; if
+  // they mount while the access token and business user ID are still empty,
+  // they can retain a stale Mock/previous-user query until the next reload.
+  if (status === "loading") {
+    return <AuthLoadingScreen />;
+  }
+
   const shouldHoldRoute =
-    status === "loading" ||
     (status === "unauthenticated" && !isPublicRoute) ||
     (status === "authenticated" && isPublicRoute);
 

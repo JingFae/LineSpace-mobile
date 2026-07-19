@@ -195,3 +195,26 @@ Mailpit:       http://127.0.0.1:55424
 
 The LineSpace API should use `SUPABASE_URL=http://127.0.0.1:55421` when
 running against the local stack. These port changes are local-only.
+
+## Real Web identity mode
+
+Mock data is now enabled only when `EXPO_PUBLIC_USE_MOCKS=true` is set
+explicitly. A missing `EXPO_PUBLIC_API_BASE_URL` no longer falls back to the
+fixed `user-lili` identity; the Web build fails with a configuration error so
+an incomplete production deployment cannot look like a successful login.
+
+For separate Vercel projects, configure the Web project with public build
+variables only:
+
+```env
+EXPO_PUBLIC_USE_MOCKS=false
+EXPO_PUBLIC_API_BASE_URL=https://<api-project-domain>/api
+```
+
+Configure `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`,
+`SUPABASE_SERVICE_ROLE_KEY`, and `AUTH_EMAIL_REDIRECT_URL` only on the API
+project. After changing either `EXPO_PUBLIC_*` value, rebuild the Web project;
+Expo embeds these values at build time. The authenticated business user ID
+comes from `/v1/auth/login`, `/v1/auth/refresh`, or `/v1/auth/me` and is then
+used for profile queries. `EXPO_PUBLIC_CURRENT_USER_ID` is read only in
+explicit Mock mode.

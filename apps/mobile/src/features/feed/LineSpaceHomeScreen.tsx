@@ -17,7 +17,8 @@ import {
 } from "@linespace/ui";
 import { colors, spacing } from "@linespace/tokens";
 import type { FeedSection, PoemSummary } from "@linespace/api-client";
-import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
+import { lineSpaceApi } from "@/services/lineSpaceApi";
+import { useAuth } from "@/auth/AuthSessionProvider";
 import { mainTabs, tabRoutes } from "@/navigation/tabs";
 import { usePoemEngagement } from "@/features/poem/usePoemEngagement";
 import { getPoemLayoutPresentation } from "@/features/poem/poemPresentation";
@@ -33,16 +34,20 @@ const sectionTabs: Array<{ value: FeedSection; label: string }> = [
 ];
 
 export function LineSpaceHomeScreen() {
+  const { user: authUser } = useAuth();
+  const currentUserId = authUser?.id ?? "";
   const [section, setSection] = useState<FeedSection>("latest");
   const engagement = usePoemEngagement();
   const profileQuery = useQuery({
     queryKey: ["user-profile", currentUserId],
-    queryFn: () => lineSpaceApi.getUserProfile(currentUserId)
+    queryFn: () => lineSpaceApi.getUserProfile(currentUserId),
+    enabled: currentUserId.length > 0
   });
 
   const feedQuery = useQuery({
     queryKey: ["feed", section, currentUserId],
-    queryFn: () => lineSpaceApi.listFeed({ section, viewerId: currentUserId })
+    queryFn: () => lineSpaceApi.listFeed({ section, viewerId: currentUserId }),
+    enabled: currentUserId.length > 0
   });
 
   const poems = useMemo(
