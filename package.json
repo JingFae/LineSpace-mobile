@@ -1,6 +1,7 @@
 {
   "name": "linespace",
   "private": true,
+  "type": "module",
   "version": "0.1.0",
   "packageManager": "pnpm@11.7.0",
   "engines": {

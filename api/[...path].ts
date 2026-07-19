@@ -1,4 +1,4 @@
-import { handleApiRequest } from "../apps/api/src/routes";
+let routeModulePromise: Promise<typeof import("../apps/api/src/routes")> | undefined;
 
 const corsHeaders = {
   "access-control-allow-origin": "*",
@@ -33,6 +33,7 @@ export default {
       });
     }
 
+    const { handleApiRequest } = await loadRouteModule();
     const result = await handleApiRequest(
       request.method,
       pathname,
@@ -44,6 +45,11 @@ export default {
     return jsonResponse(result.status, result.body);
   }
 };
+
+function loadRouteModule() {
+  routeModulePromise ??= import("../apps/api/src/routes");
+  return routeModulePromise;
+}
 
 function normalizeRewrittenPath(path: string) {
   const normalized = path

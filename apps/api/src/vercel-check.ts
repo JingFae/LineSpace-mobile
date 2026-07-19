@@ -74,6 +74,26 @@ const config = JSON.parse(
 ) as {
   rewrites?: Array<{ source?: string; destination?: string }>;
 };
+const rootPackage = JSON.parse(
+  await readFile(new URL("../../../package.json", import.meta.url), "utf8")
+) as { type?: string };
+const functionEntry = await readFile(
+  new URL("../../../api/[...path].ts", import.meta.url),
+  "utf8"
+);
+
+assert(
+  rootPackage.type === "module",
+  "The root package must remain ESM so Vercel does not require() the ESM API service."
+);
+assert(
+  functionEntry.includes('import("../apps/api/src/routes")'),
+  "The Vercel Function must load the ESM API route module with dynamic import()."
+);
+assert(
+  !functionEntry.includes('import { handleApiRequest } from "../apps/api/src/routes"'),
+  "The Vercel Function must not statically bridge its runtime to the ESM route module."
+);
 assert(
   config.rewrites?.[0]?.source === "/api/:path*" &&
     config.rewrites[0].destination === "/api?__linespace_api_path=:path*",
@@ -85,5 +105,5 @@ assert(
 );
 
 process.stdout.write(
-  "Vercel routing check passed: /api is handled before the Expo SPA fallback.\n"
+  "Vercel check passed: the ESM Function handles /api before the Expo SPA fallback.\n"
 );

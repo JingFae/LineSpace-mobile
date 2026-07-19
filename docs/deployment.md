@@ -171,3 +171,12 @@ the readiness endpoint returns `503` with `authConfigured:false`, verify
 `SUPABASE_URL`, the Publishable/Anon key, and `SUPABASE_SERVICE_ROLE_KEY` in
 the API Vercel project, then redeploy that project. Email confirmation is not
 involved until the registration endpoint has successfully reached Supabase.
+
+### Vercel Node ESM boundary
+
+The root `api/` Function and `apps/api` service are both ES modules. Keep
+`"type": "module"` in the repository root `package.json`; otherwise Vercel can
+compile the root Function as CommonJS and crash before routing with
+`ERR_REQUIRE_ESM`. The Function also loads `apps/api/src/routes` through a
+cached dynamic `import()` so the runtime never crosses this boundary with
+`require()`.
