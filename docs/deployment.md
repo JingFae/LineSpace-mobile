@@ -137,3 +137,37 @@ Production should use a separate linked project. Never run
 If a project already has schema changes applied manually, reconcile the remote
 schema and `supabase_migrations.schema_migrations` first with
 `supabase db pull` or a deliberately reviewed `supabase migration repair`.
+
+## Separate Vercel Web and API projects
+
+Both Vercel projects must keep the repository root as their Root Directory so
+the pnpm workspace and the root `api/` Function entry are available. The
+checked-in routing order is intentional:
+
+1. `/api/:path*` rewrites to the stable `/api` Vercel Function and passes the
+   remaining path through an internal query parameter.
+2. Only non-API paths fall back to the Expo Web `index.html`.
+
+The Web project should build with:
+
+```env
+EXPO_PUBLIC_USE_MOCKS=false
+EXPO_PUBLIC_API_BASE_URL=https://line-space-mobile-api.vercel.app/api
+```
+
+The API project must define the server-only Supabase variables. After each API
+deployment, verify routing and configuration before testing registration:
+
+```text
+GET https://line-space-mobile-api.vercel.app/api/health
+200 {"ok":true,"service":"linespace-api"}
+
+GET https://line-space-mobile-api.vercel.app/api/health/ready
+200 {"ok":true,"service":"linespace-api","authConfigured":true}
+```
+
+If either URL returns Expo HTML, the API rewrite/Function was not deployed. If
+the readiness endpoint returns `503` with `authConfigured:false`, verify
+`SUPABASE_URL`, the Publishable/Anon key, and `SUPABASE_SERVICE_ROLE_KEY` in
+the API Vercel project, then redeploy that project. Email confirmation is not
+involved until the registration endpoint has successfully reached Supabase.

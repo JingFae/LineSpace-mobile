@@ -58,6 +58,19 @@ export async function handleApiRequest(
     return json(200, { ok: true, service: "linespace-api" });
   }
 
+  if (method === "GET" && pathname === "/health/ready") {
+    const authConfigured = Boolean(
+      process.env.SUPABASE_URL &&
+        (process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY) &&
+        process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+    return json(authConfigured ? 200 : 503, {
+      ok: authConfigured,
+      service: "linespace-api",
+      authConfigured
+    });
+  }
+
   const authRoute = await handleAuthRoute(method, pathname, body, context);
   if (authRoute) return authRoute;
   const api: import("@linespace/api-client").LineSpaceApi =

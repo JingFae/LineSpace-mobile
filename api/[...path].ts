@@ -2,7 +2,7 @@ import { handleApiRequest } from "../apps/api/src/routes";
 
 const corsHeaders = {
   "access-control-allow-origin": "*",
-  "access-control-allow-methods": "GET,POST,PUT,OPTIONS",
+  "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
   "access-control-allow-headers": "authorization,content-type"
 };
 
@@ -17,7 +17,11 @@ export default {
     }
 
     const url = new URL(request.url);
-    const pathname = url.pathname.replace(/^\/api(?=\/|$)/, "") || "/";
+    const rewrittenPath = url.searchParams.get("__linespace_api_path");
+    url.searchParams.delete("__linespace_api_path");
+    const pathname = rewrittenPath !== null
+      ? normalizeRewrittenPath(rewrittenPath)
+      : url.pathname.replace(/^\/api(?=\/|$)/, "") || "/";
 
     let body: unknown;
     try {
@@ -40,6 +44,14 @@ export default {
     return jsonResponse(result.status, result.body);
   }
 };
+
+function normalizeRewrittenPath(path: string) {
+  const normalized = path
+    .split("/")
+    .filter(Boolean)
+    .join("/");
+  return normalized ? `/${normalized}` : "/";
+}
 
 async function readJsonBody(request: Request): Promise<unknown> {
   if (request.method !== "POST" && request.method !== "PUT") return undefined;

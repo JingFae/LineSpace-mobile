@@ -61,7 +61,7 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
 function corsHeaders() {
   return {
     "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET,POST,PUT,OPTIONS",
+    "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
     "access-control-allow-headers": "authorization,content-type"
   };
 }
