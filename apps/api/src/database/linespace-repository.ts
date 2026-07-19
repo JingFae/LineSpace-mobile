@@ -21,12 +21,16 @@ import type {
   PublishPoemDraftResult,
   PublishThreadDraftInput,
   PublishThreadDraftResult,
+  PublishThreadVersionAsPostInput,
+  PublishThreadVersionAsPostResult,
   RespondInboxGroupInviteInput,
   SavePoemDraftInput,
   SendInboxMessageInput,
   SharePoemInput,
   SharePoemResult,
+  SharePoemToGroupInput,
   ShareThreadInput,
+  ShareThreadToGroupInput,
   ThreadContinuation,
   ThreadDetail,
   ThreadFeedQuery,
@@ -117,6 +121,19 @@ export class SupabaseLineSpaceApi implements LineSpaceApi {
 
   publishThreadDraft(input: PublishThreadDraftInput): Promise<PublishThreadDraftResult> {
     return this.drafts.publishThreadDraft(input);
+  }
+
+  async publishThreadVersionAsPost(
+    input: PublishThreadVersionAsPostInput
+  ): Promise<PublishThreadVersionAsPostResult> {
+    const postId = await this.threads.publishVersionAsPost(input);
+    const poem = await this.posts.getPoem(postId);
+    if (!poem) throw new Error("published Thread version Post was not found");
+    return {
+      threadId: input.threadId,
+      versionId: input.versionId,
+      poem
+    };
   }
 
   savePoemDraft(input: SavePoemDraftInput) {
@@ -284,6 +301,10 @@ export class SupabaseLineSpaceApi implements LineSpaceApi {
     return this.threads.shareThread(input);
   }
 
+  shareThreadToGroup(input: ShareThreadToGroupInput) {
+    return this.inbox.shareThreadToGroup(input);
+  }
+
   async requestAiAssist(_request: AiAssistRequest): Promise<AiAssistResponse> {
     throw new Error("AI service is handled by the API route");
   }
@@ -302,6 +323,10 @@ export class SupabaseLineSpaceApi implements LineSpaceApi {
 
   sharePoem(input: SharePoemInput): Promise<SharePoemResult> {
     return this.posts.sharePoem(input);
+  }
+
+  sharePoemToGroup(input: SharePoemToGroupInput) {
+    return this.inbox.sharePoemToGroup(input);
   }
 
   listInboxMessages(userId: string, contactId: string) {

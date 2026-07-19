@@ -26,8 +26,11 @@ import type {
   PublishPoemDraftResult,
   PublishThreadDraftInput,
   PublishThreadDraftResult,
+  PublishThreadVersionAsPostInput,
+  PublishThreadVersionAsPostResult,
   SharePoemInput,
   SharePoemResult,
+  SharePoemToGroupInput,
   SendInboxMessageInput,
   StorageUploadTarget,
   SavePoemDraftInput,
@@ -37,6 +40,7 @@ import type {
   ThreadShareResult,
   ThreadShareTarget,
   ShareThreadInput,
+  ShareThreadToGroupInput,
   UpdateThreadCollectionInput,
   UpdatePoemDraftInput,
   UpdateInboxGroupInput,
@@ -146,6 +150,15 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     );
   }
 
+  async publishThreadVersionAsPost(
+    input: PublishThreadVersionAsPostInput
+  ): Promise<PublishThreadVersionAsPostResult> {
+    return this.postJson<PublishThreadVersionAsPostResult>(
+      `/v1/threads/${encodeURIComponent(input.threadId)}/versions/${encodeURIComponent(input.versionId)}/publish`,
+      {}
+    );
+  }
+
   async savePoemDraft(input: SavePoemDraftInput): Promise<PoemDraft> {
     const { draftId, ...request } = input;
     return this.postJson<PoemDraft>(
@@ -217,6 +230,15 @@ export class HttpLineSpaceApi implements LineSpaceApi {
   async sharePoem(input: SharePoemInput): Promise<SharePoemResult> {
     const { poemId, ...request } = input;
     return this.postJson<SharePoemResult>(`/v1/poems/${encodeURIComponent(poemId)}/share`, request);
+  }
+
+  async sharePoemToGroup(
+    input: SharePoemToGroupInput
+  ): Promise<InboxConversationMessage> {
+    return this.postJson<InboxConversationMessage>(
+      `/v1/inbox/groups/${encodeURIComponent(input.groupId)}/share/post`,
+      { postId: input.poemId, note: input.note }
+    );
   }
 
   async listInboxMessages(userId: string, contactId: string): Promise<InboxConversationMessage[]> {
@@ -472,6 +494,20 @@ export class HttpLineSpaceApi implements LineSpaceApi {
       recipientIds: input.recipientIds,
       note: input.note
     });
+  }
+
+  async shareThreadToGroup(
+    input: ShareThreadToGroupInput
+  ): Promise<InboxConversationMessage> {
+    return this.postJson<InboxConversationMessage>(
+      `/v1/inbox/groups/${encodeURIComponent(input.groupId)}/share/thread`,
+      {
+        kind: input.kind,
+        threadId: input.threadId,
+        continuationId: input.continuationId,
+        note: input.note
+      }
+    );
   }
 
   async requestAiAssist(request: AiAssistRequest): Promise<AiAssistResponse> {

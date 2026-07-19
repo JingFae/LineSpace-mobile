@@ -5,6 +5,8 @@ import type {
   InviteInboxGroupMembersInput,
   RespondInboxGroupInviteInput,
   SendInboxMessageInput,
+  SharePoemToGroupInput,
+  ShareThreadToGroupInput,
   UserProfile
 } from "@linespace/api-client";
 import type { DatabaseClient } from "./repository-support";
@@ -109,6 +111,33 @@ export class InboxRepository {
     const message = rows[0];
     if (!message) throw new Error("message was not created");
     return message;
+  }
+
+  async sharePoemToGroup(
+    input: SharePoemToGroupInput
+  ): Promise<InboxConversationMessage> {
+    await this.assertActor(input.senderId);
+    const result = await this.client.rpc("share_post_to_inbox_group", {
+      p_group_id: input.groupId,
+      p_post_id: input.poemId,
+      p_note: input.note ?? null
+    });
+    ensureDatabaseResult(result.error);
+    return this.mapGroupMessage(result.data as GroupMessageRow);
+  }
+
+  async shareThreadToGroup(
+    input: ShareThreadToGroupInput
+  ): Promise<InboxConversationMessage> {
+    await this.assertActor(input.senderId);
+    const result = await this.client.rpc("share_thread_to_inbox_group", {
+      p_group_id: input.groupId,
+      p_thread_id: input.threadId,
+      p_continuation_id: input.continuationId ?? null,
+      p_note: input.note ?? null
+    });
+    ensureDatabaseResult(result.error);
+    return this.mapGroupMessage(result.data as GroupMessageRow);
   }
 
   async listInboxGroups(userId: string): Promise<InboxGroup[]> {
@@ -223,15 +252,11 @@ export class InboxRepository {
     await this.assertActor(userId);
     const result = await this.client
       .from("inbox_group_messages")
-      .select("id,group_id,sender_user_id,kind,text_body,post_id,created_at")
+      .select("id,group_id,sender_user_id,kind,text_body,post_id,thread_id,continuation_id,excerpt,line_number,created_at")
       .eq("group_id", groupId)
       .order("created_at", { ascending: true });
     ensureDatabaseResult(result.error);
-    return Promise.all(
-      ((result.data as GroupMessageRow[] | null) ?? []).map((row) =>
-        this.mapGroupMessage(row)
-      )
-    );
+    return this.mapGroupMessages((result.data as GroupMessageRow[] | null) ?? []);
   }
 
   private async mapMessages(rows: MessageRow[]): Promise<InboxConversationMessage[]> {
@@ -339,15 +364,110 @@ export class InboxRepository {
   }
 
   private async mapGroupMessage(row: GroupMessageRow): Promise<InboxConversationMessage> {
-    const profiles = await loadProfiles(this.client, [row.sender_user_id]);
-    return {
+    const messages = await this.mapGroupMessages([row]);
+    const message = messages[0];
+    if (!message) throw new Error("group message was not found");
+    return message;
+  }
+
+  private async mapGroupMessages(
+    rows: GroupMessageRow[]
+  ): Promise<InboxConversationMessage[]> {
+    if (rows.length === 0) return [];
+    const postIds = rows.flatMap((row) => (row.post_id ? [row.post_id] : []));
+    const threadIds = rows.flatMap((row) => (row.thread_id ? [row.thread_id] : []));
+    const [profiles, postsResult, threadsResult] = await Promise.all([
+      loadProfiles(this.client, rows.map((row) => row.sender_user_id)),
+      postIds.length
+        ? this.client
+            .from("posts")
+            .select("id,title,body,tags,artwork_url,author_user_id")
+            .in("id", [...new Set(postIds)])
+        : Promise.resolve({ data: [], error: null }),
+      threadIds.length
+        ? this.client
+            .from("poetry_threads")
+            .select("id,title,starting_content,author_user_id,media")
+            .in("id", [...new Set(threadIds)])
+        : Promise.resolve({ data: [], error: null })
+    ]);
+    ensureDatabaseResult(postsResult.error);
+    ensureDatabaseResult(threadsResult.error);
+    const postRows = (postsResult.data as Array<{
+      id: string;
+      title: string;
+      body: string;
+      tags: string[] | null;
+      artwork_url: string | null;
+      author_user_id: string;
+    }> | null) ?? [];
+    const threadRows = (threadsResult.data as Array<{
+      id: string;
+      title: string | null;
+      starting_content: string;
+      author_user_id: string;
+      media: { uri?: string } | null;
+    }> | null) ?? [];
+    const contentProfiles = await loadProfiles(this.client, [
+      ...postRows.map((row) => row.author_user_id),
+      ...threadRows.map((row) => row.author_user_id)
+    ]);
+    const posts = new Map(
+      postRows.map((row) => [
+        row.id,
+        {
+          id: row.id,
+          title: row.title,
+          excerpt: row.body.slice(0, 160),
+          tags: row.tags ?? [],
+          author:
+            contentProfiles.get(row.author_user_id) ??
+            unknownProfile(row.author_user_id),
+          ...(row.artwork_url ? { artworkUrl: row.artwork_url } : {})
+        }
+      ])
+    );
+    const threads = new Map(
+      threadRows.map((row) => [
+        row.id,
+        {
+          title: row.title ?? "Shared thread",
+          excerpt: row.starting_content.slice(0, 160),
+          author:
+            contentProfiles.get(row.author_user_id) ??
+            unknownProfile(row.author_user_id),
+          ...(typeof row.media?.uri === "string" ? { artworkUrl: row.media.uri } : {})
+        }
+      ])
+    );
+    return rows.map((row) => ({
       id: row.id,
       groupId: row.group_id,
       sender: profiles.get(row.sender_user_id) ?? unknownProfile(row.sender_user_id),
       createdAt: row.created_at,
       kind: row.kind,
-      ...(row.text_body ? { text: row.text_body } : {})
-    };
+      ...(row.text_body ? { text: row.text_body } : {}),
+      ...(row.post_id && posts.get(row.post_id)
+        ? { sharedPost: posts.get(row.post_id) }
+        : {}),
+      ...(row.thread_id && threads.get(row.thread_id)
+        ? {
+            sharedThread: {
+              threadId: row.thread_id,
+              ...(row.continuation_id
+                ? { continuationId: row.continuation_id }
+                : {}),
+              title: threads.get(row.thread_id)!.title,
+              excerpt: row.excerpt ?? threads.get(row.thread_id)!.excerpt,
+              ...(row.line_number ? { lineNumber: row.line_number } : {}),
+              author: threads.get(row.thread_id)!.author,
+              ...(threads.get(row.thread_id)!.artworkUrl
+                ? { artworkUrl: threads.get(row.thread_id)!.artworkUrl }
+                : {})
+            }
+          }
+        : {})
+    }));
   }
 
   private async mapGroup(group: GroupRow): Promise<InboxGroup> {
@@ -368,7 +488,7 @@ export class InboxRepository {
     ]);
     const lastMessageResult = await this.client
       .from("inbox_group_messages")
-      .select("id,group_id,sender_user_id,kind,text_body,post_id,created_at")
+      .select("id,group_id,sender_user_id,kind,text_body,post_id,thread_id,continuation_id,excerpt,line_number,created_at")
       .eq("group_id", group.id)
       .order("created_at", { ascending: false })
       .limit(1);
@@ -410,9 +530,13 @@ type GroupMessageRow = {
   id: string;
   group_id: string;
   sender_user_id: string;
-  kind: "text" | "shared-post";
+  kind: "text" | "shared-post" | "shared-thread" | "shared-continuation";
   text_body: string | null;
   post_id: string | null;
+  thread_id: string | null;
+  continuation_id: string | null;
+  excerpt: string | null;
+  line_number: number | null;
   created_at: string;
 };
 
@@ -424,4 +548,3 @@ function unknownProfile(id: string): UserProfile {
     avatarColor: "#DCD8D3"
   };
 }
-

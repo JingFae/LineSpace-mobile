@@ -29,6 +29,10 @@ const contentMigration = await readFile(
   new URL("20260719000300_content_draft_inbox_persistence.sql", canonicalMigrationsUrl),
   "utf8"
 );
+const groupSharingMigration = await readFile(
+  new URL("20260719000400_group_content_sharing.sql", canonicalMigrationsUrl),
+  "utf8"
+);
 const profileRepository = await readFile(
   new URL("./profile-repository.ts", import.meta.url),
   "utf8"
@@ -126,6 +130,28 @@ assert(
   ) &&
     !/grant\s+update\s*\([^)]*\bpublished_post_id\b/i.test(contentMigration),
   "Draft clients must not forge publication references."
+);
+
+for (const required of [
+  /create\s+or\s+replace\s+function\s+public\.share_post_to_inbox_group/i,
+  /create\s+or\s+replace\s+function\s+public\.share_thread_to_inbox_group/i,
+  /create\s+or\s+replace\s+function\s+public\.publish_thread_version_as_post/i,
+  /create\s+table\s+if\s+not\s+exists\s+public\.post_group_shares/i,
+  /create\s+table\s+if\s+not\s+exists\s+public\.thread_group_shares/i,
+  /inbox_group_messages_content_check/i,
+  /current_user_is_active_inbox_group_member\(p_group_id\)/i,
+  /revoke\s+all\s+on\s+public\.post_group_shares,\s*public\.thread_group_shares/i,
+  /cardinality\(coalesce\(p_recipient_user_ids,\s*'\{\}'\)\)\s+not\s+between\s+1\s+and\s+50/i
+] as const) {
+  assert(
+    required.test(groupSharingMigration),
+    `Group content-sharing migration is missing ${required}.`
+  );
+}
+assert(
+  /orphan post_id values exist/i.test(groupSharingMigration) &&
+    /will not rewrite message history/i.test(groupSharingMigration),
+  "Group sharing migration must fail with repair guidance instead of rewriting historical messages."
 );
 
 for (const [label, sql] of [

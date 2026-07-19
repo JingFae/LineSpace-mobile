@@ -115,8 +115,9 @@ Redirect URL，并在隔离数据库中执行迁移幂等性与 RLS 测试。当
 ## Canonical database deployment
 
 For the current browser/cloud phase, deploy the complete canonical chain in
-`supabase/migrations/`, including the Post/Comment, Draft, Inbox, Thread-share
-and Storage contracts. The SQL under
+`supabase/migrations/`, including the Post/Comment, Draft, Inbox, direct/group
+Thread/Post sharing, click-target metadata, Thread Version publication, and
+Storage contracts. The SQL under
 `apps/api/src/database/deferred-migrations/` is historical reference material,
 is not part of the cloud push, and must not be copied into the migration
 directory:

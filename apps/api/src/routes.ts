@@ -74,6 +74,33 @@ export async function handleApiRequest(
     );
   }
 
+  const threadVersionPublishRoute = parseThreadVersionPublishRoute(pathname);
+  if (threadVersionPublishRoute && method === "POST") {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
+    try {
+      return json(
+        201,
+        await api.publishThreadVersionAsPost({
+          threadId: threadVersionPublishRoute.threadId,
+          versionId: threadVersionPublishRoute.versionId,
+          userId: actor.user.id
+        })
+      );
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes("Only the Thread author")
+      ) {
+        return json(403, {
+          code: "FORBIDDEN",
+          message: "Only the Thread author can publish this version."
+        });
+      }
+      return profileRepositoryErrorResponse(error);
+    }
+  }
+
   const threadRoute = parseThreadRoute(pathname);
   if (threadRoute) {
     try {
@@ -154,7 +181,11 @@ export async function handleApiRequest(
         const request = body as { recipientIds?: unknown; note?: unknown } | undefined;
         if (
           !Array.isArray(request?.recipientIds) ||
-          request.recipientIds.some((id) => typeof id !== "string")
+          request.recipientIds.length < 1 ||
+          request.recipientIds.length > 50 ||
+          request.recipientIds.some((id) => typeof id !== "string") ||
+          (request.note !== undefined &&
+            (typeof request.note !== "string" || request.note.length > 2000))
         ) {
           return json(400, { code: "INVALID_THREAD_SHARE_RECIPIENTS" });
         }
@@ -240,7 +271,11 @@ export async function handleApiRequest(
         const request = body as { recipientIds?: unknown; note?: unknown } | undefined;
         if (
           !Array.isArray(request?.recipientIds) ||
-          request.recipientIds.some((id) => typeof id !== "string")
+          request.recipientIds.length < 1 ||
+          request.recipientIds.length > 50 ||
+          request.recipientIds.some((id) => typeof id !== "string") ||
+          (request.note !== undefined &&
+            (typeof request.note !== "string" || request.note.length > 2000))
         ) {
           return json(400, { code: "INVALID_CONTINUATION_SHARE_RECIPIENTS" });
         }
@@ -499,7 +534,14 @@ export async function handleApiRequest(
         const actor = await authenticateRequest(context);
         if (!actor.ok) return actor.response;
         const request = body as { recipientIds?: unknown; note?: unknown };
-        if (!Array.isArray(request?.recipientIds) || !request.recipientIds.every((id) => typeof id === "string")) return json(400, { code: "INVALID_SHARE_RECIPIENTS" });
+        if (
+          !Array.isArray(request?.recipientIds) ||
+          request.recipientIds.length < 1 ||
+          request.recipientIds.length > 50 ||
+          !request.recipientIds.every((id) => typeof id === "string") ||
+          (request.note !== undefined &&
+            (typeof request.note !== "string" || request.note.length > 2000))
+        ) return json(400, { code: "INVALID_SHARE_RECIPIENTS" });
         return json(201, await api.sharePoem({ poemId: poemRoute.poemId, senderId: actor.user.id, recipientIds: request.recipientIds, note: typeof request.note === "string" ? request.note : undefined }));
       }
       if (method === "PUT" && poemRoute.resource === "comment-collection") {
@@ -533,7 +575,8 @@ export async function handleApiRequest(
     if (
       typeof request?.recipientId !== "string" ||
       typeof request.text !== "string" ||
-      !request.text.trim()
+      !request.text.trim() ||
+      request.text.length > 5000
     ) {
       return json(400, { code: "INVALID_MESSAGE" });
     }
@@ -621,7 +664,11 @@ export async function handleApiRequest(
         }
         if (method === "POST") {
           const request = body as { text?: unknown } | undefined;
-          if (typeof request?.text !== "string" || !request.text.trim()) {
+          if (
+            typeof request?.text !== "string" ||
+            !request.text.trim() ||
+            request.text.length > 5000
+          ) {
             return json(400, { code: "INVALID_MESSAGE" });
           }
           return json(
@@ -633,6 +680,59 @@ export async function handleApiRequest(
             })
           );
         }
+      }
+      if (inboxGroupRoute.resource === "post-share" && method === "POST") {
+        const request = body as { postId?: unknown; note?: unknown } | undefined;
+        if (
+          typeof request?.postId !== "string" ||
+          !request.postId.trim() ||
+          (request.note !== undefined &&
+            (typeof request.note !== "string" || request.note.length > 2000))
+        ) {
+          return json(400, { code: "INVALID_GROUP_POST_SHARE" });
+        }
+        return json(
+          201,
+          await api.sharePoemToGroup({
+            poemId: request.postId,
+            senderId: actor.user.id,
+            groupId: inboxGroupRoute.groupId,
+            ...(typeof request.note === "string" ? { note: request.note } : {})
+          })
+        );
+      }
+      if (inboxGroupRoute.resource === "thread-share" && method === "POST") {
+        const request = body as {
+          kind?: unknown;
+          threadId?: unknown;
+          continuationId?: unknown;
+          note?: unknown;
+        } | undefined;
+        if (
+          (request?.kind !== "thread" && request?.kind !== "continuation") ||
+          typeof request.threadId !== "string" ||
+          !request.threadId.trim() ||
+          (request.kind === "continuation" &&
+            (typeof request.continuationId !== "string" ||
+              !request.continuationId.trim())) ||
+          (request.note !== undefined &&
+            (typeof request.note !== "string" || request.note.length > 2000))
+        ) {
+          return json(400, { code: "INVALID_GROUP_THREAD_SHARE" });
+        }
+        return json(
+          201,
+          await api.shareThreadToGroup({
+            kind: request.kind,
+            threadId: request.threadId,
+            ...(typeof request.continuationId === "string"
+              ? { continuationId: request.continuationId }
+              : {}),
+            senderId: actor.user.id,
+            groupId: inboxGroupRoute.groupId,
+            ...(typeof request.note === "string" ? { note: request.note } : {})
+          })
+        );
       }
       if (inboxGroupRoute.resource === "invitations" && method === "POST") {
         const request = body as { inviteeIds?: unknown } | undefined;
@@ -651,7 +751,10 @@ export async function handleApiRequest(
           })
         );
       }
-      if (inboxGroupRoute.resource === "invite-response" && method === "PUT") {
+      if (
+        inboxGroupRoute.resource === "invite-response" &&
+        (method === "POST" || method === "PUT")
+      ) {
         const request = body as { accept?: unknown } | undefined;
         if (typeof request?.accept !== "boolean") {
           return json(400, { code: "INVALID_INVITE_RESPONSE" });
@@ -951,6 +1054,21 @@ type ParsedThreadRoute = {
   resource: "thread" | "continuations" | "like" | "save" | "share" | "share-recipients";
 };
 
+function parseThreadVersionPublishRoute(
+  pathname: string
+): { threadId: string; versionId: string } | null {
+  const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  return segments.length === 6 &&
+    segments[0] === "v1" &&
+    segments[1] === "threads" &&
+    segments[2] &&
+    segments[3] === "versions" &&
+    segments[4] &&
+    segments[5] === "publish"
+    ? { threadId: segments[2], versionId: segments[4] }
+    : null;
+}
+
 function parseThreadRoute(pathname: string): ParsedThreadRoute | null {
   const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
   if (segments[0] !== "v1" || segments[1] !== "threads" || !segments[2]) {
@@ -1104,7 +1222,13 @@ function parseInboxMessagesRoute(pathname: string): string | null {
 
 type ParsedInboxGroupRoute = {
   groupId: string;
-  resource: "group" | "messages" | "invitations" | "invite-response";
+  resource:
+    | "group"
+    | "messages"
+    | "invitations"
+    | "invite-response"
+    | "post-share"
+    | "thread-share";
 };
 
 function parseInboxGroupRoute(pathname: string): ParsedInboxGroupRoute | null {
@@ -1132,6 +1256,16 @@ function parseInboxGroupRoute(pathname: string): ParsedInboxGroupRoute | null {
     segments[5] === "respond"
   ) {
     return { groupId: segments[3], resource: "invite-response" };
+  }
+  if (
+    segments.length === 6 &&
+    segments[4] === "share" &&
+    (segments[5] === "post" || segments[5] === "thread")
+  ) {
+    return {
+      groupId: segments[3],
+      resource: segments[5] === "post" ? "post-share" : "thread-share"
+    };
   }
   return null;
 }

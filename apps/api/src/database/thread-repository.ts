@@ -32,6 +32,7 @@ type ThreadRow = {
   media: unknown;
   visibility: "public" | "include" | "exclude";
   status: "open" | "complete";
+  shares_count: number;
   created_at: string;
   updated_at: string;
 };
@@ -43,14 +44,15 @@ type ContinuationRow = {
   line_number: number;
   content: string;
   author_user_id: string;
+  shares_count: number;
   created_at: string;
   updated_at: string;
 };
 
 const threadSelect =
-  "id,author_user_id,title,prompt,starting_content,rules,tags,mentions,media,visibility,status,created_at,updated_at";
+  "id,author_user_id,title,prompt,starting_content,rules,tags,mentions,media,visibility,status,shares_count,created_at,updated_at";
 const continuationSelect =
-  "id,thread_id,parent_continuation_id,line_number,content,author_user_id,created_at,updated_at";
+  "id,thread_id,parent_continuation_id,line_number,content,author_user_id,shares_count,created_at,updated_at";
 
 export class ThreadRepository {
   constructor(private readonly client: DatabaseClient) {}
@@ -244,22 +246,22 @@ export class ThreadRepository {
   }): Promise<ThreadShareResult> {
     const actorId = await getCurrentLinespaceUserId(this.client);
     if (!actorId || actorId !== target.userId) throw new Error("share actor mismatch");
-    const threadId =
-      target.threadId ??
-      (await this.client
-        .from("thread_continuations")
-        .select("thread_id")
-        .eq("id", target.continuationId ?? "")
-        .single()).data?.thread_id;
-    if (!threadId) throw new Error("thread not found");
-    const countResult = await this.client
-      .from("thread_shares")
-      .select("id", { count: "exact", head: true })
-      .eq("thread_id", threadId);
-    ensureDatabaseResult(countResult.error);
+    const source = target.continuationId
+      ? await this.client
+          .from("thread_continuations")
+          .select("id,shares_count")
+          .eq("id", target.continuationId)
+          .maybeSingle()
+      : await this.client
+          .from("poetry_threads")
+          .select("id,shares_count")
+          .eq("id", target.threadId ?? "")
+          .maybeSingle();
+    ensureDatabaseResult(source.error);
+    if (!source.data) throw new Error("thread share target not found");
     return {
-      targetId: target.continuationId ?? threadId,
-      shareCount: countValue(countResult.count)
+      targetId: target.continuationId ?? target.threadId ?? "",
+      shareCount: countValue(source.data.shares_count)
     };
   }
 
@@ -321,6 +323,26 @@ export class ThreadRepository {
     return (result.data as unknown[] | null) ?? [];
   }
 
+  async publishVersionAsPost(input: {
+    threadId: string;
+    versionId: string;
+    userId: string;
+  }): Promise<string> {
+    const actorId = await getCurrentLinespaceUserId(this.client);
+    if (!actorId || actorId !== input.userId) {
+      throw new Error("thread version actor mismatch");
+    }
+    const result = await this.client.rpc("publish_thread_version_as_post", {
+      p_thread_id: input.threadId,
+      p_version_id: input.versionId
+    });
+    ensureDatabaseResult(result.error);
+    if (typeof result.data !== "string" || !result.data) {
+      throw new Error("thread version publish failed");
+    }
+    return result.data;
+  }
+
   private async insertContinuation(input: {
     threadId: string;
     parentContinuationId: string | null;
@@ -372,19 +394,17 @@ export class ThreadRepository {
       rows.map((row) => row.author_user_id)
     );
     const ids = rows.map((row) => row.id);
-    const [likes, saves, shares, continuationCounts] = await Promise.all([
+    const [likes, saves, continuationCounts] = await Promise.all([
       actorId
         ? this.client.from("thread_likes").select("thread_id").eq("user_id", actorId).in("thread_id", ids)
         : Promise.resolve({ data: [], error: null }),
       actorId
         ? this.client.from("thread_saves").select("thread_id").eq("user_id", actorId).in("thread_id", ids)
         : Promise.resolve({ data: [], error: null }),
-      this.client.from("thread_shares").select("thread_id").in("thread_id", ids),
       this.client.from("thread_continuations").select("thread_id").in("thread_id", ids)
     ]);
     ensureDatabaseResult(likes.error);
     ensureDatabaseResult(saves.error);
-    ensureDatabaseResult(shares.error);
     ensureDatabaseResult(continuationCounts.error);
     const liked = new Set(
       ((likes.data as Array<{ thread_id: string }> | null) ?? []).map(
@@ -393,11 +413,6 @@ export class ThreadRepository {
     );
     const saved = new Set(
       ((saves.data as Array<{ thread_id: string }> | null) ?? []).map(
-        (row) => row.thread_id
-      )
-    );
-    const shareCount = countBy(
-      ((shares.data as Array<{ thread_id: string }> | null) ?? []).map(
         (row) => row.thread_id
       )
     );
@@ -426,7 +441,7 @@ export class ThreadRepository {
           metrics: {
             likes: likeCounts.get(row.id) ?? 0,
             continuations: continuationCount.get(row.id) ?? 0,
-            shares: shareCount.get(row.id) ?? 0,
+            shares: countValue(row.shares_count),
             saves: 0
           },
           viewer: { liked: liked.has(row.id), saved: saved.has(row.id) }
@@ -486,7 +501,7 @@ export class ThreadRepository {
           metrics: {
             likes: counts.get(row.id) ?? 0,
             continuations: 0,
-            shares: 0,
+            shares: countValue(row.shares_count),
             saves: 0
           },
           viewer: { liked: liked.has(row.id) }

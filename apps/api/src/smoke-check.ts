@@ -176,6 +176,51 @@ async function main() {
       (group) => group.id === httpGroup.id
     );
     assert(httpGroupInList, "HTTP group was not returned for its owner.");
+    const groupPostShare = await httpApi.sharePoemToGroup({
+      poemId: "poem-light",
+      senderId: profile.id,
+      groupId: httpGroup.id,
+      note: "Open the shared Post"
+    });
+    assert(
+      groupPostShare.groupId === httpGroup.id &&
+        groupPostShare.sharedPost?.id === "poem-light",
+      "Group Post sharing did not preserve its Inbox click target."
+    );
+    const groupThreadShare = await httpApi.shareThreadToGroup({
+      kind: "thread",
+      threadId: "thread-rain-without-rain",
+      senderId: profile.id,
+      groupId: httpGroup.id,
+      note: "Open the shared Thread"
+    });
+    assert(
+      groupThreadShare.groupId === httpGroup.id &&
+        groupThreadShare.sharedThread?.threadId === "thread-rain-without-rain",
+      "Group Thread sharing did not preserve its Inbox click target."
+    );
+    const groupMessages = await httpApi.listInboxGroupMessages(
+      httpGroup.id,
+      profile.id
+    );
+    assert(
+      groupMessages.some((message) => message.sharedPost?.id === "poem-light") &&
+        groupMessages.some(
+          (message) => message.sharedThread?.threadId === "thread-rain-without-rain"
+        ),
+      "Group content shares were not returned by the Inbox message contract."
+    );
+    const versionPost = await httpApi.publishThreadVersionAsPost({
+      threadId: "thread-city-edge",
+      versionId: "smoke-version",
+      userId: profile.id
+    });
+    assert(
+      versionPost.threadId === "thread-city-edge" &&
+        versionPost.versionId === "smoke-version" &&
+        versionPost.poem.author.id === profile.id,
+      "Thread Version to Post did not preserve the HTTP actor and source IDs."
+    );
 
     const draft = await httpApi.createPoemDraft({ ownerId: profile.id, mode: "draft" });
     const loadedDraft = await httpApi.getPoemDraft(draft.id);

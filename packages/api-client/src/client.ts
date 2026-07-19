@@ -38,8 +38,11 @@ import type {
   PublishPoemDraftResult,
   PublishThreadDraftInput,
   PublishThreadDraftResult,
+  PublishThreadVersionAsPostInput,
+  PublishThreadVersionAsPostResult,
   SharePoemInput,
   SharePoemResult,
+  SharePoemToGroupInput,
   SendInboxMessageInput,
   StorageUploadTarget,
   SavePoemDraftInput,
@@ -50,6 +53,7 @@ import type {
   ThreadShareResult,
   ThreadShareTarget,
   ShareThreadInput,
+  ShareThreadToGroupInput,
   UpdateThreadCollectionInput,
   UpdatePoemDraftInput,
   UpdateInboxGroupInput,
@@ -86,6 +90,9 @@ export interface LineSpaceApi {
   inviteDraftCollaborator(input: InviteDraftCollaboratorInput): Promise<DraftInvitation>;
   publishPoemDraft(input: PublishPoemDraftInput): Promise<PublishPoemDraftResult>;
   publishThreadDraft(input: PublishThreadDraftInput): Promise<PublishThreadDraftResult>;
+  publishThreadVersionAsPost(
+    input: PublishThreadVersionAsPostInput
+  ): Promise<PublishThreadVersionAsPostResult>;
   savePoemDraft(input: SavePoemDraftInput): Promise<PoemDraft>;
   listUserDrafts(userId: string): Promise<UserDraftPage>;
   createStorageUpload(input: CreateStorageUploadInput): Promise<StorageUploadTarget>;
@@ -120,11 +127,13 @@ export interface LineSpaceApi {
   setThreadCollection(input: UpdateThreadCollectionInput): Promise<PoetryThread>;
   recordThreadShare(target: ThreadShareTarget): Promise<ThreadShareResult>;
   shareThread(input: ShareThreadInput): Promise<ThreadShareResult>;
+  shareThreadToGroup(input: ShareThreadToGroupInput): Promise<InboxConversationMessage>;
   requestAiAssist(request: AiAssistRequest): Promise<AiAssistResponse>;
   createPoemComment(input: CreatePoemCommentInput): Promise<PoemComment>;
   setCommentCollection(input: UpdateCommentCollectionInput): Promise<PoemCommentEngagementResult>;
   searchUsers(query: string, viewerId: string, options?: UserSearchQuery): Promise<UserSearchPage>;
   sharePoem(input: SharePoemInput): Promise<SharePoemResult>;
+  sharePoemToGroup(input: SharePoemToGroupInput): Promise<InboxConversationMessage>;
   listInboxMessages(userId: string, contactId: string): Promise<InboxConversationMessage[]>;
   sendInboxMessage(input: SendInboxMessageInput): Promise<InboxConversationMessage>;
   listInboxGroups(userId: string): Promise<InboxGroup[]>;
@@ -412,6 +421,68 @@ export class MockLineSpaceApi implements LineSpaceApi {
     return { draft: cloneDraft(draft), thread: cloneThread(thread) };
   }
 
+  async publishThreadVersionAsPost(
+    input: PublishThreadVersionAsPostInput
+  ): Promise<PublishThreadVersionAsPostResult> {
+    const thread = this.threads.find((item) => item.id === input.threadId);
+    if (!thread || thread.author.id !== input.userId) {
+      throw new Error("Only the Thread author can publish this version");
+    }
+    const postId = `post-from-version-${input.versionId}`;
+    const existing = this.poems.find((item) => item.id === postId);
+    if (existing) {
+      return {
+        threadId: thread.id,
+        versionId: input.versionId,
+        poem: clonePoem(existing)
+      };
+    }
+    const continuationLines = this.continuations
+      .filter((item) => item.threadId === thread.id)
+      .sort(
+        (left, right) =>
+          (left.lineNumber ?? 0) - (right.lineNumber ?? 0) ||
+          Date.parse(left.createdAt) - Date.parse(right.createdAt)
+      );
+    const now = new Date().toISOString();
+    const poem: PoemSummary = {
+      id: postId,
+      title: thread.title ?? "Thread version",
+      lines: [thread.content, ...continuationLines.map((item) => item.content)],
+      author: { ...thread.author },
+      contributorsCount: new Set([
+        thread.author.id,
+        ...continuationLines.map((item) => item.author.id)
+      ]).size,
+      tags: [...(thread.tags ?? [])],
+      mentions: [...(thread.mentions ?? [])],
+      visibility: thread.visibility ?? "public",
+      audienceUserIds: [],
+      declareOriginal: false,
+      allowComments: true,
+      allowSharing: true,
+      status: "final",
+      startedAt: now,
+      editedAt: now,
+      ...(thread.media ? { media: { ...thread.media } } : {}),
+      metrics: {
+        comments: 0,
+        likes: 0,
+        shares: 0,
+        contributions: continuationLines.length + 1,
+        saves: 0
+      },
+      viewer: { liked: false, saved: false },
+      artworkTone: "water"
+    };
+    this.poems.unshift(poem);
+    return {
+      threadId: thread.id,
+      versionId: input.versionId,
+      poem: clonePoem(poem)
+    };
+  }
+
   async savePoemDraft(input: SavePoemDraftInput): Promise<PoemDraft> {
     const draft = this.requireEditableDraft(input.draftId, input.userId);
     if (draft.status === "published") {
@@ -602,6 +673,39 @@ export class MockLineSpaceApi implements LineSpaceApi {
       return cloneInboxMessage(message);
     });
     return { poemId: poem.id, recipientIds: recipients.map((recipient) => recipient.id), messages };
+  }
+
+  async sharePoemToGroup(
+    input: SharePoemToGroupInput
+  ): Promise<InboxConversationMessage> {
+    const poem = this.poems.find((item) => item.id === input.poemId);
+    const sender = this.findAnyProfile(input.senderId);
+    const group = this.requireInboxGroup(input.groupId);
+    this.requireActiveGroupMember(group, input.senderId);
+    if (!poem || !sender) throw new Error("A post and sender are required");
+
+    const now = new Date().toISOString();
+    const message: InboxConversationMessage = {
+      id: `group-shared-post-${++this.shareSequence}`,
+      sender: profileToUser(sender),
+      groupId: group.id,
+      createdAt: now,
+      kind: "shared-post",
+      ...(input.note?.trim() ? { text: input.note.trim() } : {}),
+      sharedPost: {
+        id: poem.id,
+        title: poem.title,
+        excerpt: poem.lines.join(" ").slice(0, 160),
+        tags: [...poem.tags],
+        author: { ...poem.author },
+        ...(poem.artworkUrl ? { artworkUrl: poem.artworkUrl } : {})
+      }
+    };
+    poem.metrics.shares = (poem.metrics.shares ?? 0) + 1;
+    group.updatedAt = now;
+    group.lastMessage = cloneInboxMessage(message);
+    this.inboxGroupMessages.push(message);
+    return cloneInboxMessage(message);
   }
 
   async listInboxMessages(userId: string, contactId: string): Promise<InboxConversationMessage[]> {
@@ -1300,6 +1404,52 @@ export class MockLineSpaceApi implements LineSpaceApi {
       recipientIds: recipients.map((recipient) => recipient.id),
       messages
     };
+  }
+
+  async shareThreadToGroup(
+    input: ShareThreadToGroupInput
+  ): Promise<InboxConversationMessage> {
+    const targetContinuation = input.continuationId
+      ? this.continuations.find((item) => item.id === input.continuationId)
+      : undefined;
+    const thread = this.threads.find((item) => item.id === input.threadId);
+    const sender = this.findAnyProfile(input.senderId);
+    const group = this.requireInboxGroup(input.groupId);
+    this.requireActiveGroupMember(group, input.senderId);
+    if (!sender || !thread) throw new Error("A thread and sender are required");
+    if (input.kind === "continuation" && !targetContinuation) {
+      throw new Error("A continuation is required");
+    }
+    if (targetContinuation && targetContinuation.threadId !== thread.id) {
+      throw new Error("The continuation does not belong to the thread");
+    }
+
+    const now = new Date().toISOString();
+    const message: InboxConversationMessage = {
+      id: `group-shared-thread-${++this.shareSequence}`,
+      sender: profileToUser(sender),
+      groupId: group.id,
+      createdAt: now,
+      kind: targetContinuation ? "shared-continuation" : "shared-thread",
+      ...(input.note?.trim() ? { text: input.note.trim() } : {}),
+      sharedThread: {
+        threadId: thread.id,
+        ...(targetContinuation ? { continuationId: targetContinuation.id } : {}),
+        title: thread.title || "Untitled thread",
+        excerpt: targetContinuation?.content ?? thread.content,
+        ...(targetContinuation?.lineNumber
+          ? { lineNumber: targetContinuation.lineNumber }
+          : {}),
+        author: { ...thread.author },
+        ...(thread.media?.uri ? { artworkUrl: thread.media.uri } : {})
+      }
+    };
+    thread.metrics.shares += 1;
+    if (targetContinuation) targetContinuation.metrics.shares += 1;
+    group.updatedAt = now;
+    group.lastMessage = cloneInboxMessage(message);
+    this.inboxGroupMessages.push(message);
+    return cloneInboxMessage(message);
   }
 
   async requestAiAssist(request: AiAssistRequest): Promise<AiAssistResponse> {

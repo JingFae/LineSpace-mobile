@@ -21,6 +21,7 @@
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset --local",
     "db:lint": "supabase db lint --local --level warning",
+    "db:security-check": "pnpm --filter @linespace/api check:db:local",
     "db:push:dry-run": "supabase db push --linked --dry-run",
     "db:push": "supabase db push --linked"
   },

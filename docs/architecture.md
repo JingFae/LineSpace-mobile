@@ -328,6 +328,7 @@ supabase/migrations/20260718000300_profile_experience.sql
 supabase/migrations/20260719000100_service_role_profile_access.sql
 supabase/migrations/20260719000200_thread_persistence.sql
 supabase/migrations/20260719000300_content_draft_inbox_persistence.sql
+supabase/migrations/20260719000400_group_content_sharing.sql
 ```
 
 迁移要求：
@@ -422,10 +423,13 @@ The current cloud-safe chain is:
 20260719000100_service_role_profile_access.sql
 20260719000200_thread_persistence.sql
 20260719000300_content_draft_inbox_persistence.sql
+20260719000400_group_content_sharing.sql
 ```
 
 The canonical chain now includes the durable Post/feed, Comment, Draft,
-Inbox-message, Thread-share, and Storage contracts. The content migration
+Inbox-message, direct/group Post and Thread sharing, click-target metadata,
+idempotent Thread-Version-to-Post publication, Thread-share counters, and
+Storage contracts. The content migrations
 does not change UI behavior; it supplies the RLS-protected persistence used by
 the API repositories. The files under
 `apps/api/src/database/deferred-migrations/` are historical design references
@@ -457,6 +461,7 @@ Local and hosted commands:
 pnpm db:start
 pnpm db:reset
 pnpm db:lint
+pnpm db:security-check
 pnpm exec supabase link --project-ref <staging-project-ref>
 pnpm db:push:dry-run
 pnpm db:push

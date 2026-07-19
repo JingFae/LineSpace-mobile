@@ -208,6 +208,18 @@ export type PublishThreadDraftResult = {
   thread: PoetryThread;
 };
 
+export type PublishThreadVersionAsPostInput = {
+  threadId: string;
+  versionId: string;
+  userId: string;
+};
+
+export type PublishThreadVersionAsPostResult = {
+  threadId: string;
+  versionId: string;
+  poem: PoemSummary;
+};
+
 export type SavePoemDraftInput = {
   draftId: string;
   userId: string;
@@ -537,6 +549,13 @@ export type SharePoemResult = {
   messages: InboxConversationMessage[];
 };
 
+export type SharePoemToGroupInput = {
+  poemId: string;
+  senderId: string;
+  groupId: string;
+  note?: string;
+};
+
 export type InboxConversationMessage = {
   id: string;
   sender: UserProfile;
@@ -758,6 +777,15 @@ export type ShareThreadInput = {
   continuationId?: string;
   senderId: string;
   recipientIds: string[];
+  note?: string;
+};
+
+export type ShareThreadToGroupInput = {
+  kind: "thread" | "continuation";
+  threadId: string;
+  continuationId?: string;
+  senderId: string;
+  groupId: string;
   note?: string;
 };
 

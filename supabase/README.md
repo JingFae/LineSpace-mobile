@@ -30,6 +30,7 @@ Current migration order:
 20260719000100_service_role_profile_access.sql
 20260719000200_thread_persistence.sql
 20260719000300_content_draft_inbox_persistence.sql
+20260719000400_group_content_sharing.sql
 ```
 
 ## Current cloud scope
@@ -44,6 +45,9 @@ The canonical chain contains:
 - media and draft Storage buckets with owner-scoped object policies
 - inbox messages for direct, group, post-share, and thread-share conversations
 - JWT/RLS-protected inbox group conversations and invitation membership
+- actor-derived Post/Thread/continuation sharing into direct and group Inbox,
+  including durable click targets and derived share counters
+- author-only, idempotent Thread Version publication into a durable Post
 - RLS, grants, triggers, and JWT-scoped RPC functions for these domains
 
 The files under `apps/api/src/database/deferred-migrations/` remain historical
@@ -66,7 +70,7 @@ in local development), routes continue to use `MockLineSpaceApi`.
 
 ## Migration order and deployment
 
-Apply migrations strictly in filename order. The content migration depends on
+Apply migrations strictly in filename order. The content migrations depend on
 the profile, follow, inbox-group, experience, and thread migrations that
 precede it. For a linked hosted project, review:
 
@@ -87,6 +91,7 @@ Docker must be running:
 pnpm db:start
 pnpm db:reset
 pnpm db:lint
+pnpm db:security-check
 ```
 
 `db:reset` is explicitly local. It rebuilds the local Supabase database from
