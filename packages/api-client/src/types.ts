@@ -571,6 +571,22 @@ export type SendInboxMessageInput = {
   groupId?: string;
 };
 
+export type StorageBucket = "linespace-media" | "linespace-drafts";
+
+export type CreateStorageUploadInput = {
+  bucket: StorageBucket;
+  /** Must begin with the authenticated LineSpace user ID followed by `/`. */
+  path: string;
+  contentType: string;
+};
+
+export type StorageUploadTarget = {
+  bucket: StorageBucket;
+  path: string;
+  token: string;
+  signedUrl: string;
+};
+
 export type InboxGroupMemberStatus = "invited" | "active" | "declined";
 
 export type InboxGroupMember = {

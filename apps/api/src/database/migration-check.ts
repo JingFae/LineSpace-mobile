@@ -25,6 +25,10 @@ const experienceMigration = await readFile(
   new URL("20260718000300_profile_experience.sql", canonicalMigrationsUrl),
   "utf8"
 );
+const contentMigration = await readFile(
+  new URL("20260719000300_content_draft_inbox_persistence.sql", canonicalMigrationsUrl),
+  "utf8"
+);
 const profileRepository = await readFile(
   new URL("./profile-repository.ts", import.meta.url),
   "utf8"
@@ -44,14 +48,6 @@ for (const fileName of canonicalMigrationFiles) {
   );
 }
 
-const canonicalSql = (
-  await Promise.all(
-    canonicalMigrationFiles.map((fileName) =>
-      readFile(new URL(fileName, canonicalMigrationsUrl), "utf8")
-    )
-  )
-).join("\n");
-
 assert(
   /create\s+table\s+if\s+not\s+exists\s+inbox_messages/i.test(profileSchema),
   "The core foundation must create inbox_messages for recent-contact queries."
@@ -62,11 +58,74 @@ assert(
   ),
   "Auth identity migration must not silently rewrite existing handles."
 );
+for (const required of [
+  /create\s+table\s+if\s+not\s+exists\s+public\.posts/i,
+  /create\s+table\s+if\s+not\s+exists\s+public\.post_comments/i,
+  /create\s+table\s+if\s+not\s+exists\s+public\.poem_drafts/i,
+  /create\s+or\s+replace\s+function\s+public\.send_inbox_message/i,
+  /create\s+or\s+replace\s+function\s+public\.share_post_to_inbox/i,
+  /create\s+or\s+replace\s+function\s+public\.share_thread_to_inbox/i,
+  /create\s+or\s+replace\s+function\s+public\.apply_draft_operation/i,
+  /create\s+or\s+replace\s+function\s+public\.publish_draft_as_post/i,
+  /create\s+or\s+replace\s+function\s+public\.publish_draft_as_thread/i,
+  /storage\.buckets/i,
+  /alter\s+table\s+public\.posts\s+enable\s+row\s+level\s+security/i,
+  /alter\s+table\s+public\.post_comments\s+enable\s+row\s+level\s+security/i,
+  /alter\s+table\s+public\.poem_drafts\s+enable\s+row\s+level\s+security/i,
+  /create\s+trigger\s+posts_sync_profile_stats/i,
+  /posts_count\s*=\s*greatest/i
+] as const) {
+  assert(required.test(contentMigration), `Content migration is missing ${required}.`);
+}
+
 assert(
-  !/\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?(?:public\.)?(posts|post_comments|poem_drafts|poem_relay_threads)\b/i.test(
-    canonicalSql
+  /revoke\s+execute\s+on\s+function\s+public\.award_profile_experience[\s\S]*authenticated/i.test(
+    contentMigration
   ),
-  "Canonical cloud migrations must not silently promote deferred Post, Poem, or Compose persistence."
+  "Experience awards must not be callable by regular authenticated clients."
+);
+assert(
+  /create\s+or\s+replace\s+function\s+public\.is_active_inbox_group_member\(\s*p_group_id\s+text\)/i.test(
+    contentMigration
+  ) &&
+    /create\s+or\s+replace\s+function\s+public\.is_active_inbox_group_member\(\s*p_group_id\s+text,\s*p_user_id[\s\S]*select\s+public\.current_user_is_active_inbox_group_member\(p_group_id\)/i.test(
+      contentMigration
+    ),
+  "Inbox membership checks, including the compatibility overload, must derive the actor from JWT."
+);
+assert(
+  /alter\s+table\s+public\.inbox_messages\s+enable\s+row\s+level\s+security/i.test(
+    userDomainMigration
+  ) &&
+    /revoke\s+insert,\s*update,\s*delete\s+on\s+public\.inbox_messages/i.test(
+      contentMigration
+    ),
+  "Inbox writes must use actor-derived server transactions."
+);
+assert(
+  /create\s+or\s+replace\s+function\s+public\.current_user_can_view_draft/i.test(
+    contentMigration
+  ) &&
+    /owner_user_id\s*=\s*public\.current_linespace_user_id\(\)[\s\S]*current_user_can_view_draft\(id\)/i.test(
+      contentMigration
+    ),
+  "Draft RLS must support owners and collaborators without recursive policies."
+);
+assert(
+  /revoke\s+insert,\s*update,\s*delete\s+on\s+public\.posts\s+from\s+authenticated/i.test(
+    contentMigration
+  ) &&
+    /grant\s+insert\s*\(\s*id,\s*post_id,\s*author_user_id,\s*parent_comment_id,\s*body\s*\)/i.test(
+      contentMigration
+    ),
+  "Clients must not write post counters or privileged post fields directly."
+);
+assert(
+  /revoke\s+insert,\s*update,\s*delete\s+on\s+public\.poem_drafts\s+from\s+authenticated/i.test(
+    contentMigration
+  ) &&
+    !/grant\s+update\s*\([^)]*\bpublished_post_id\b/i.test(contentMigration),
+  "Draft clients must not forge publication references."
 );
 
 for (const [label, sql] of [
@@ -153,5 +212,5 @@ assert(
 );
 
 process.stdout.write(
-  "Database migration check passed: canonical Supabase migrations contain only the Auth/user domain and preserve RLS/RPC contracts.\n"
+  "Database migration check passed: canonical Supabase migrations preserve Auth/user contracts and enforce content, draft, inbox, Storage, and RLS contracts.\n"
 );

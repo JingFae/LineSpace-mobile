@@ -33,9 +33,14 @@ import {
   createProfileRepositoryForRequest,
   ProfileRepositoryError
 } from "./database/profile-repository";
+import {
+  createSupabaseLineSpaceApiForRequest,
+  SupabaseLineSpaceApi
+} from "./database/linespace-repository";
+import { DomainRepositoryError } from "./database/repository-support";
 import { requestThreadVersionRecommendation } from "./ai/thread-version-recommendation";
 
-const api = createMockLineSpaceApi();
+const mockApi = createMockLineSpaceApi();
 
 export type ApiResponse = {
   status: number;
@@ -55,6 +60,8 @@ export async function handleApiRequest(
 
   const authRoute = await handleAuthRoute(method, pathname, body, context);
   if (authRoute) return authRoute;
+  const api: import("@linespace/api-client").LineSpaceApi =
+    createSupabaseLineSpaceApiForRequest(context.authorization) ?? mockApi;
 
   if (method === "GET" && pathname === "/v1/threads") {
     const sort = searchParams.get("sort");
@@ -255,6 +262,45 @@ export async function handleApiRequest(
 
   if (method === "GET" && pathname === "/v1/compose/design-catalog") {
     return json(200, await api.getPoemDesignCatalog());
+  }
+
+  if (method === "POST" && pathname === "/v1/storage/upload-url") {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
+    if (!(api instanceof SupabaseLineSpaceApi)) {
+      return json(501, {
+        code: "STORAGE_NOT_CONFIGURED",
+        message: "Media uploads are unavailable in Mock mode."
+      });
+    }
+    const request = body as {
+      bucket?: unknown;
+      path?: unknown;
+      contentType?: unknown;
+    } | undefined;
+    if (
+      (request?.bucket !== "linespace-media" &&
+        request?.bucket !== "linespace-drafts") ||
+      typeof request.path !== "string" ||
+      typeof request.contentType !== "string"
+    ) {
+      return json(400, { code: "INVALID_MEDIA_UPLOAD" });
+    }
+    try {
+      return json(
+        200,
+        await api.createStorageUpload({
+          bucket: request.bucket,
+          path: request.path,
+          contentType: request.contentType
+        })
+      );
+    } catch {
+      return json(400, {
+        code: "INVALID_MEDIA_UPLOAD",
+        message: "The media upload request is invalid."
+      });
+    }
   }
 
   if (method === "POST" && pathname === "/v1/drafts") {
@@ -831,6 +877,12 @@ function json(status: number, body: unknown): ApiResponse {
 }
 
 function profileRepositoryErrorResponse(error: unknown): ApiResponse {
+  if (error instanceof DomainRepositoryError) {
+    return json(error.status, {
+      code: error.code,
+      message: error.message
+    });
+  }
   if (error instanceof ProfileRepositoryError) {
     return json(error.status, {
       code: error.code,

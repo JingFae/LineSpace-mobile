@@ -26,23 +26,58 @@ Current migration order:
 20260716000400_auth_trigger_idempotent.sql
 20260718000100_user_domain_persistence.sql
 20260718000200_inbox_groups.sql
+20260718000300_profile_experience.sql
+20260719000100_service_role_profile_access.sql
+20260719000200_thread_persistence.sql
+20260719000300_content_draft_inbox_persistence.sql
 ```
 
 ## Current cloud scope
 
-The canonical chain intentionally contains only:
+The canonical chain contains:
 
 - Supabase Auth to `public.users` identity mapping
 - public profiles, badges, statistics, and visibility
 - follows, mutual-follow friendship derivation, and recent-contact queries
-- the minimal `inbox_messages` participant/timestamp contract
+- post/feed records, comments, likes, saves, shares, and database-maintained counters
+- compose drafts, collaboration operations, and draft-to-post/thread publishing
+- media and draft Storage buckets with owner-scoped object policies
+- inbox messages for direct, group, post-share, and thread-share conversations
 - JWT/RLS-protected inbox group conversations and invitation membership
-- RLS, grants, triggers, and JWT-scoped RPC functions for that user domain
+- RLS, grants, triggers, and JWT-scoped RPC functions for these domains
 
-Post, Poem, Comment, Feed, Compose, and content-engagement persistence remains
-under `apps/api/src/database/deferred-migrations/`. Those files are design
-references, are not read by Supabase CLI, and must be rebased and security
-reviewed before they are promoted into this directory.
+The files under `apps/api/src/database/deferred-migrations/` remain historical
+design references only. They are not read by Supabase CLI and must not be
+applied in addition to the canonical chain.
+
+The content migration provides the server-side persistence contract. It does
+not alter Feed, Thread, Post, Comment, or Compose UI behavior by itself.
+
+## Repository selection
+
+When a request contains a valid Bearer JWT and the server has Supabase
+configuration, the API creates a request-scoped publishable-key client. The
+database enforces the user boundary with `auth.uid()` and RLS. The Service
+Role client remains limited to server-side authentication mapping and explicit
+administrative operations; it is never sent to the Expo bundle.
+
+When `EXPO_PUBLIC_USE_MOCKS=true` (or Supabase server configuration is absent
+in local development), routes continue to use `MockLineSpaceApi`.
+
+## Migration order and deployment
+
+Apply migrations strictly in filename order. The content migration depends on
+the profile, follow, inbox-group, experience, and thread migrations that
+precede it. For a linked hosted project, review:
+
+```bash
+pnpm exec supabase migration list
+pnpm db:push:dry-run
+pnpm db:push
+```
+
+Never run `supabase db reset --linked` against a hosted project. If any SQL was
+applied manually, reconcile migration history before pushing.
 
 ## Local verification
 

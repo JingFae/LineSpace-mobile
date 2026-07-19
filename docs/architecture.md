@@ -219,7 +219,13 @@ Service Role 不得被移动端、`packages/api-client` 或 `packages/ui` 引用
 ```text
 database/
 ├─ profile-repository.ts        # 用户资料、搜索、关系和最近联系人
-├─ deferred-migrations/          # 尚未进入云端的 Post/Poem/Compose SQL
+├─ post-repository.ts           # Post、Feed、互动和分享
+├─ comment-repository.ts        # 评论及评论互动
+├─ thread-repository.ts         # Thread、Continuation 和分享
+├─ draft-repository.ts          # Compose 草稿、发布和 Storage
+├─ inbox-repository.ts          # 私聊、群聊和消息映射
+├─ linespace-repository.ts      # request-scoped 聚合适配器
+├─ deferred-migrations/         # 历史设计参考，不是部署入口
 ├─ migrations/                  # 按时间排序的正式迁移
 └─ migration-check.ts            # 静态迁移契约检查
 ```
@@ -318,6 +324,10 @@ supabase/migrations/20260715000100_auth_identity.sql
 supabase/migrations/20260716000400_auth_trigger_idempotent.sql
 supabase/migrations/20260718000100_user_domain_persistence.sql
 supabase/migrations/20260718000200_inbox_groups.sql
+supabase/migrations/20260718000300_profile_experience.sql
+supabase/migrations/20260719000100_service_role_profile_access.sql
+supabase/migrations/20260719000200_thread_persistence.sql
+supabase/migrations/20260719000300_content_draft_inbox_persistence.sql
 ```
 
 迁移要求：
@@ -327,11 +337,13 @@ supabase/migrations/20260718000200_inbox_groups.sql
 - 不能静默覆盖已有资料；
 - 使用 `if exists`、`if not exists` 或 catalog 检查；
 - 不关闭 RLS；
-- 不修改 Feed/Poem/Post/评论的持久化范围；
+- 不把无关产品域混入本轮迁移；
 - 通过 `pnpm check:api` 运行静态契约检查。
 
-具备隔离 Supabase CLI 或 PostgreSQL 时，再执行真实 Migration 和双用户 RLS 测试。
-没有真实数据库环境时，不得声称 SQL/RLS 已完成端到端验证。
+具备隔离 Supabase CLI 或 PostgreSQL 时，执行真实 Migration 和多用户
+RLS 测试。当前本地 Docker Supabase 已验证资料越权、代关注、私信/群聊
+越权读取、Post/Comment/Share/Draft/Thread 持久化、Storage 路径隔离和计数
+触发器；生产 Supabase 仍需单独执行云端迁移与端到端验证。
 
 ## 9. 请求与部署流
 
@@ -406,18 +418,38 @@ The current cloud-safe chain is:
 20260716000400_auth_trigger_idempotent.sql
 20260718000100_user_domain_persistence.sql
 20260718000200_inbox_groups.sql
+20260718000300_profile_experience.sql
+20260719000100_service_role_profile_access.sql
+20260719000200_thread_persistence.sql
+20260719000300_content_draft_inbox_persistence.sql
 ```
 
-The foundation creates the minimal `inbox_messages` participant/timestamp
-contract needed for recent-contact queries. It deliberately does not create
-Post, Poem, Comment, Feed, Compose, or content-engagement tables.
+The canonical chain now includes the durable Post/feed, Comment, Draft,
+Inbox-message, Thread-share, and Storage contracts. The content migration
+does not change UI behavior; it supplies the RLS-protected persistence used by
+the API repositories. The files under
+`apps/api/src/database/deferred-migrations/` are historical design references
+only and must not be applied in addition to the canonical chain.
 
-Those SQL files are retained under
-`apps/api/src/database/deferred-migrations/` as non-deployable references.
-They must be rebased against the current foundation and receive a separate
-RLS/security review before promotion. `apps/api/src/database/migration-check.ts`
-fails if a deferred content table is accidentally added to the canonical
-chain.
+The API repository boundaries are:
+
+```text
+Auth routes       -> SupabaseAuthService
+Profile routes    -> ProfileRepository
+Thread routes     -> ThreadRepository
+Post routes       -> PostRepository
+Comment routes    -> CommentRepository
+Compose routes    -> DraftRepository
+Inbox routes      -> InboxRepository
+Media uploads     -> DraftRepository -> Supabase Storage
+AI routes         -> AI service
+```
+
+Every HTTP request creates a request-scoped Supabase client carrying the
+current Bearer JWT. The repositories pass actor and target IDs for defensive
+checks, but `auth.uid()`-derived SQL functions and RLS remain the final
+authorization boundary. Direct message/group/share writes use
+actor-derived database RPCs; post publication uses the draft publishing RPC.
 
 Local and hosted commands:
 

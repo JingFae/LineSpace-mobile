@@ -6,6 +6,7 @@ import type {
   ContinuationDetail,
   CreateContinuationInput,
   CreatePoemDraftInput,
+  CreateStorageUploadInput,
   CreateThreadContinuationInput,
   DraftInvitation,
   DraftOperationInput,
@@ -28,6 +29,7 @@ import type {
   SharePoemInput,
   SharePoemResult,
   SendInboxMessageInput,
+  StorageUploadTarget,
   SavePoemDraftInput,
   ThreadContinuation,
   ThreadDetail,
@@ -156,6 +158,12 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     return this.getJson<UserDraftPage>(
       `/v1/users/${encodeURIComponent(userId)}/drafts`
     );
+  }
+
+  async createStorageUpload(
+    input: CreateStorageUploadInput
+  ): Promise<StorageUploadTarget> {
+    return this.postJson<StorageUploadTarget>("/v1/storage/upload-url", input);
   }
 
   async listFeed(query: FeedQuery = {}): Promise<PoemSummary[]> {

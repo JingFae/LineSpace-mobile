@@ -11,7 +11,10 @@ output: apps/mobile/dist
 host: Vercel static hosting + `/api/*` Node Function
 ```
 
-`pnpm dev:api` 仍然启动本地 Node HTTP 服务；Vercel 部署时 `/api/v1/auth/*` 由仓库根目录的 `api/[...path].ts` Function 转发到认证路由。当前业务数据实现仍是 Mock，只有认证身份由 Supabase Auth 和 PostgreSQL 映射提供。
+`pnpm dev:api` 仍然启动本地 Node HTTP 服务；Vercel 部署时 `/api/*` 由仓库根目录的
+`api/[...path].ts` Function 转发到路由层。HTTP 模式下资料、Post、Comment、
+Thread、Draft、Inbox 和 Storage 由 request-scoped Supabase Client 与 PostgreSQL
+RLS 提供；`EXPO_PUBLIC_USE_MOCKS=true` 时仍使用 Mock API。
 
 ## 本地生产导出
 
@@ -111,10 +114,12 @@ Redirect URL，并在隔离数据库中执行迁移幂等性与 RLS 测试。当
 
 ## Canonical database deployment
 
-For the current browser/cloud phase, deploy only the canonical user-domain
-migrations in `supabase/migrations/`. The deferred SQL under
-`apps/api/src/database/deferred-migrations/` is not part of the cloud push and
-must not be copied into the migration directory:
+For the current browser/cloud phase, deploy the complete canonical chain in
+`supabase/migrations/`, including the Post/Comment, Draft, Inbox, Thread-share
+and Storage contracts. The SQL under
+`apps/api/src/database/deferred-migrations/` is historical reference material,
+is not part of the cloud push, and must not be copied into the migration
+directory:
 
 ```bash
 pnpm exec supabase login

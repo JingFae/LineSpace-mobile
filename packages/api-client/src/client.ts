@@ -17,6 +17,7 @@ import type {
   ContinuationDetail,
   CreateContinuationInput,
   CreatePoemDraftInput,
+  CreateStorageUploadInput,
   CreateThreadContinuationInput,
   DraftInvitation,
   DraftOperationInput,
@@ -40,6 +41,7 @@ import type {
   SharePoemInput,
   SharePoemResult,
   SendInboxMessageInput,
+  StorageUploadTarget,
   SavePoemDraftInput,
   PoemSummary,
   ThreadContinuation,
@@ -86,6 +88,7 @@ export interface LineSpaceApi {
   publishThreadDraft(input: PublishThreadDraftInput): Promise<PublishThreadDraftResult>;
   savePoemDraft(input: SavePoemDraftInput): Promise<PoemDraft>;
   listUserDrafts(userId: string): Promise<UserDraftPage>;
+  createStorageUpload(input: CreateStorageUploadInput): Promise<StorageUploadTarget>;
   listFeed(query?: FeedQuery): Promise<PoemSummary[]>;
   getPoem(id: string, viewerId?: string): Promise<PoemSummary | null>;
   setPoemCollection(input: UpdatePoemCollectionInput): Promise<PoemEngagementResult>;
@@ -431,6 +434,17 @@ export class MockLineSpaceApi implements LineSpaceApi {
       .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
       .map(cloneDraft);
     return { userId, total: items.length, items };
+  }
+
+  async createStorageUpload(
+    input: CreateStorageUploadInput
+  ): Promise<StorageUploadTarget> {
+    return {
+      bucket: input.bucket,
+      path: input.path,
+      token: "mock-upload-token",
+      signedUrl: `mock-upload://${input.bucket}/${input.path}`
+    };
   }
 
   async listFeed(query: FeedQuery = {}): Promise<PoemSummary[]> {
