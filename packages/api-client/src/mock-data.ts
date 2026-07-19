@@ -10,7 +10,7 @@ import type {
   UserProfileContentItem,
   UserProfileContentSection,
   UserProfileDetails
-} from "./types";
+} from "./types.js";
 
 export const mockPoemDesignCatalog: PoemDesignCatalog = {
   templates: [

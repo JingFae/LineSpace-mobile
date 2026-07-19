@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import * as vercelHandlerModule from "../../../api/index";
+import * as vercelHandlerModule from "../../../api/index.js";
 
 type VercelHandler = {
   fetch(request: Request): Promise<Response>;
@@ -87,11 +87,11 @@ assert(
   "The root package must remain ESM so Vercel does not require() the ESM API service."
 );
 assert(
-  functionEntry.includes('import("../apps/api/src/routes")'),
+  functionEntry.includes('import("../apps/api/src/routes.js")'),
   "The Vercel Function must load the ESM API route module with dynamic import()."
 );
 assert(
-  !functionEntry.includes('import { handleApiRequest } from "../apps/api/src/routes"'),
+  !functionEntry.includes('import { handleApiRequest } from "../apps/api/src/routes.js"'),
   "The Vercel Function must not statically bridge its runtime to the ESM route module."
 );
 assert(

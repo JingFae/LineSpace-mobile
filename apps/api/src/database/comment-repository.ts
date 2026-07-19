@@ -4,7 +4,7 @@ import type {
   PoemCommentEngagementResult,
   UpdateCommentCollectionInput
 } from "@linespace/api-client";
-import { PostRepository } from "./post-repository";
+import { PostRepository } from "./post-repository.js";
 
 /**
  * Comment-specific persistence boundary.

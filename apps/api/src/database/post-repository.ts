@@ -13,7 +13,7 @@ import type {
   UpdatePoemCollectionInput,
   UserPoemCollections
 } from "@linespace/api-client";
-import type { DatabaseClient } from "./repository-support";
+import type { DatabaseClient } from "./repository-support.js";
 import {
   arrayOfStrings,
   countValue,
@@ -24,7 +24,7 @@ import {
   objectValue,
   toUserProfile,
   type UserRow
-} from "./repository-support";
+} from "./repository-support.js";
 
 type PostRow = {
   id: string;

@@ -179,4 +179,6 @@ The root `api/` Function and `apps/api` service are both ES modules. Keep
 compile the root Function as CommonJS and crash before routing with
 `ERR_REQUIRE_ESM`. The Function also loads `apps/api/src/routes` through a
 cached dynamic `import()` so the runtime never crosses this boundary with
-`require()`.
+`require()`. Runtime-relative imports in the Vercel Function, API service, and
+API client use explicit `.js` specifiers: Vercel emits JavaScript files, and
+Node ESM does not add file extensions or resolve directory imports implicitly.

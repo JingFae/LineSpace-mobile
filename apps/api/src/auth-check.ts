@@ -3,8 +3,8 @@ import type {
   AuthSessionResult,
   AuthUser
 } from "@linespace/api-client";
-import { ApiAuthError, type AuthService } from "./auth";
-import { handleApiRequest } from "./routes";
+import { ApiAuthError, type AuthService } from "./auth/index.js";
+import { handleApiRequest } from "./routes.js";
 
 const lili: AuthUser = {
   id: "user-lili",

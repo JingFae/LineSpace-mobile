@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage } from "node:http";
-import { handleApiRequest } from "./routes";
+import { handleApiRequest } from "./routes.js";
 
 const port = Number(process.env.PORT ?? 4000);
 

@@ -3,7 +3,7 @@ import type {
   AuthSessionResult,
   AuthUser
 } from "@linespace/api-client";
-import type { ValidatedLogin, ValidatedRegistration } from "./validation";
+import type { ValidatedLogin, ValidatedRegistration } from "./validation.js";
 
 export interface AuthService {
   register(input: ValidatedRegistration): Promise<AuthRegistrationResult>;

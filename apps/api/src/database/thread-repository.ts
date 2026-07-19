@@ -11,14 +11,14 @@ import type {
   UpdateThreadCollectionInput,
   UpdateThreadLikeInput
 } from "@linespace/api-client";
-import type { DatabaseClient, UserRow } from "./repository-support";
+import type { DatabaseClient, UserRow } from "./repository-support.js";
 import {
   countValue,
   ensureDatabaseResult,
   getCurrentLinespaceUserId,
   loadProfiles,
   toUserProfile
-} from "./repository-support";
+} from "./repository-support.js";
 
 type ThreadRow = {
   id: string;

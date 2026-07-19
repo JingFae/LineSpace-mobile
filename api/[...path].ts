@@ -1,4 +1,4 @@
-let routeModulePromise: Promise<typeof import("../apps/api/src/routes")> | undefined;
+let routeModulePromise: Promise<typeof import("../apps/api/src/routes.js")> | undefined;
 
 const corsHeaders = {
   "access-control-allow-origin": "*",
@@ -47,7 +47,7 @@ export default {
 };
 
 function loadRouteModule() {
-  routeModulePromise ??= import("../apps/api/src/routes");
+  routeModulePromise ??= import("../apps/api/src/routes.js");
   return routeModulePromise;
 }
 

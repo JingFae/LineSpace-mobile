@@ -4,7 +4,7 @@ import type {
   AuthUser,
   LoginAuthInput,
   RegisterAuthInput
-} from "./types";
+} from "./types.js";
 
 export type AuthClientErrorCode =
   | "INVALID_AUTH_INPUT"

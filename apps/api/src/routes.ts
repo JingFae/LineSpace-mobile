@@ -28,17 +28,17 @@ import {
   handleAuthRoute,
   parseBearerToken,
   type AuthRequestContext
-} from "./auth";
+} from "./auth/index.js";
 import {
   createProfileRepositoryForRequest,
   ProfileRepositoryError
-} from "./database/profile-repository";
+} from "./database/profile-repository.js";
 import {
   createSupabaseLineSpaceApiForRequest,
   SupabaseLineSpaceApi
-} from "./database/linespace-repository";
-import { DomainRepositoryError } from "./database/repository-support";
-import { requestThreadVersionRecommendation } from "./ai/thread-version-recommendation";
+} from "./database/linespace-repository.js";
+import { DomainRepositoryError } from "./database/repository-support.js";
+import { requestThreadVersionRecommendation } from "./ai/thread-version-recommendation.js";
 
 const mockApi = createMockLineSpaceApi();
 

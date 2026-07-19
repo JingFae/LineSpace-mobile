@@ -63,13 +63,13 @@ import type {
 import {
   createProfileRepositoryForRequest,
   type ProfileRepository
-} from "./profile-repository";
-import { createDatabaseClientForRequest, ensureDatabaseResult, getCurrentLinespaceUserId } from "./repository-support";
-import { PostRepository } from "./post-repository";
-import { CommentRepository } from "./comment-repository";
-import { ThreadRepository } from "./thread-repository";
-import { DraftRepository } from "./draft-repository";
-import { InboxRepository } from "./inbox-repository";
+} from "./profile-repository.js";
+import { createDatabaseClientForRequest, ensureDatabaseResult, getCurrentLinespaceUserId } from "./repository-support.js";
+import { PostRepository } from "./post-repository.js";
+import { CommentRepository } from "./comment-repository.js";
+import { ThreadRepository } from "./thread-repository.js";
+import { DraftRepository } from "./draft-repository.js";
+import { InboxRepository } from "./inbox-repository.js";
 
 export class SupabaseLineSpaceApi implements LineSpaceApi {
   private readonly posts: PostRepository;

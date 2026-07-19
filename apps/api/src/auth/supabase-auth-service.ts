@@ -9,9 +9,9 @@ import {
   ApiAuthError,
   invalidCredentialsError,
   invalidTokenError
-} from "./errors";
-import type { AuthService } from "./service";
-import type { ValidatedLogin, ValidatedRegistration } from "./validation";
+} from "./errors.js";
+import type { AuthService } from "./service.js";
+import type { ValidatedLogin, ValidatedRegistration } from "./validation.js";
 
 type UserIdentityRow = {
   id: string;

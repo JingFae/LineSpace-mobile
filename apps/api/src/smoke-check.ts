@@ -6,15 +6,15 @@ import {
   type AuthUser,
   type UserProfileDetails
 } from "@linespace/api-client";
-import { ApiAuthError, type AuthService } from "./auth";
+import { ApiAuthError, type AuthService } from "./auth/index.js";
 import type {
   UserConnectionPage,
   UserSearchPage,
   UpdateUserFollowInput,
   UserFollowResult
 } from "@linespace/api-client";
-import type { ProfileRepository as ApiProfileRepository } from "./database/profile-repository";
-import { handleApiRequest } from "./routes";
+import type { ProfileRepository as ApiProfileRepository } from "./database/profile-repository.js";
+import { handleApiRequest } from "./routes.js";
 
 const baseUrl = "http://linespace.local";
 const originalFetch = globalThis.fetch;

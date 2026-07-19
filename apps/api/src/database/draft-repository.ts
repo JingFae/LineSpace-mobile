@@ -19,7 +19,7 @@ import {
   type UserConnectionPage,
   type UserProfile
 } from "@linespace/api-client";
-import type { DatabaseClient, UserRow } from "./repository-support";
+import type { DatabaseClient, UserRow } from "./repository-support.js";
 import {
   arrayOfStrings,
   ensureDatabaseResult,
@@ -27,9 +27,9 @@ import {
   loadProfiles,
   objectValue,
   toUserProfile
-} from "./repository-support";
-import { PostRepository } from "./post-repository";
-import { ThreadRepository } from "./thread-repository";
+} from "./repository-support.js";
+import { PostRepository } from "./post-repository.js";
+import { ThreadRepository } from "./thread-repository.js";
 
 type DraftRow = {
   id: string;

@@ -3,7 +3,7 @@ import type {
   RefreshAuthInput,
   RegisterAuthInput
 } from "@linespace/api-client";
-import { ApiAuthError } from "./errors";
+import { ApiAuthError } from "./errors.js";
 
 const usernamePattern = /^[a-z0-9][a-z0-9._-]*$/;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

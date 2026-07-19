@@ -1,13 +1,13 @@
-import type { AuthService } from "./service";
-import { authErrorResponse } from "./errors";
-import { getServerAuthService } from "./supabase-auth-service";
-import type { ProfileRepository } from "../database/profile-repository";
+import type { AuthService } from "./service.js";
+import { authErrorResponse } from "./errors.js";
+import { getServerAuthService } from "./supabase-auth-service.js";
+import type { ProfileRepository } from "../database/profile-repository.js";
 import {
   parseBearerToken,
   parseLogin,
   parseRefreshToken,
   parseRegistration
-} from "./validation";
+} from "./validation.js";
 
 export type AuthRouteResponse = {
   status: number;

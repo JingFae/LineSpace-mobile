@@ -9,13 +9,13 @@ import type {
   ShareThreadToGroupInput,
   UserProfile
 } from "@linespace/api-client";
-import type { DatabaseClient } from "./repository-support";
+import type { DatabaseClient } from "./repository-support.js";
 import {
   ensureDatabaseResult,
   getCurrentLinespaceUserId,
   loadProfiles,
   type UserRow
-} from "./repository-support";
+} from "./repository-support.js";
 
 type MessageRow = {
   id: string;
