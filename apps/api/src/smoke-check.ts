@@ -82,6 +82,28 @@ async function main() {
   const mockApi = createMockLineSpaceApi();
   const mockFeed = await mockApi.listFeed({ viewerId: "user-lili" });
   assert(mockFeed.length > 0, "Mock mode returned an empty feed.");
+  const taggedPoem = mockFeed.find((poem) => poem.tags.length > 0);
+  assert(taggedPoem, "Mock feed has no tagged content for discovery checks.");
+  const tagResult = await mockApi.listTagContent(taggedPoem.tags[0]!, "user-lili");
+  assert(
+    tagResult.posts.some((poem) => poem.id === taggedPoem.id),
+    "Tag discovery did not return the tagged Post."
+  );
+  const searchResult = await mockApi.searchContent(taggedPoem.title, "user-lili");
+  assert(
+    searchResult.posts.some((poem) => poem.id === taggedPoem.id),
+    "Unified search did not match the complete Post title."
+  );
+  const popularPosts = await mockApi.listFeed({ section: "popular", viewerId: "user-lili" });
+  assert(
+    popularPosts.every((poem, index) => index === 0 || popularPosts[index - 1]!.metrics.likes >= poem.metrics.likes),
+    "Popular Posts are not sorted by likes."
+  );
+  const popularThreads = await mockApi.listThreads({ sort: "top", viewerId: "user-lili" });
+  assert(
+    popularThreads.every((thread, index) => index === 0 || popularThreads[index - 1]!.metrics.likes >= thread.metrics.likes),
+    "Popular Threads are not sorted by likes."
+  );
   const mockGroup = await mockApi.createInboxGroup({
     ownerId: "user-lili",
     name: "Smoke Lines",
@@ -258,6 +280,11 @@ async function main() {
 
     const feed = await httpApi.listFeed({ section: "latest", filter: "all", viewerId: profile.id });
     assert(feed.some((poem) => poem.id === published.poem.id), "Published poem was missing from feed.");
+    const discovery = await httpApi.searchContent("Contract check", profile.id);
+    assert(
+      discovery.posts.some((poem) => poem.id === published.poem.id),
+      "Unified HTTP search did not return the newly published Post."
+    );
 
     await httpApi.setPoemCollection({
       userId: profile.id,

@@ -3,10 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
   type ImageSourcePropType
 } from "react-native";
@@ -14,9 +12,7 @@ import {
   AppScreen,
   BottomNavigation,
   EmptyState,
-  LineSpaceLogoIcon,
   PoemCard,
-  SearchIcon,
   type PoemCardModel
 } from "@linespace/ui";
 import { colors, spacing } from "@linespace/tokens";
@@ -25,6 +21,7 @@ import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
 import { mainTabs, tabRoutes } from "@/navigation/tabs";
 import { usePoemEngagement } from "@/features/poem/usePoemEngagement";
 import { getPoemLayoutPresentation } from "@/features/poem/poemPresentation";
+import { FeedTopChrome } from "@/components/FeedTopChrome";
 
 declare const require: (path: string) => ImageSourcePropType;
 
@@ -60,32 +57,13 @@ export function LineSpaceHomeScreen() {
       style={styles.safeArea}
       contentContainerStyle={styles.screen}
     >
-      <View style={styles.topChrome}>
-        <View style={styles.header}>
-          <View style={styles.headerButton} />
-          <LineSpaceLogoIcon color={colors.black} width={54} height={31} />
-          <SearchButton />
-        </View>
-        <View style={styles.sortRow}>
-          {sectionTabs.map((tab) => {
-            const active = tab.value === section;
-            return (
-              <Pressable
-                accessibilityRole="tab"
-                accessibilityState={{ selected: active }}
-                key={tab.value}
-                onPress={() => setSection(tab.value)}
-                style={styles.sortTab}
-              >
-                <Text style={[styles.sortText, active && styles.sortTextActive]}>
-                  {tab.label}
-                </Text>
-                {active ? <View style={styles.sortIndicator} /> : null}
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
+      <FeedTopChrome
+        activeValue={section}
+        onSearch={() => router.push("/search" as Href)}
+        onTabChange={(value) => setSection(value as FeedSection)}
+        searchLabel="Search LineSpace"
+        tabs={sectionTabs}
+      />
 
       <ScrollView style={styles.feed} contentContainerStyle={styles.feedContent} showsVerticalScrollIndicator={false}>
         {feedQuery.isLoading ? (
@@ -122,6 +100,7 @@ export function LineSpaceHomeScreen() {
               onSavePress={(id, isSaved) =>
                 engagement.setCollection(id, "saved", isSaved)
               }
+              onTagPress={(tag) => router.push({ pathname: "/tags/[tag]", params: { tag, section: "posts" } } as unknown as Href)}
             />
           ))
         )}
@@ -157,15 +136,7 @@ export function LineSpaceHomeScreen() {
   );
 }
 
-function SearchButton() {
-  return (
-    <Pressable accessibilityRole="button" style={styles.searchButton}>
-      <SearchIcon width={26} height={26} />
-    </Pressable>
-  );
-}
-
-function mapPoemToCard(poem: PoemSummary): PoemCardModel {
+export function mapPoemToCard(poem: PoemSummary): PoemCardModel {
   return {
     id: poem.id,
     title: poem.title,
@@ -209,63 +180,6 @@ const styles = StyleSheet.create({
   },
   screen: {
     backgroundColor: colors.surface
-  },
-  topChrome: {
-    height: 122,
-    backgroundColor: colors.surface
-  },
-  header: {
-    height: 78,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: spacing.lg,
-    paddingTop: 30,
-    backgroundColor: colors.surface
-  },
-  headerButton: {
-    width: 44,
-    height: 44
-  },
-  searchButton: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  sortRow: {
-    height: 44,
-    paddingHorizontal: spacing.lg,
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "center",
-    gap: 30,
-    backgroundColor: colors.surface,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.line
-  },
-  sortTab: {
-    minWidth: 62,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "flex-start",
-    paddingTop: 4
-  },
-  sortText: {
-    fontSize: 14,
-    lineHeight: 19,
-    color: colors.profileMuted
-  },
-  sortTextActive: {
-    color: colors.ink,
-    fontWeight: "600"
-  },
-  sortIndicator: {
-    width: 20,
-    height: 2,
-    marginTop: 7,
-    borderRadius: 1,
-    backgroundColor: colors.ink
   },
   feed: {
     flex: 1,

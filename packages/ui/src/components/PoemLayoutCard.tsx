@@ -1,6 +1,7 @@
 import {
   Image,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   View,
@@ -27,6 +28,7 @@ type PoemLayoutCardProps = {
   mediaSource?: ImageSourcePropType;
   mediaAspectRatio?: number;
   style?: StyleProp<ViewStyle>;
+  onTagPress?: (tag: string) => void;
 };
 
 /** Render-only poem canvas shared by Layout selection and final preview surfaces. */
@@ -37,7 +39,8 @@ export function PoemLayoutCard({
   stickerSymbols = [],
   mediaSource,
   mediaAspectRatio,
-  style
+  style,
+  onTagPress
 }: PoemLayoutCardProps) {
   const dark = backgroundRole === "dark";
   const textColor = dark ? "#F5EFE3" : colors.ink;
@@ -74,9 +77,20 @@ export function PoemLayoutCard({
             <Text key={`${line}-${index}`} style={[styles.line, typeStyle, { color: textColor }]}>{line}</Text>
           ))}
         </View>
-        <Text numberOfLines={1} style={[styles.tags, { color: dark ? "#BFC7CE" : colors.profileMuted }]}>
-          {poem.tags.map((tag) => `#${tag}`).join("  |  ")}
-        </Text>
+        <View style={styles.tagRow}>
+          {poem.tags.map((tag) => (
+            <Pressable
+              disabled={!onTagPress}
+              key={tag}
+              onPress={(event) => {
+                event.stopPropagation();
+                onTagPress?.(tag);
+              }}
+            >
+              <Text style={styles.tags}>#{tag}</Text>
+            </Pressable>
+          ))}
+        </View>
         <View style={[styles.divider, { backgroundColor: dark ? "rgba(255,255,255,0.24)" : "rgba(21,21,21,0.16)" }]} />
         <View style={styles.footer}>
           <Text style={[styles.byline, { color: textColor }]}>by {poem.byline}</Text>
@@ -140,13 +154,23 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "rgba(21,21,21,0.12)"
   },
+  tagRow: { minHeight: 20, marginTop: "auto", paddingTop: 24, flexDirection: "row", flexWrap: "wrap", gap: 10 },
   body: { flex: 1, minHeight: 320, paddingHorizontal: 24, paddingTop: 24, paddingBottom: 18 },
   stickers: { position: "absolute", right: 20, top: 16, flexDirection: "row", gap: 4, opacity: 0.65 },
   sticker: { fontSize: 24, lineHeight: 29 },
   title: { paddingRight: 46, fontSize: 27, lineHeight: 34 },
   lines: { marginTop: 22, gap: 10 },
   line: { fontSize: 19, lineHeight: 27 },
-  tags: { marginTop: "auto", paddingTop: 24, fontSize: 12, lineHeight: 16 },
+  tags: {
+    color: "#1677D2",
+    fontSize: 13,
+    lineHeight: 18,
+    fontStyle: "italic",
+    fontWeight: "600",
+    textShadowColor: "rgba(48,156,255,0.38)",
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 7
+  },
   divider: { height: StyleSheet.hairlineWidth, marginTop: 9, marginBottom: 9 },
   footer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   byline: { fontSize: 12, lineHeight: 16 },

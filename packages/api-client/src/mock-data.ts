@@ -534,7 +534,30 @@ const threadUsers = {
   }
 } as const;
 
-export const mockThreads: PoetryThread[] = [
+const mockThreadTagsById: Record<string, string[]> = {
+  "thread-rain-without-rain": ["rain", "imagery"],
+  "thread-unopened-letter": ["letters", "longing"],
+  "thread-city-edge": ["city", "journey"],
+  "thread-place-return": ["home", "memory"],
+  "thread-moon-receipt": ["moon", "sea"],
+  "thread-library-breath": ["library", "silence"],
+  "thread-shadow-names": ["shadow", "identity"],
+  "thread-lost-map": ["memory", "family"],
+  "thread-orchard-static": ["radio", "orchard"],
+  "thread-window-plant": ["nature", "city"],
+  "thread-elevator-music": ["music", "strangers"],
+  "thread-salt-lamp": ["ocean", "memory"],
+  "thread-after-image": ["afterimage", "light"],
+  "thread-train-platform": ["train", "goodbye"],
+  "thread-coffee-cup": ["objects", "memory"],
+  "thread-sea-address": ["sea", "change"],
+  "thread-museum-bench": ["museum", "listening"],
+  "thread-blue-hour": ["bluehour", "windows"],
+  "thread-pocket-stone": ["winter", "objects"],
+  "thread-radio-snow": ["radio", "snow"]
+};
+
+export const mockThreads: PoetryThread[] = ([
   {
     id: "thread-rain-without-rain",
     author: threadUsers.jinghe,
@@ -759,7 +782,10 @@ export const mockThreads: PoetryThread[] = [
     metrics: { likes: 13, continuations: 0, shares: 0, views: 330 },
     viewer: { liked: false }
   }
-];
+] satisfies PoetryThread[]).map((thread) => ({
+  ...thread,
+  tags: mockThreadTagsById[thread.id] ?? ["poetry"]
+}));
 
 export const mockThreadContinuations: ThreadContinuation[] = [
   {

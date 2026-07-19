@@ -23,12 +23,11 @@ import {
   BellIcon,
   BottomNavigation,
   ContinueIcon,
+  ContentTagRow,
   EmptyState,
   LikeIcon,
-  LineSpaceLogoIcon,
   MoreIcon,
   SaveIcon,
-  SearchIcon,
   ShareIcon
 } from "@linespace/ui";
 import { colors, radius, spacing, typography } from "@linespace/tokens";
@@ -42,6 +41,7 @@ import type {
 } from "@linespace/api-client";
 import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
 import { mainTabs, tabRoutes } from "@/navigation/tabs";
+import { FeedTopChrome } from "@/components/FeedTopChrome";
 import {
   adaptThreadToCreativeViewModel,
   getThreadContributors,
@@ -154,29 +154,19 @@ export function ThreadFeedScreen() {
 
   return (
     <AppScreen scroll={false} padded={false} style={styles.safeArea} contentContainerStyle={styles.screen}>
-      <ThreadTopBar />
+      <FeedTopChrome
+        activeValue={sort}
+        onSearch={() => router.push("/search" as Href)}
+        onTabChange={(value) => setSort(value as ThreadSort)}
+        searchLabel="Search LineSpace"
+        tabs={sortTabs}
+      />
 
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.feedContent, composerTarget && styles.composerOpenContentInset]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.sortRow}>
-          {sortTabs.map((item) => (
-            <Pressable
-              key={item.value}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: sort === item.value }}
-              onPress={() => setSort(item.value)}
-              style={[styles.sortPill, sort === item.value && styles.sortPillActive]}
-            >
-              <Text style={[styles.sortText, sort === item.value && styles.sortTextActive]}>
-                {item.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
         {threadQuery.isLoading ? (
           <ThreadListState title="Loading threads" />
         ) : threadQuery.isError ? (
@@ -722,18 +712,6 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
   );
 }
 
-function ThreadTopBar() {
-  return (
-    <View style={styles.topBar}>
-      <View style={styles.headerButton} />
-      <LineSpaceLogo />
-      <Pressable accessibilityLabel="Search threads" hitSlop={12} style={styles.headerButton}>
-        <SearchIcon color={colors.ink} width={19} height={19} />
-      </Pressable>
-    </View>
-  );
-}
-
 function DetailTopBar({ title, large = false, onNotify }: { title: string; large?: boolean; onNotify?: () => void }) {
   return (
     <View style={styles.detailTopBar}>
@@ -755,10 +733,6 @@ function DetailTopBar({ title, large = false, onNotify }: { title: string; large
       </View>
     </View>
   );
-}
-
-function LineSpaceLogo() {
-  return <LineSpaceLogoIcon color={colors.black} width={54} height={31} />;
 }
 
 function ThreadCard({
@@ -869,6 +843,12 @@ function ThreadDetailHero({
       </View>
       {thread.title ? <Text style={styles.detailHeroTitle}>{thread.title}</Text> : null}
       <Text style={styles.detailHeroContent}>{creativeThread.writingPrompt}</Text>
+      <View style={styles.detailTagRow}>
+        <ContentTagRow
+          onTagPress={(tag) => router.push({ pathname: "/tags/[tag]", params: { tag, section: "threads" } } as unknown as Href)}
+          tags={thread.tags ?? []}
+        />
+      </View>
       <StartingContentCard
         contributors={contributors}
         creativeThread={creativeThread}
@@ -2270,15 +2250,6 @@ const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.surface },
   screen: { paddingBottom: 0, backgroundColor: colors.surface },
   scroll: { flex: 1, backgroundColor: colors.surface },
-  topBar: {
-    height: 78,
-    paddingTop: 30,
-    paddingHorizontal: spacing.lg,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: colors.surface
-  },
   detailTopBar: {
     height: 78,
     paddingTop: 30,
@@ -2306,24 +2277,6 @@ const styles = StyleSheet.create({
   feedContent: { paddingBottom: 96 },
   detailContent: { paddingBottom: 86 },
   composerOpenContentInset: { paddingBottom: 390 },
-  sortRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 34,
-    paddingHorizontal: spacing.lg,
-    paddingTop: 4,
-    paddingBottom: 10
-  },
-  sortPill: {
-    minHeight: 32,
-    minWidth: 58,
-    paddingHorizontal: 0,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  sortPillActive: {},
-  sortText: { fontSize: 14, lineHeight: 18, fontWeight: "400", color: colors.profileMuted },
-  sortTextActive: { color: colors.ink, fontWeight: "500" },
   threadCard: {
     paddingHorizontal: spacing.lg,
     paddingVertical: 10,
@@ -2503,6 +2456,7 @@ const styles = StyleSheet.create({
   followingButtonText: { color: colors.profileMuted },
   detailHeroTitle: { marginTop: 14, color: colors.ink, fontFamily: "Georgia", fontSize: 24, lineHeight: 30, fontWeight: "600" },
   detailHeroContent: { marginTop: 10, fontSize: 15, lineHeight: 21, color: colors.ink },
+  detailTagRow: { minHeight: 22, marginTop: 10 },
   detailHeroTag: { marginTop: 5, fontSize: 13, lineHeight: 17, color: colors.profileMuted },
   continuationHeader: {
     minHeight: 42,

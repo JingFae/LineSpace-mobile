@@ -8,6 +8,7 @@ import type {
   CreatePoemDraftInput,
   CreateStorageUploadInput,
   CreateThreadContinuationInput,
+  ContentSearchResult,
   DraftInvitation,
   DraftOperationInput,
   FeedQuery,
@@ -39,6 +40,7 @@ import type {
   ThreadFeedQuery,
   ThreadShareResult,
   ThreadShareTarget,
+  TagContentResult,
   ShareThreadInput,
   ShareThreadToGroupInput,
   UpdateThreadCollectionInput,
@@ -202,6 +204,18 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     const query = params.size > 0 ? `?${params.toString()}` : "";
     return this.getJson<PoemSummary | null>(
       `/v1/poems/${encodeURIComponent(id)}${query}`
+    );
+  }
+
+  async searchContent(query: string, viewerId: string): Promise<ContentSearchResult> {
+    const params = new URLSearchParams({ query, viewerId });
+    return this.getJson<ContentSearchResult>(`/v1/search?${params.toString()}`);
+  }
+
+  async listTagContent(tag: string, viewerId: string): Promise<TagContentResult> {
+    const params = new URLSearchParams({ viewerId });
+    return this.getJson<TagContentResult>(
+      `/v1/tags/${encodeURIComponent(tag)}?${params.toString()}`
     );
   }
 

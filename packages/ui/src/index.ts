@@ -10,6 +10,7 @@ export { EmptyState } from "./components/EmptyState";
 export { PoemArtwork, type ArtworkTone } from "./components/PoemArtwork";
 export { PoemCard, type PoemCardModel } from "./components/PoemCard";
 export { PoemLayoutCard, type PoemLayoutCardModel } from "./components/PoemLayoutCard";
+export { ContentTag, ContentTagRow } from "./components/ContentTag";
 export {
   ProfilePostCard,
   type ProfilePostCardModel

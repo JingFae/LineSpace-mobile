@@ -19,6 +19,7 @@ import type {
   CreatePoemDraftInput,
   CreateStorageUploadInput,
   CreateThreadContinuationInput,
+  ContentSearchResult,
   DraftInvitation,
   DraftOperationInput,
   FeedQuery,
@@ -52,6 +53,7 @@ import type {
   ThreadFeedQuery,
   ThreadShareResult,
   ThreadShareTarget,
+  TagContentResult,
   ShareThreadInput,
   ShareThreadToGroupInput,
   UpdateThreadCollectionInput,
@@ -97,6 +99,8 @@ export interface LineSpaceApi {
   listUserDrafts(userId: string): Promise<UserDraftPage>;
   createStorageUpload(input: CreateStorageUploadInput): Promise<StorageUploadTarget>;
   listFeed(query?: FeedQuery): Promise<PoemSummary[]>;
+  searchContent(query: string, viewerId: string): Promise<ContentSearchResult>;
+  listTagContent(tag: string, viewerId: string): Promise<TagContentResult>;
   getPoem(id: string, viewerId?: string): Promise<PoemSummary | null>;
   setPoemCollection(input: UpdatePoemCollectionInput): Promise<PoemEngagementResult>;
   getUserPoemCollections(userId: string): Promise<UserPoemCollections>;
@@ -524,16 +528,16 @@ export class MockLineSpaceApi implements LineSpaceApi {
 
     if (section === "following" && viewerId) {
       const followingIds = this.getFollowingIds(viewerId);
-      poems = poems.filter((poem) => followingIds.has(poem.author.id));
+      poems = poems
+        .filter((poem) => followingIds.has(poem.author.id))
+        .sort(
+          (left, right) =>
+            Date.parse(right.editedAt ?? right.startedAt) -
+            Date.parse(left.editedAt ?? left.startedAt)
+        );
     } else if (section === "popular") {
       poems = [...poems].sort(
-        (left, right) =>
-          right.metrics.likes +
-          (right.metrics.comments ?? 0) +
-          (right.metrics.shares ?? right.metrics.contributions) -
-          (left.metrics.likes +
-            (left.metrics.comments ?? 0) +
-            (left.metrics.shares ?? left.metrics.contributions))
+        (left, right) => right.metrics.likes - left.metrics.likes
       );
     } else {
       poems = [...poems].sort(
@@ -559,6 +563,46 @@ export class MockLineSpaceApi implements LineSpaceApi {
   async getPoem(id: string, viewerId?: string): Promise<PoemSummary | null> {
     const poem = this.poems.find((item) => item.id === id);
     return poem && canViewContent(poem.visibility, poem.audienceUserIds, poem.author.id, viewerId) ? this.withViewer(poem, viewerId) : null;
+  }
+
+  async searchContent(query: string, viewerId: string): Promise<ContentSearchResult> {
+    const normalized = normalizeDiscoveryText(query);
+    if (!normalized) return { query: "", posts: [], threads: [], users: [] };
+    const [visiblePosts, visibleThreads] = await Promise.all([
+      this.listFeed({ section: "latest", viewerId }),
+      this.listThreads({ sort: "latest", viewerId })
+    ]);
+    const posts = visiblePosts.filter((poem) =>
+      discoveryIncludes([poem.title, ...poem.lines, ...poem.tags], normalized)
+    );
+    const threads = visibleThreads.filter((thread) => {
+      const continuationText = this.continuations
+        .filter((item) => item.threadId === thread.id)
+        .map((item) => item.content);
+      return discoveryIncludes(
+        [thread.title, thread.content, thread.startingContent, thread.rules, ...(thread.tags ?? []), ...continuationText],
+        normalized
+      );
+    });
+    const users = this.profiles
+      .filter((profile) => discoveryIncludes([profile.handle, profile.displayName], normalized))
+      .sort((left, right) => left.handle.localeCompare(right.handle))
+      .slice(0, 30)
+      .map(profileToUser);
+    return { query: query.trim(), posts, threads, users };
+  }
+
+  async listTagContent(tag: string, viewerId: string): Promise<TagContentResult> {
+    const normalized = normalizeContentTag(tag);
+    const [posts, threads] = await Promise.all([
+      this.listFeed({ section: "latest", viewerId }),
+      this.listThreads({ sort: "latest", viewerId })
+    ]);
+    return {
+      tag: normalized,
+      posts: posts.filter((poem) => poem.tags.some((item) => normalizeContentTag(item) === normalized)),
+      threads: threads.filter((thread) => (thread.tags ?? []).some((item) => normalizeContentTag(item) === normalized))
+    };
   }
 
   async createPoemComment(input: CreatePoemCommentInput): Promise<PoemComment> {
@@ -1183,13 +1227,13 @@ export class MockLineSpaceApi implements LineSpaceApi {
         (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)
       );
     } else if (query.sort === "following") {
-      threads = threads.filter((thread) => thread.author.id !== viewerId);
+      const followingIds = viewerId ? this.getFollowingIds(viewerId) : new Set<string>();
+      threads = threads
+        .filter((thread) => followingIds.has(thread.author.id))
+        .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
     } else {
       threads = [...threads].sort(
-        (left, right) =>
-          right.metrics.likes +
-          right.metrics.continuations * 2 -
-          (left.metrics.likes + left.metrics.continuations * 2)
+        (left, right) => right.metrics.likes - left.metrics.likes
       );
     }
 
@@ -2150,6 +2194,18 @@ function canViewContent(visibility: PoemSummary["visibility"], audienceUserIds: 
   if (viewerId === ownerId) return true;
   const selected = audienceUserIds ?? [];
   return visibility === "include" ? Boolean(viewerId && selected.includes(viewerId)) : Boolean(!viewerId || !selected.includes(viewerId));
+}
+
+function normalizeDiscoveryText(value: string) {
+  return value.trim().toLocaleLowerCase();
+}
+
+function normalizeContentTag(value: string) {
+  return value.trim().replace(/^#+/, "").toLocaleLowerCase();
+}
+
+function discoveryIncludes(values: Array<string | undefined>, query: string) {
+  return values.some((value) => value?.toLocaleLowerCase().includes(query));
 }
 
 function clampSearchLimit(value: number | undefined) {

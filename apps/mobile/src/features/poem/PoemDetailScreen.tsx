@@ -19,6 +19,7 @@ import {
   AppScreen,
   Avatar,
   CommentIcon,
+  ContentTagRow,
   EmptyState,
   PoemEngagementBar,
   PoemLayoutCard,
@@ -227,6 +228,7 @@ function PoemDetailContent({
           backgroundRole={layoutPresentation.backgroundRole}
           mediaAspectRatio={layoutPresentation.mediaAspectRatio}
           mediaSource={layoutPresentation.mediaSource}
+          onTagPress={(tag) => router.push({ pathname: "/tags/[tag]", params: { tag, section: "posts" } } as never)}
           poem={{
             title: poem.title,
             lines: poem.lines,
@@ -267,20 +269,10 @@ function PoemDetailContent({
             </View>
 
             <View style={styles.tagRow}>
-              {poem.tags.map((tag) => (
-                <Pressable
-                  accessibilityRole="button"
-                  key={tag}
-                  onPress={() =>
-                    router.push({
-                      pathname: "/(tabs)/discover",
-                      params: { tag }
-                    } as never)
-                  }
-                >
-                  <Text style={styles.tag}>#{tag}</Text>
-                </Pressable>
-              ))}
+              <ContentTagRow
+                onTagPress={(tag) => router.push({ pathname: "/tags/[tag]", params: { tag, section: "posts" } } as never)}
+                tags={poem.tags}
+              />
             </View>
           </>
         ) : null}
@@ -499,7 +491,7 @@ function MetricDock({
 
 function SearchButton() {
   return (
-    <Pressable accessibilityRole="button" style={styles.searchButton}>
+    <Pressable accessibilityRole="button" onPress={() => router.push("/search" as never)} style={styles.searchButton}>
       <SearchIcon width={26} height={26} />
     </Pressable>
   );
@@ -768,7 +760,6 @@ const styles = StyleSheet.create({
     fontWeight: "400"
   },
   tagRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 },
-  tag: { fontSize: 20, lineHeight: 24, color: colors.inkSoft, fontWeight: "400" },
   divider: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: "#D9D9D9"

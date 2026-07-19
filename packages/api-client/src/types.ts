@@ -658,6 +658,19 @@ export type FeedQuery = {
   viewerId?: string;
 };
 
+export type ContentSearchResult = {
+  query: string;
+  posts: PoemSummary[];
+  threads: PoetryThread[];
+  users: UserProfile[];
+};
+
+export type TagContentResult = {
+  tag: string;
+  posts: PoemSummary[];
+  threads: PoetryThread[];
+};
+
 export type PoemEngagementResult = {
   poem: PoemSummary;
   collections: UserPoemCollections;

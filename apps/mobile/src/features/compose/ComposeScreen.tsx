@@ -12,12 +12,11 @@ import {
   View,
   type ImageSourcePropType
 } from "react-native";
-import { AppScreen, InviteIcon } from "@linespace/ui";
+import { AppScreen } from "@linespace/ui";
 import { colors, radius, spacing } from "@linespace/tokens";
 import type { PoemDraft, PoemDraftMedia, PoemDraftSettings } from "@linespace/api-client";
 import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
 import { getMediaAspectRatio } from "@/features/poem/poemPresentation";
-import { InviteCollaboratorsSheet } from "./InviteCollaboratorsSheet";
 
 type ComposeScreenProps = {
   sessionKey: string;
@@ -52,7 +51,6 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
       : null;
   });
   const [settings] = useState<PoemDraftSettings>(initialSettings);
-  const [inviteOpen, setInviteOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const draftQuery = useQuery({
@@ -130,16 +128,6 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
     }
     setError(null);
     saveMutation.mutate();
-  };
-
-  const openCollaborationRoom = () => {
-    const id = draftQuery.data?.id;
-    if (!id) return;
-    setInviteOpen(false);
-    router.push({
-      pathname: "/compose/collaborate/[id]",
-      params: { id }
-    } as unknown as Href);
   };
 
   const mediaHeight = getComposeMediaHeight(media);
@@ -234,44 +222,12 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
         />
       </View>
 
-      <Pressable
-        accessibilityRole="button"
-        disabled={!draftQuery.data}
-        onPress={() => setInviteOpen(true)}
-        style={({ pressed }) => [
-          styles.inviteCard,
-          pressed && styles.inviteCardPressed
-        ]}
-      >
-        <View style={styles.inviteIcon}>
-          <InviteIcon width={38} height={38} />
-        </View>
-        <View style={styles.inviteCopy}>
-          <Text style={styles.inviteEyebrow}>WRITE TOGETHER</Text>
-          <Text style={styles.inviteTitle}>Invite a co-writer</Text>
-          <Text style={styles.inviteDescription}>
-            Share this draft and edit the same poem live.
-          </Text>
-        </View>
-        {draftQuery.isLoading ? (
-          <ActivityIndicator color={colors.ink} size="small" />
-        ) : (
-          <Text style={styles.chevron}>›</Text>
-        )}
-      </Pressable>
-
       {error || saveMutation.isError ? (
         <Text style={styles.error}>
           {error ?? "The draft could not be saved."}
         </Text>
       ) : null}
 
-      <InviteCollaboratorsSheet
-        draftId={draftQuery.data?.id}
-        onClose={() => setInviteOpen(false)}
-        onOpenRoom={openCollaborationRoom}
-        visible={inviteOpen}
-      />
     </AppScreen>
   );
 }
@@ -647,53 +603,6 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: 15,
     lineHeight: 20
-  },
-  inviteCard: {
-    minHeight: 88,
-    marginHorizontal: 16,
-    marginTop: 14,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    backgroundColor: colors.surfaceWarm,
-    borderWidth: 1,
-    borderColor: colors.line,
-    flexDirection: "row",
-    alignItems: "center"
-  },
-  inviteCardPressed: { opacity: 0.72 },
-  inviteIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  inviteCopy: { flex: 1, minWidth: 0, marginLeft: 12 },
-  inviteEyebrow: {
-    color: colors.profileMuted,
-    fontSize: 9,
-    lineHeight: 12,
-    letterSpacing: 1.2
-  },
-  inviteTitle: {
-    marginTop: 1,
-    color: colors.ink,
-    fontSize: 17,
-    lineHeight: 23
-  },
-  inviteDescription: {
-    marginTop: 3,
-    color: colors.profileMuted,
-    fontSize: 11,
-    lineHeight: 15
-  },
-  chevron: {
-    marginLeft: 8,
-    color: colors.ink,
-    fontSize: 30,
-    lineHeight: 30,
-    fontWeight: "300"
   },
   error: {
     marginHorizontal: 20,

@@ -10,6 +10,7 @@ import { Avatar } from "./Avatar";
 import { PoemArtwork, type ArtworkTone } from "./PoemArtwork";
 import { PoemEngagementBar } from "./PoemEngagementBar";
 import { PoemLayoutCard } from "./PoemLayoutCard";
+import { ContentTagRow } from "./ContentTag";
 
 export type PoemCardModel = {
   id: string;
@@ -58,6 +59,7 @@ type PoemCardProps = {
   onContributionPress?: (id: string) => void;
   onLikePress?: (id: string, isLiked: boolean) => void;
   onSavePress?: (id: string, isSaved: boolean) => void;
+  onTagPress?: (tag: string) => void;
 };
 
 export function PoemCard({
@@ -68,7 +70,8 @@ export function PoemCard({
   onCommentPress,
   onContributionPress,
   onLikePress,
-  onSavePress
+  onSavePress,
+  onTagPress
 }: PoemCardProps) {
   return (
     <View style={styles.root}>
@@ -111,6 +114,7 @@ export function PoemCard({
             backgroundRole={poem.layout.backgroundRole}
             mediaAspectRatio={poem.layout.mediaAspectRatio}
             mediaSource={poem.layout.mediaSource}
+            onTagPress={onTagPress}
             poem={{
               title: poem.title,
               lines: poem.lines,
@@ -145,11 +149,9 @@ export function PoemCard({
                 ))}
               </View>
 
-              {poem.tags.length > 0 ? (
-                <Text style={styles.tags}>
-                  {poem.tags.map((tag) => `#${tag}`).join("   ")}
-                </Text>
-              ) : null}
+              <View style={styles.tagRow}>
+                <ContentTagRow onTagPress={onTagPress} tags={poem.tags} />
+              </View>
 
               <Text style={styles.startedMeta}>
                 started {poem.startedAtLabel}
@@ -291,11 +293,9 @@ const styles = StyleSheet.create({
     lineHeight: 27,
     color: colors.ink
   },
-  tags: {
+  tagRow: {
     marginBottom: 11,
-    fontSize: 13,
-    lineHeight: 18,
-    color: colors.muted
+    minHeight: 22
   },
   startedMeta: {
     marginTop: 10,

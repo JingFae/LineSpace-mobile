@@ -63,6 +63,37 @@ export async function handleApiRequest(
   const api: import("@linespace/api-client").LineSpaceApi =
     createSupabaseLineSpaceApiForRequest(context.authorization) ?? mockApi;
 
+  if (method === "GET" && pathname === "/v1/search") {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
+    const query = searchParams.get("query")?.trim() ?? "";
+    if ([...query].length > 80) {
+      return json(400, {
+        code: "INVALID_CONTENT_SEARCH",
+        message: "Search text cannot exceed 80 characters."
+      });
+    }
+    try {
+      return json(200, await api.searchContent(query, actor.user.id));
+    } catch (error) {
+      return profileRepositoryErrorResponse(error);
+    }
+  }
+
+  const tag = parseTagContentRoute(pathname);
+  if (method === "GET" && tag !== null) {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
+    if (!tag || [...tag].length > 64) {
+      return json(400, { code: "INVALID_CONTENT_TAG" });
+    }
+    try {
+      return json(200, await api.listTagContent(tag, actor.user.id));
+    } catch (error) {
+      return profileRepositoryErrorResponse(error);
+    }
+  }
+
   if (method === "GET" && pathname === "/v1/threads") {
     const sort = searchParams.get("sort");
     return json(
@@ -1041,6 +1072,16 @@ function isFeedFilter(value: string | undefined): value is FeedFilter {
 
 function isFeedSection(value: string | undefined): value is FeedSection {
   return value === "latest" || value === "popular" || value === "following";
+}
+
+function parseTagContentRoute(pathname: string) {
+  const match = pathname.match(/^\/v1\/tags\/([^/]+)$/);
+  if (!match?.[1]) return null;
+  try {
+    return decodeURIComponent(match[1]).trim().replace(/^#+/, "");
+  } catch {
+    return "";
+  }
 }
 
 type ParsedCollectionRoute = {

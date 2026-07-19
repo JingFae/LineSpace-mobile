@@ -34,7 +34,7 @@ export function CreateHomeScreen() {
 
       <View style={styles.footerCard}>
         <Text style={styles.footerTitle}>Your work stays yours</Text>
-        <Text style={styles.footerBody}>Save at any stage. You can choose visibility, collaborators and publishing when the work feels ready.</Text>
+        <Text style={styles.footerBody}>Save at any stage. Choose visibility and publish only when the work feels ready.</Text>
       </View>
     </AppScreen>
   );

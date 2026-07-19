@@ -81,9 +81,16 @@ export class PostRepository {
       .from("posts")
       .select(postSelect)
       .eq("status", "published")
-      .order("started_at", { ascending: false })
-      .order("id", { ascending: false })
       .limit(100);
+
+    request = query.section === "popular"
+      ? request
+          .order("likes_count", { ascending: false })
+          .order("started_at", { ascending: false })
+          .order("id", { ascending: false })
+      : request
+          .order("started_at", { ascending: false })
+          .order("id", { ascending: false });
 
     if (query.section === "following") {
       if (!actorId) return [];
@@ -586,4 +593,3 @@ function toLayout(value: unknown): PoemLayoutConfig | undefined {
     stickerIds
   };
 }
-
