@@ -8,7 +8,7 @@ import {
   mockUserConnections,
   mockUserProfileContent,
   mockUserProfileDetails
-} from "./mock-data.js";
+} from "./mock-data";
 import type {
   AiAssistRequest,
   AiAssistResponse,
@@ -80,7 +80,7 @@ import type {
   UpdateCommentCollectionInput,
   UserDraftPage,
   UpdateUserProfileInput
-} from "./types.js";
+} from "./types";
 
 export interface LineSpaceApi {
   getPoemDesignCatalog(): Promise<PoemDesignCatalog>;

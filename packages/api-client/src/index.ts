@@ -1,15 +1,15 @@
-export { createMockLineSpaceApi, MockLineSpaceApi, type LineSpaceApi } from "./client.js";
+export { createMockLineSpaceApi, MockLineSpaceApi, type LineSpaceApi } from "./client";
 export {
   HttpLineSpaceApi,
   HttpLineSpaceApiError,
   type HttpLineSpaceApiOptions
-} from "./http-client.js";
+} from "./http-client";
 export {
   AuthClientError,
   HttpAuthClient,
   type AuthClientErrorCode,
   type AuthClientOptions
-} from "./auth-client.js";
+} from "./auth-client";
 export {
   mockPoems,
   mockInboxActivitySummaries,
@@ -20,7 +20,7 @@ export {
   mockUserProfileContent,
   mockUserProfileDetails,
   mockUsers
-} from "./mock-data.js";
+} from "./mock-data";
 export type {
   AiAssistIntent,
   AiAssistRequest,
@@ -141,4 +141,4 @@ export type {
   SharePoemResult,
   InboxConversationMessage,
   UserProfileStats
-} from "./types.js";
+} from "./types";

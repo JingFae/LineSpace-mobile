@@ -66,8 +66,8 @@ import type {
   UpdateCommentCollectionInput,
   UserDraftPage,
   UpdateUserProfileInput
-} from "./types.js";
-import type { LineSpaceApi } from "./client.js";
+} from "./types";
+import type { LineSpaceApi } from "./client";
 
 export type HttpLineSpaceApiOptions = {
   getAccessToken?: () => Promise<string | null | undefined> | string | null | undefined;

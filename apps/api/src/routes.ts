@@ -1,5 +1,4 @@
 import {
-  createMockLineSpaceApi,
   type AuthUser,
   type AiAssistRequest,
   type CreateContinuationInput,
@@ -20,7 +19,8 @@ import {
   type UpdateUserProfileInput,
   type UserConnectionKind,
   type UserSearchQuery,
-  type UserProfileContentSection
+  type UserProfileContentSection,
+  type LineSpaceApi
 } from "@linespace/api-client";
 import {
   authErrorResponse,
@@ -33,14 +33,13 @@ import {
   createProfileRepositoryForRequest,
   ProfileRepositoryError
 } from "./database/profile-repository.js";
-import {
-  createSupabaseLineSpaceApiForRequest,
-  SupabaseLineSpaceApi
-} from "./database/linespace-repository.js";
 import { DomainRepositoryError } from "./database/repository-support.js";
 import { requestThreadVersionRecommendation } from "./ai/thread-version-recommendation.js";
 
-const mockApi = createMockLineSpaceApi();
+let lineSpaceRepositoryPromise:
+  | Promise<typeof import("./database/linespace-repository.js")>
+  | undefined;
+let mockApiPromise: Promise<LineSpaceApi> | undefined;
 
 export type ApiResponse = {
   status: number;
@@ -73,8 +72,9 @@ export async function handleApiRequest(
 
   const authRoute = await handleAuthRoute(method, pathname, body, context);
   if (authRoute) return authRoute;
-  const api: import("@linespace/api-client").LineSpaceApi =
-    createSupabaseLineSpaceApiForRequest(context.authorization) ?? mockApi;
+  const { api, isDatabaseBacked } = await createLineSpaceApi(
+    context.authorization
+  );
 
   if (method === "GET" && pathname === "/v1/search") {
     const actor = await authenticateRequest(context);
@@ -346,7 +346,7 @@ export async function handleApiRequest(
   if (method === "POST" && pathname === "/v1/storage/upload-url") {
     const actor = await authenticateRequest(context);
     if (!actor.ok) return actor.response;
-    if (!(api instanceof SupabaseLineSpaceApi)) {
+    if (!isDatabaseBacked) {
       return json(501, {
         code: "STORAGE_NOT_CONFIGURED",
         message: "Media uploads are unavailable in Mock mode."
@@ -1017,6 +1017,23 @@ export async function handleApiRequest(
   }
 
   return json(404, { code: "NOT_FOUND" });
+}
+
+async function createLineSpaceApi(authorization?: string): Promise<{
+  api: LineSpaceApi;
+  isDatabaseBacked: boolean;
+}> {
+  lineSpaceRepositoryPromise ??= import("./database/linespace-repository.js");
+  const { createSupabaseLineSpaceApiForRequest } = await lineSpaceRepositoryPromise;
+  const databaseApi = createSupabaseLineSpaceApiForRequest(authorization);
+  if (databaseApi) {
+    return { api: databaseApi, isDatabaseBacked: true };
+  }
+
+  mockApiPromise ??= import("@linespace/api-client").then(
+    ({ createMockLineSpaceApi }) => createMockLineSpaceApi()
+  );
+  return { api: await mockApiPromise, isDatabaseBacked: false };
 }
 
 function json(status: number, body: unknown): ApiResponse {
