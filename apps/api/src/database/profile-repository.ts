@@ -615,7 +615,9 @@ function toProfileDetails(
   badges: UserProfileDetails["badges"],
   experience: ExperienceRow
 ): UserProfileDetails {
-  const level = countValue(experience.level);
+  const totalExperience = countValue(experience.total_experience);
+  const level = Math.max(1, Math.min(10, countValue(experience.level) || 1));
+  const levelFloor = (level - 1) * 10;
   return {
     ...toUserProfile(row),
     linespaceId: row.linespace_id,
@@ -623,16 +625,12 @@ function toProfileDetails(
     experience: {
       creator: countValue(experience.creator_experience),
       reviewer: countValue(experience.reviewer_experience),
-      total: countValue(experience.total_experience),
+      total: totalExperience,
       level,
-      levelProgress:
-        countValue(experience.total_experience) >= 100
-          ? 1
-          : (countValue(experience.total_experience) % 10) / 10,
-      nextLevelAt:
-        countValue(experience.total_experience) >= 100
-          ? null
-          : (level + 1) * 10
+      levelProgress: level >= 10
+        ? 1
+        : Math.max(0, Math.min(1, (totalExperience - levelFloor) / 10)),
+      nextLevelAt: level >= 10 ? null : level * 10
     },
     badges,
     stats: {
@@ -695,7 +693,7 @@ function emptyExperienceRow(userId: string): ExperienceRow {
     creator_experience: 0,
     reviewer_experience: 0,
     total_experience: 0,
-    level: 0
+    level: 1
   };
 }
 

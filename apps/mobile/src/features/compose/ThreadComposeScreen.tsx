@@ -1,16 +1,21 @@
 import { router } from "expo-router";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { AppScreen } from "@linespace/ui";
 import { colors, radius, spacing } from "@linespace/tokens";
 import type { PoemDraftSettings } from "@linespace/api-client";
-import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
+import { lineSpaceApi } from "@/services/lineSpaceApi";
+import { useAuth } from "@/auth/AuthSessionProvider";
+import { tabRoutes } from "@/navigation/tabs";
 import { VisibilityAudienceSheet } from "./VisibilityAudienceSheet";
 
 const initialSettings: PoemDraftSettings = { declareOriginal: false, isPublic: true, visibility: "public", audienceUserIds: [], allowComments: true, allowQuotes: true, allowSharing: true, allowSave: true };
 
 export function ThreadComposeScreen({ sessionKey }: { sessionKey: string }) {
+  const queryClient = useQueryClient();
+  const { user: authUser } = useAuth();
+  const currentUserId = authUser?.id ?? "";
   const [title, setTitle] = useState("");
   const [rules, setRules] = useState("");
   const [tag, setTag] = useState("");
@@ -19,9 +24,9 @@ export function ThreadComposeScreen({ sessionKey }: { sessionKey: string }) {
   const [step, setStep] = useState<1 | 2>(1);
   const [audienceOpen, setAudienceOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const draftQuery = useQuery({ queryKey: ["compose-draft-session", currentUserId, sessionKey, "relay"], queryFn: () => lineSpaceApi.createPoemDraft({ ownerId: currentUserId, mode: "relay" }), staleTime: Infinity });
+  const draftQuery = useQuery({ queryKey: ["compose-draft-session", currentUserId, sessionKey, "relay"], queryFn: () => lineSpaceApi.createPoemDraft({ ownerId: currentUserId, mode: "relay" }), enabled: currentUserId.length > 0, staleTime: Infinity });
   const updateMutation = useMutation({ mutationFn: () => { const draftId = draftQuery.data?.id; if (!draftId) throw new Error("Draft is not ready"); return lineSpaceApi.updatePoemDraft({ draftId, userId: currentUserId, title: title.trim(), body: rules.trim(), tags: parse(tag), mentions: parse(mention), settings }); } });
-  const publishMutation = useMutation({ mutationFn: async () => { await updateMutation.mutateAsync(); return lineSpaceApi.publishThreadDraft({ draftId: draftQuery.data!.id, userId: currentUserId }); }, onSuccess: () => router.replace("/" as never) });
+  const publishMutation = useMutation({ mutationFn: async () => { await updateMutation.mutateAsync(); return lineSpaceApi.publishThreadDraft({ draftId: draftQuery.data!.id, userId: currentUserId }); }, onSuccess: () => { queryClient.removeQueries({ queryKey: ["compose-draft-session", currentUserId, sessionKey, "relay"], exact: true }); void queryClient.invalidateQueries({ queryKey: ["threads"] }); void queryClient.invalidateQueries({ queryKey: ["user-profile", currentUserId] }); void queryClient.invalidateQueries({ queryKey: ["user-profile-content", currentUserId] }); void queryClient.invalidateQueries({ queryKey: ["user-drafts", currentUserId] }); void queryClient.invalidateQueries({ queryKey: ["content-search"] }); router.replace(tabRoutes.thread); } });
   const saveMutation = useMutation({ mutationFn: async () => { await updateMutation.mutateAsync(); return lineSpaceApi.savePoemDraft({ draftId: draftQuery.data!.id, userId: currentUserId }); }, onSuccess: () => router.replace("/profile/drafts" as never) });
   const next = () => { if (!rules.trim()) { setError("Add a rule or theme before choosing an audience."); return; } setError(null); updateMutation.mutate(undefined, { onSuccess: () => setStep(2) }); };
   const busy = updateMutation.isPending || publishMutation.isPending || saveMutation.isPending;

@@ -332,6 +332,9 @@ supabase/migrations/20260719000400_group_content_sharing.sql
 supabase/migrations/20260719000500_content_discovery.sql
 supabase/migrations/20260720000100_live_content_runtime.sql
 supabase/migrations/20260720000200_inbox_activity_notifications.sql
+supabase/migrations/20260720000300_content_experience_progression.sql
+supabase/migrations/20260720000400_inbox_group_transactions.sql
+supabase/migrations/20260720000500_thread_engagement_delete_permissions.sql
 ```
 
 迁移要求：
@@ -430,7 +433,17 @@ The current cloud-safe chain is:
 20260719000500_content_discovery.sql
 20260720000100_live_content_runtime.sql
 20260720000200_inbox_activity_notifications.sql
+20260720000300_content_experience_progression.sql
+20260720000400_inbox_group_transactions.sql
+20260720000500_thread_engagement_delete_permissions.sql
 ```
+
+The progression ledger uses Level 1 as the zero-XP baseline and caps Level 10
+at 90 XP. Content-row triggers write stable `experience_events.event_key`
+values, so toggling one engagement off and on cannot farm XP. Group creation,
+invitation responses, and text sending use `create_inbox_group`,
+`respond_to_group_invitation`, and `send_group_message`; all three derive the
+actor from `auth.uid()` through `current_linespace_user_id()`.
 
 The canonical chain now includes the durable Post/feed, Comment, Draft,
 Inbox-message, direct/group Post and Thread sharing, click-target metadata,

@@ -174,7 +174,7 @@ export class InboxRepository {
   ): Promise<InboxConversationMessage> {
     await this.assertActor(input.senderId);
     if (input.groupId) {
-      const result = await this.client.rpc("send_inbox_group_message", {
+      const result = await this.client.rpc("send_group_message", {
         p_group_id: input.groupId,
         p_text: input.text
       });
@@ -320,9 +320,9 @@ export class InboxRepository {
     input: RespondInboxGroupInviteInput
   ): Promise<InboxGroup> {
     await this.assertActor(input.userId);
-    const result = await this.client.rpc("respond_inbox_group_invite", {
+    const result = await this.client.rpc("respond_to_group_invitation", {
       p_group_id: input.groupId,
-      p_accept: input.accept
+      p_response: input.accept ? "accepted" : "declined"
     });
     ensureDatabaseResult(result.error);
     const group = await this.getInboxGroup(input.groupId, input.userId);

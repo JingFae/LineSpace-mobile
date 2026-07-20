@@ -276,7 +276,16 @@ supabase/migrations/20260719000400_group_content_sharing.sql
 supabase/migrations/20260719000500_content_discovery.sql
 supabase/migrations/20260720000100_live_content_runtime.sql
 supabase/migrations/20260720000200_inbox_activity_notifications.sql
+supabase/migrations/20260720000300_content_experience_progression.sql
+supabase/migrations/20260720000400_inbox_group_transactions.sql
+supabase/migrations/20260720000500_thread_engagement_delete_permissions.sql
 ```
+
+Level is uniformly bounded to 1–10. PostgreSQL awards append-only, idempotent
+experience events from published Posts/Threads, continuations, comments,
+likes, and saves. Inbox groups are created, accepted/declined, and messaged
+through JWT-derived transactional RPCs; clients cannot assemble group state
+with direct table writes.
 
 新环境和已有环境都必须按顺序执行。迁移会检查非法 handle、资料字段和缺失表，
 不会静默覆盖已有用户资料。RLS 不得通过关闭的方式绕过。

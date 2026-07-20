@@ -1275,7 +1275,7 @@ export const mockPoems: PoemSummary[] = [
         body: "and asked me to choose a childhood.",
         badgeLabel: "🏮 Classical",
         badgeTone: "dark",
-        level: 12,
+        level: 10,
         createdAt: "2026-09-02T11:00:00.000Z",
         likes: 24,
         viewer: { liked: false, saved: false }

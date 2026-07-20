@@ -31,7 +31,9 @@ import type {
   PoemTypographyId,
   PoemDraftSettings
 } from "@linespace/api-client";
-import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
+import { lineSpaceApi } from "@/services/lineSpaceApi";
+import { useAuth } from "@/auth/AuthSessionProvider";
+import { tabRoutes } from "@/navigation/tabs";
 import { getMediaAspectRatio } from "@/features/poem/poemPresentation";
 import { VisibilityAudienceSheet } from "./VisibilityAudienceSheet";
 
@@ -45,6 +47,8 @@ type LayoutTool = "template" | "typography" | "background";
 
 export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
   const queryClient = useQueryClient();
+  const { user: authUser } = useAuth();
+  const currentUserId = authUser?.id ?? "";
   const draftId = getParam(params.draftId);
   const [activeTool, setActiveTool] = useState<LayoutTool>("template");
   const [layout, setLayout] = useState<PoemLayoutConfig | null>(null);
@@ -56,7 +60,7 @@ export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
   const draftQuery = useQuery({
     queryKey: ["compose-draft", draftId],
     queryFn: () => lineSpaceApi.getPoemDraft(draftId),
-    enabled: Boolean(draftId)
+    enabled: Boolean(draftId) && currentUserId.length > 0
   });
   const catalogQuery = useQuery({
     queryKey: ["poem-design-catalog"],
@@ -76,12 +80,22 @@ export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
       if (layout) {
         await lineSpaceApi.updatePoemDraft({ draftId, userId: currentUserId, layout });
       }
+      if (settings) {
+        await lineSpaceApi.updatePoemDraft({ draftId, userId: currentUserId, settings });
+      }
       if (draftQuery.data?.mode === "relay") return lineSpaceApi.publishThreadDraft({ draftId, userId: currentUserId });
       return lineSpaceApi.publishPoemDraft({ draftId, userId: currentUserId });
     },
     onSuccess: () => {
+      setFinishOpen(false);
+      queryClient.removeQueries({ queryKey: ["compose-draft-session", currentUserId] });
       void queryClient.invalidateQueries({ queryKey: ["feed"] });
-      router.replace(draftQuery.data?.mode === "relay" ? "/" : "/(tabs)/discover" as Href);
+      void queryClient.invalidateQueries({ queryKey: ["threads"] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", currentUserId] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile-content", currentUserId] });
+      void queryClient.invalidateQueries({ queryKey: ["user-drafts", currentUserId] });
+      void queryClient.invalidateQueries({ queryKey: ["content-search"] });
+      router.replace(draftQuery.data?.mode === "relay" ? tabRoutes.thread : tabRoutes.post);
     }
   });
   const saveMutation = useMutation({

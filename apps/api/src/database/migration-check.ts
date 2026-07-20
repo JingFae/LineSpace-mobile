@@ -45,6 +45,18 @@ const inboxActivityMigration = await readFile(
   new URL("20260720000200_inbox_activity_notifications.sql", canonicalMigrationsUrl),
   "utf8"
 );
+const contentExperienceMigration = await readFile(
+  new URL("20260720000300_content_experience_progression.sql", canonicalMigrationsUrl),
+  "utf8"
+);
+const groupTransactionsMigration = await readFile(
+  new URL("20260720000400_inbox_group_transactions.sql", canonicalMigrationsUrl),
+  "utf8"
+);
+const threadEngagementPermissionsMigration = await readFile(
+  new URL("20260720000500_thread_engagement_delete_permissions.sql", canonicalMigrationsUrl),
+  "utf8"
+);
 const profileRepository = await readFile(
   new URL("./profile-repository.ts", import.meta.url),
   "utf8"
@@ -160,6 +172,12 @@ for (const required of [
     `Group content-sharing migration is missing ${required}.`
   );
 }
+assert(
+  /grant\s+delete\s+on\s+public\.thread_likes,\s*public\.thread_continuation_likes,\s*public\.thread_saves\s+to\s+authenticated/i.test(
+    threadEngagementPermissionsMigration
+  ),
+  "Thread engagement deletes must be enabled only through the existing actor-owned RLS policies."
+);
 assert(
   /orphan post_id values exist/i.test(groupSharingMigration) &&
     /will not rewrite message history/i.test(groupSharingMigration),
@@ -286,6 +304,44 @@ assert(
   !/auth_user_id/.test(profileRepository),
   "ProfileRepository must not expose the auth_user_id field."
 );
+
+for (const required of [
+  /user_experience_level_check\s+check\s*\(level\s+between\s+1\s+and\s+10\)/i,
+  /users_level_range_check\s+check\s*\(level\s+between\s+1\s+and\s+10\)/i,
+  /greatest\([\s\S]{0,80}least\(10,[\s\S]{0,120}\/\s*10\.0\)[\s\S]{0,40}\+\s*1\)\)/i,
+  /create\s+or\s+replace\s+function\s+public\.record_content_experience/i,
+  /create\s+or\s+replace\s+function\s+public\.award_content_experience_from_row/i,
+  /posts_award_experience/i,
+  /poetry_threads_award_experience/i,
+  /thread_continuations_award_experience/i,
+  /post_comments_award_experience/i,
+  /post_comment_engagements_award_experience/i,
+  /on\s+conflict\s*\(event_key\)\s+do\s+nothing/i,
+  /revoke\s+execute\s+on\s+function\s+public\.record_content_experience[\s\S]*authenticated/i
+] as const) {
+  assert(
+    required.test(contentExperienceMigration),
+    `Content experience migration is missing ${required}.`
+  );
+}
+
+for (const required of [
+  /create\s+or\s+replace\s+function\s+public\.create_inbox_group/i,
+  /create\s+or\s+replace\s+function\s+public\.respond_to_group_invitation/i,
+  /create\s+or\s+replace\s+function\s+public\.send_group_message/i,
+  /actor_id\s+text\s*:=\s*public\.current_linespace_user_id\(\)/i,
+  /group invitations are limited to mutual connections/i,
+  /for\s+update/i,
+  /revoke\s+insert\s+on\s+public\.inbox_groups\s+from\s+authenticated/i,
+  /revoke\s+insert,\s*update,\s*delete\s+on\s+public\.inbox_group_members/i,
+  /revoke\s+insert,\s*update,\s*delete\s+on\s+public\.inbox_group_messages/i,
+  /grant\s+execute\s+on\s+function\s+public\.create_inbox_group[\s\S]*to\s+authenticated/i
+] as const) {
+  assert(
+    required.test(groupTransactionsMigration),
+    `Inbox group transaction migration is missing ${required}.`
+  );
+}
 assert(
   /\.from\("inbox_messages"\)[\s\S]*select\("sender_user_id,recipient_user_id,created_at"\)/.test(
     profileRepository

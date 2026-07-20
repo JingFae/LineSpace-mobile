@@ -468,12 +468,12 @@ async function verifyInjectedUserDomainRepository() {
     handle: smokeUser.username,
     displayName: smokeUser.displayName,
     avatarColor: "#DCD8D3",
-    level: 1,
+    level: 2,
     experience: {
       creator: 6,
       reviewer: 4,
       total: 10,
-      level: 1,
+      level: 2,
       levelProgress: 0,
       nextLevelAt: 20
     },

@@ -2122,14 +2122,15 @@ export class MockLineSpaceApi implements LineSpaceApi {
     this.experienceEvents.add(eventKey);
     profile.experience[category] += points;
     const total = profile.experience.creator + profile.experience.reviewer;
-    const level = Math.min(10, Math.floor(total / 10));
+    const level = Math.max(1, Math.min(10, Math.floor(total / 10) + 1));
+    const levelFloor = (level - 1) * 10;
     profile.experience = {
       creator: profile.experience.creator,
       reviewer: profile.experience.reviewer,
       total,
       level,
-      levelProgress: total >= 100 ? 1 : (total % 10) / 10,
-      nextLevelAt: total >= 100 ? null : (level + 1) * 10
+      levelProgress: level >= 10 ? 1 : Math.max(0, Math.min(1, (total - levelFloor) / 10)),
+      nextLevelAt: level >= 10 ? null : level * 10
     };
     profile.level = level;
     const badges = profile.badges.filter((badge) => badge.id !== "badge-ink-weaver" && badge.id !== "badge-soul-echo");
@@ -2335,7 +2336,7 @@ function emptyExperience() {
     creator: 0,
     reviewer: 0,
     total: 0,
-    level: 0,
+    level: 1,
     levelProgress: 0,
     nextLevelAt: 10
   };

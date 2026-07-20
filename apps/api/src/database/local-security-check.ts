@@ -233,17 +233,87 @@ async function run() {
       "Published Thread version Post did not preserve its author or ordered lines."
     );
 
+    const groupsBeforeRejectedInvite = await userA.client
+      .from("inbox_groups")
+      .select("id", { count: "exact", head: true })
+      .eq("owner_user_id", userA.userId);
+    const nonMutualGroup = await userA.client.rpc("create_inbox_group", {
+      p_name: "Must roll back",
+      p_invitee_user_ids: [userC.userId]
+    });
+    assert(Boolean(nonMutualGroup.error), "A non-mutual user was invited to a group.");
+    const groupsAfterRejectedInvite = await userA.client
+      .from("inbox_groups")
+      .select("id", { count: "exact", head: true })
+      .eq("owner_user_id", userA.userId);
+    assert(
+      !groupsBeforeRejectedInvite.error &&
+        !groupsAfterRejectedInvite.error &&
+      groupsBeforeRejectedInvite.count === groupsAfterRejectedInvite.count,
+      "Rejected group creation left a partial group behind."
+    );
+
+    const directGroup = await userA.client.from("inbox_groups").insert({
+      id: crypto.randomUUID(),
+      name: "Bypass transaction",
+      owner_user_id: userA.userId
+    });
+    assert(Boolean(directGroup.error), "A user directly inserted a group outside the RPC.");
+
     const createdGroup = await userA.client.rpc("create_inbox_group", {
       p_name: "RLS group",
-      p_invitee_user_ids: [userB.userId]
+      p_invitee_user_ids: [userB.userId, userB.userId]
     });
     assert(!createdGroup.error && createdGroup.data, "Could not create local Inbox group.");
     const groupId = createdGroup.data.id as string;
-    const accepted = await userB.client.rpc("respond_inbox_group_invite", {
+    const groupMembers = await userA.client
+      .from("inbox_group_members")
+      .select("user_id,role,status")
+      .eq("group_id", groupId);
+    assert(
+      !groupMembers.error &&
+        groupMembers.data?.length === 2 &&
+        groupMembers.data.some(
+          (member) =>
+            member.user_id === userA.userId &&
+            member.role === "owner" &&
+            member.status === "active"
+        ),
+      "Group creation did not atomically create one owner and one deduplicated invite."
+    );
+
+    const accepted = await userB.client.rpc("respond_to_group_invitation", {
       p_group_id: groupId,
-      p_accept: true
+      p_response: "accepted"
     });
     assert(!accepted.error, "User B could not accept the local group invite.");
+    const acceptedAgain = await userB.client.rpc("respond_to_group_invitation", {
+      p_group_id: groupId,
+      p_response: "accepted"
+    });
+    assert(!acceptedAgain.error, "Repeated identical invitation response was not idempotent.");
+
+    const outsiderMessage = await userC.client.rpc("send_group_message", {
+      p_group_id: groupId,
+      p_text: "forged sender"
+    });
+    assert(Boolean(outsiderMessage.error), "A non-member sent a group message.");
+    const memberMessage = await userB.client.rpc("send_group_message", {
+      p_group_id: groupId,
+      p_text: "transactional message"
+    });
+    assert(
+      !memberMessage.error && memberMessage.data?.sender_user_id === userB.userId,
+      "Group message sender was not derived from the JWT actor."
+    );
+    const directMessageBypass = await userB.client.from("inbox_group_messages").insert({
+      id: crypto.randomUUID(),
+      group_id: groupId,
+      sender_user_id: userB.userId,
+      kind: "text",
+      text_body: "bypass"
+    });
+    assert(Boolean(directMessageBypass.error), "A member bypassed the group message RPC.");
 
     const sharedPost = await userA.client.rpc("share_post_to_inbox_group", {
       p_group_id: groupId,
@@ -287,7 +357,53 @@ async function run() {
       .from("inbox_group_messages")
       .select("kind,post_id,thread_id,continuation_id,line_number")
       .eq("group_id", groupId);
-    assert(!memberRead.error && memberRead.data?.length === 3, "Group shares were not persisted.");
+    assert(!memberRead.error && memberRead.data?.length === 4, "Group messages and shares were not persisted.");
+
+    const experienceBefore = await userA.client
+      .from("user_experience")
+      .select("creator_experience,total_experience,level")
+      .eq("user_id", userA.userId)
+      .single();
+    assert(!experienceBefore.error && experienceBefore.data, "Could not load experience before engagement.");
+    const realLike = await userB.client.from("thread_likes").insert({
+      thread_id: threadId,
+      user_id: userB.userId
+    });
+    assert(!realLike.error, "Could not create a real content experience event.");
+    const experienceAfter = await userA.client
+      .from("user_experience")
+      .select("creator_experience,total_experience,level")
+      .eq("user_id", userA.userId)
+      .single();
+    assert(
+      !experienceAfter.error &&
+        experienceAfter.data?.creator_experience ===
+          (experienceBefore.data.creator_experience as number) + 2 &&
+        experienceAfter.data.level >= 1 &&
+        experienceAfter.data.level <= 10,
+      "A real Thread like did not award exactly one bounded experience event."
+    );
+    const removedLike = await userB.client
+      .from("thread_likes")
+      .delete()
+      .eq("thread_id", threadId)
+      .eq("user_id", userB.userId);
+    assert(!removedLike.error, "The engagement owner could not remove their Thread like.");
+    const repeatedLike = await userB.client.from("thread_likes").insert({
+      thread_id: threadId,
+      user_id: userB.userId
+    });
+    assert(!repeatedLike.error, "Could not recreate the content engagement fixture.");
+    const repeatedExperience = await userA.client
+      .from("user_experience")
+      .select("creator_experience")
+      .eq("user_id", userA.userId)
+      .single();
+    assert(
+      !repeatedExperience.error &&
+        repeatedExperience.data?.creator_experience === experienceAfter.data.creator_experience,
+      "Removing and recreating one engagement awarded duplicate experience."
+    );
     const counters = await admin
       .from("poetry_threads")
       .select("shares_count")
@@ -308,7 +424,7 @@ async function run() {
     assert(postCounters.data?.shares_count === 1, "Post group-share counter is not atomic.");
 
     process.stdout.write(
-      "Local database security check passed: profile/follow/inbox isolation, group membership, Thread-version publication, content click targets, and atomic share counters.\n"
+      "Local database security check passed: profile/follow/inbox isolation, atomic group transactions, JWT-derived group senders, content-event experience, Thread-version publication, click targets, and atomic share counters.\n"
     );
   } finally {
     for (const fixture of fixtures.reverse()) {

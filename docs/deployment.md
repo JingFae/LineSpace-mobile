@@ -123,7 +123,18 @@ like counts, and the JWT-derived Compose draft creation RPC. It deliberately
 seeds no demo identities, conversations, Threads, or Posts. The following
 `20260720000200_inbox_activity_notifications.sql` migration persists comment,
 like/save, Thread continuation, follow, and mention activity with recipient-only
-RLS. The SQL under
+RLS. Apply the following progression and group-transaction migrations in order:
+
+```text
+20260720000300_content_experience_progression.sql
+20260720000400_inbox_group_transactions.sql
+20260720000500_thread_engagement_delete_permissions.sql
+```
+
+The first backfills deterministic experience events from existing content and
+normalizes all levels to 1–10. The second removes direct client group writes in
+favor of JWT-derived transaction RPCs. The third restores unlike/unsave table
+permissions while the existing owner-only RLS remains authoritative. The SQL under
 `apps/api/src/database/deferred-migrations/` is historical reference material,
 is not part of the cloud push, and must not be copied into the migration
 directory:
