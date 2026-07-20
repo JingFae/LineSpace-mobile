@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from "react";
-import { router, type Href } from "expo-router";
+import { useCallback, useState, type ReactNode } from "react";
+import { router, type Href, useFocusEffect } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ActivityIndicator,
@@ -88,6 +88,31 @@ export function InboxScreen() {
     queryFn: () => lineSpaceApi.searchUsers("", currentUserId, { limit: 8 }),
     enabled: currentUserId.length > 0
   });
+  const markActivityRead = useMutation({
+    mutationFn: (kind: InboxActivityKind) =>
+      lineSpaceApi.markInboxActivityRead(currentUserId, kind),
+    onMutate: (kind) => {
+      queryClient.setQueryData<InboxActivitySummary>(
+        ["inbox-summary", currentUserId],
+        (current) => current
+          ? {
+              ...current,
+              unread: { ...current.unread, [kind]: 0 },
+              recent: {
+                ...current.recent,
+                [kind]: current.recent[kind].map((item) => ({ ...item, unread: false }))
+              }
+            }
+          : current
+      );
+    },
+    onSuccess: (summary) => {
+      queryClient.setQueryData(["inbox-summary", currentUserId], summary);
+    },
+    onError: () => {
+      void queryClient.invalidateQueries({ queryKey: ["inbox-summary", currentUserId] });
+    }
+  });
 
   const respondInvite = useMutation({
     mutationFn: ({ groupId, accept }: { groupId: string; accept: boolean }) =>
@@ -98,6 +123,15 @@ export function InboxScreen() {
       if (variables.accept) setView({ kind: "group", groupId: variables.groupId });
     }
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!currentUserId) return;
+      void queryClient.invalidateQueries({ queryKey: ["inbox-summary", currentUserId] });
+      void queryClient.invalidateQueries({ queryKey: ["inbox-groups", currentUserId] });
+      void queryClient.invalidateQueries({ queryKey: ["inbox-recent-contacts", currentUserId] });
+    }, [currentUserId, queryClient])
+  );
 
   const groups = groupsQuery.data ?? [];
   const invites = invitesQuery.data ?? [];
@@ -123,7 +157,12 @@ export function InboxScreen() {
           contacts={contactsQuery.data?.recent ?? []}
           groups={groups}
           invites={invites}
-          onOpenActivity={(activity) => setView({ kind: "activity", activity })}
+          onOpenActivity={(activity) => {
+            setView({ kind: "activity", activity });
+            if ((summaryQuery.data?.unread[activity] ?? 0) > 0) {
+              markActivityRead.mutate(activity);
+            }
+          }}
           onOpenDirect={(contact) => setView({ kind: "direct", contact })}
           onOpenGroup={(groupId) => setView({ kind: "group", groupId })}
           onOpenCreateMenu={() => setShowCreateMenu(true)}
@@ -686,6 +725,13 @@ function MessageItem({ message, own }: { message: InboxConversationMessage; own:
           } as unknown as Href)
     );
   };
+  const openSharedPost = () => {
+    if (!message.sharedPost) return;
+    router.push({
+      pathname: "/poem/[id]",
+      params: { id: message.sharedPost.id }
+    } as unknown as Href);
+  };
   return (
     <View style={[styles.messageBlock, own ? styles.messageBlockOwn : styles.messageBlockIncoming]}>
       <View style={[styles.messageBubble, own ? styles.messageBubbleOwn : styles.messageBubbleIncoming]}>
@@ -707,11 +753,12 @@ function MessageItem({ message, own }: { message: InboxConversationMessage; own:
             </Text>
           </Pressable>
         ) : message.sharedPost ? (
-          <View>
+          <Pressable accessibilityRole="link" onPress={openSharedPost}>
             <Text style={[styles.sharedLabel, own && styles.sharedLabelOwn]}>Shared post</Text>
             <Text style={[styles.messageText, own && styles.messageTextOwn]}>{message.sharedPost.title}</Text>
             <Text style={[styles.sharedExcerpt, own && styles.sharedExcerptOwn]}>{message.sharedPost.excerpt}</Text>
-          </View>
+            <Text style={[styles.sharedOpenHint, own && styles.sharedExcerptOwn]}>Open post →</Text>
+          </Pressable>
         ) : (
           <Text style={[styles.messageText, own && styles.messageTextOwn]}>{message.text}</Text>
         )}

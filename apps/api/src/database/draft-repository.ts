@@ -319,11 +319,17 @@ export class DraftRepository {
   async publishPoemDraft(input: {
     draftId: string;
     userId: string;
+    replacePostId?: string;
   }): Promise<PublishPoemDraftResult> {
     await this.assertActor(input.userId);
-    const result = await this.client.rpc("publish_draft_as_post", {
-      p_draft_id: input.draftId
-    });
+    const result = input.replacePostId
+      ? await this.client.rpc("publish_draft_over_post", {
+          p_draft_id: input.draftId,
+          p_post_id: input.replacePostId
+        })
+      : await this.client.rpc("publish_draft_as_post", {
+          p_draft_id: input.draftId
+        });
     ensureDatabaseResult(result.error);
     const postId = typeof result.data === "string" ? result.data : null;
     if (!postId) throw new Error("post publish failed");
@@ -374,6 +380,7 @@ export class DraftRepository {
       .from("poem_drafts")
       .select(draftSelect)
       .eq("owner_user_id", userId)
+      .in("status", ["editing", "ready"])
       .order("updated_at", { ascending: false })
       .limit(100);
     ensureDatabaseResult(result.error);

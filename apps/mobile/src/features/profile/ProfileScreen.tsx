@@ -1,5 +1,5 @@
 import { router, type Href } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -67,6 +67,8 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
   const [connectionKind, setConnectionKind] = useState<UserConnectionKind | null>(null);
   const [showExperience, setShowExperience] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [managedPost, setManagedPost] = useState<UserProfileContentItem | null>(null);
+  const queryClient = useQueryClient();
 
   const profileQuery = useQuery({
     queryKey: ["user-profile", profileUserId],
@@ -100,6 +102,16 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
   });
 
   const items = useMemo(() => contentQuery.data?.items ?? [], [contentQuery.data]);
+  const deletePost = useMutation({
+    mutationFn: (poemId: string) => lineSpaceApi.deletePoem({ poemId, userId: currentUserId }),
+    onSuccess: (result) => {
+      setManagedPost(null);
+      queryClient.removeQueries({ queryKey: ["poem", result.poemId] });
+      void queryClient.invalidateQueries({ queryKey: ["feed"] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", currentUserId] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile-content", currentUserId] });
+    }
+  });
 
   return (
     <AppScreen
@@ -135,6 +147,10 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
             onConnectionsPress={setConnectionKind}
             onExperiencePress={() => setShowExperience(true)}
             onLikesAndSavesPress={() => setSection("saves")}
+            onManagePost={(item) => {
+              deletePost.reset();
+              setManagedPost(item);
+            }}
             onSettingsPress={() => setShowSettings(true)}
             onSectionChange={setSection}
             onThreadRelationChange={setThreadRelation}
@@ -183,6 +199,23 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
         }}
         visible={showSettings}
       />
+      <ManagePostSheet
+        error={deletePost.isError}
+        item={managedPost}
+        onClose={() => {
+          deletePost.reset();
+          setManagedPost(null);
+        }}
+        onDelete={(poemId) => deletePost.mutate(poemId)}
+        onEdit={(poemId) => {
+          setManagedPost(null);
+          router.push({
+            pathname: "/(tabs)/compose",
+            params: { type: "post", session: `edit-${poemId}-${Date.now()}`, editPostId: poemId }
+          } as unknown as Href);
+        }}
+        pending={deletePost.isPending}
+      />
     </AppScreen>
   );
 }
@@ -198,6 +231,7 @@ function ProfileLoaded({
   onConnectionsPress,
   onExperiencePress,
   onLikesAndSavesPress,
+  onManagePost,
   onSettingsPress,
   onSectionChange,
   onThreadRelationChange,
@@ -214,6 +248,7 @@ function ProfileLoaded({
   onConnectionsPress: (kind: UserConnectionKind) => void;
   onExperiencePress: () => void;
   onLikesAndSavesPress: () => void;
+  onManagePost: (item: UserProfileContentItem) => void;
   onSettingsPress: () => void;
   onSectionChange: (section: UserProfileContentSection) => void;
   onThreadRelationChange: (relation: UserThreadRelation) => void;
@@ -311,7 +346,11 @@ function ProfileLoaded({
         ) : (
           <View style={styles.itemStack}>
             {items.map((item) => (
-              <ProfileContentCard item={item} key={item.id} />
+              <ProfileContentCard
+                item={item}
+                key={item.id}
+                onManage={isOwner && itemSection === "posts" && item.kind === "post" ? onManagePost : undefined}
+              />
             ))}
           </View>
         )}
@@ -536,7 +575,13 @@ function DraftEntry({ count, onPress }: { count: number; onPress: () => void }) 
   );
 }
 
-function ProfileContentCard({ item }: { item: UserProfileContentItem }) {
+function ProfileContentCard({
+  item,
+  onManage
+}: {
+  item: UserProfileContentItem;
+  onManage?: (item: UserProfileContentItem) => void;
+}) {
   const open = () => {
     if (item.threadId) {
       router.push({ pathname: "/thread/[id]", params: { id: item.threadId } } as unknown as Href);
@@ -584,6 +629,19 @@ function ProfileContentCard({ item }: { item: UserProfileContentItem }) {
   const mediaAspectRatio = item.media?.kind === "image" ? getMediaAspectRatio(item.media) : undefined;
   return (
     <Pressable onPress={open} style={({ pressed }) => [styles.postCard, item.muted && styles.mutedCard, pressed && styles.cardPressed]}>
+      {onManage ? (
+        <Pressable
+          accessibilityLabel={`Manage ${item.title}`}
+          accessibilityRole="button"
+          onPress={(event) => {
+            event.stopPropagation();
+            onManage(item);
+          }}
+          style={styles.postManageButton}
+        >
+          <Text style={styles.postManageGlyph}>•••</Text>
+        </Pressable>
+      ) : null}
       <View style={[styles.postArtworkFrame, mediaAspectRatio ? { aspectRatio: mediaAspectRatio } : undefined]}>
         <Image resizeMode="cover" source={imageSource} style={styles.postArtwork} />
         <View style={styles.postArtworkShade} />
@@ -601,6 +659,66 @@ function ProfileContentCard({ item }: { item: UserProfileContentItem }) {
         </View>
       </View>
     </Pressable>
+  );
+}
+
+function ManagePostSheet({
+  item,
+  pending,
+  error,
+  onClose,
+  onEdit,
+  onDelete
+}: {
+  item: UserProfileContentItem | null;
+  pending: boolean;
+  error: boolean;
+  onClose: () => void;
+  onEdit: (poemId: string) => void;
+  onDelete: (poemId: string) => void;
+}) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  useEffect(() => {
+    if (!item) setConfirmingDelete(false);
+  }, [item]);
+  const poemId = item?.poemId;
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible={Boolean(item)}>
+      <View style={styles.modalRoot}>
+        <Pressable accessibilityLabel="Close post actions" onPress={onClose} style={styles.modalBackdrop} />
+        <View style={styles.managePostSheet}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.managePostEyebrow}>YOUR POST</Text>
+          <Text numberOfLines={2} style={styles.managePostTitle}>{item?.title}</Text>
+          {confirmingDelete ? (
+            <View style={styles.manageConfirmBox}>
+              <Text style={styles.manageConfirmTitle}>Delete this post?</Text>
+              <Text style={styles.manageConfirmCopy}>The post, its comments, likes and saves will be permanently removed.</Text>
+              {error ? <Text style={styles.manageError}>The post could not be deleted. Please try again.</Text> : null}
+              <View style={styles.manageActionsRow}>
+                <Pressable disabled={pending} onPress={() => setConfirmingDelete(false)} style={styles.manageSecondaryButton}>
+                  <Text style={styles.manageSecondaryText}>Cancel</Text>
+                </Pressable>
+                <Pressable disabled={pending || !poemId} onPress={() => poemId && onDelete(poemId)} style={styles.manageDeleteButton}>
+                  <Text style={styles.manageDeleteText}>{pending ? "Deleting…" : "Delete"}</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <>
+              <Pressable disabled={!poemId} onPress={() => poemId && onEdit(poemId)} style={styles.manageActionButton}>
+                <Text style={styles.manageActionTitle}>Edit in Compose</Text>
+                <Text style={styles.manageActionHint}>Keep the same post, comments and engagement</Text>
+              </Pressable>
+              <Pressable disabled={!poemId} onPress={() => setConfirmingDelete(true)} style={[styles.manageActionButton, styles.manageDangerAction]}>
+                <Text style={styles.manageDangerTitle}>Delete post</Text>
+                <Text style={styles.manageActionHint}>A confirmation is required</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -881,6 +999,8 @@ const styles = StyleSheet.create({
   chevron: { color: colors.ink, fontSize: 27, fontWeight: "300" },
   itemStack: { gap: 14, paddingHorizontal: spacing.lg },
   postCard: { backgroundColor: colors.white, borderRadius: 19, overflow: "hidden" },
+  postManageButton: { alignItems: "center", backgroundColor: "rgba(255,255,255,0.92)", borderRadius: 17, height: 34, justifyContent: "center", position: "absolute", right: 10, top: 10, width: 42, zIndex: 3 },
+  postManageGlyph: { color: colors.ink, fontSize: 15, fontWeight: "800", letterSpacing: 1 },
   mutedCard: { opacity: 0.46 },
   postArtworkFrame: { backgroundColor: colors.faint, height: 164, overflow: "hidden" },
   postArtwork: { height: "100%", width: "100%" },
@@ -908,6 +1028,23 @@ const styles = StyleSheet.create({
   contentLoading: { alignItems: "center", justifyContent: "center", minHeight: 220 },
   modalRoot: { flex: 1, justifyContent: "flex-end" },
   modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.28)" },
+  managePostSheet: { backgroundColor: colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: 30, paddingHorizontal: spacing.lg },
+  managePostEyebrow: { color: colors.profileMuted, fontSize: 10, fontWeight: "800", letterSpacing: 1.5, marginTop: 16 },
+  managePostTitle: { color: colors.ink, fontSize: 23, fontWeight: "700", lineHeight: 29, marginBottom: 18, marginTop: 5 },
+  manageActionButton: { backgroundColor: colors.white, borderColor: "rgba(21,21,21,0.08)", borderRadius: 17, borderWidth: 1, marginTop: 9, paddingHorizontal: 16, paddingVertical: 15 },
+  manageActionTitle: { color: colors.ink, fontSize: 16, fontWeight: "700" },
+  manageActionHint: { color: colors.profileMuted, fontSize: 11, lineHeight: 16, marginTop: 4 },
+  manageDangerAction: { backgroundColor: "#FFF8F8", borderColor: "rgba(190,35,50,0.14)" },
+  manageDangerTitle: { color: "#B3263B", fontSize: 16, fontWeight: "700" },
+  manageConfirmBox: { backgroundColor: "#FFF8F8", borderRadius: 18, padding: 17 },
+  manageConfirmTitle: { color: colors.ink, fontSize: 19, fontWeight: "800" },
+  manageConfirmCopy: { color: colors.profileMuted, fontSize: 12, lineHeight: 18, marginTop: 7 },
+  manageError: { color: "#B3263B", fontSize: 11, marginTop: 10 },
+  manageActionsRow: { flexDirection: "row", gap: 10, marginTop: 18 },
+  manageSecondaryButton: { alignItems: "center", backgroundColor: colors.white, borderRadius: 14, flex: 1, paddingVertical: 12 },
+  manageSecondaryText: { color: colors.ink, fontSize: 13, fontWeight: "700" },
+  manageDeleteButton: { alignItems: "center", backgroundColor: "#B3263B", borderRadius: 14, flex: 1, paddingVertical: 12 },
+  manageDeleteText: { color: colors.white, fontSize: 13, fontWeight: "800" },
   sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 26, borderTopRightRadius: 26, maxHeight: "68%", minHeight: 360, paddingBottom: 24, paddingHorizontal: 20 },
   experienceSheet: { backgroundColor: colors.surface, borderTopLeftRadius: 26, borderTopRightRadius: 26, paddingBottom: 27, paddingHorizontal: spacing.lg },
   settingsSheet: {

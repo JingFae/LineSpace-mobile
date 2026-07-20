@@ -1,7 +1,7 @@
 import { router, type Href } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -38,6 +38,7 @@ const initialSettings: PoemDraftSettings = {
 export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
   const { user: authUser } = useAuth();
   const currentUserId = authUser?.id ?? "";
+  const editPostId = getParam(params.editPostId);
   const sourceVersionId = getParam(params.sourceVersionId);
   const lockedVersionContent = getParam(params.lockedVersionContent) === "true";
   const contributorHandles = parseList(getParam(params.contributorHandles));
@@ -53,11 +54,43 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
       ? { uri, kind, name: sourceVersionId ? "thread-version-media" : "media" }
       : null;
   });
-  const [settings] = useState<PoemDraftSettings>(initialSettings);
+  const [settings, setSettings] = useState<PoemDraftSettings>(initialSettings);
   const [error, setError] = useState<string | null>(null);
+  const editInitialized = useRef(false);
+
+  const editPostQuery = useQuery({
+    queryKey: ["compose-edit-post", editPostId, currentUserId],
+    queryFn: () => lineSpaceApi.getPoem(editPostId!, currentUserId),
+    enabled: Boolean(editPostId) && currentUserId.length > 0
+  });
+
+  useEffect(() => {
+    const post = editPostQuery.data;
+    if (!post || editInitialized.current) return;
+    if (post.author.id !== currentUserId) {
+      setError("Only the author can edit this post.");
+      return;
+    }
+    editInitialized.current = true;
+    setTitle(post.title);
+    setBody(post.lines.join("\n"));
+    setTag(post.tags.map((value) => `#${value}`).join(" "));
+    setMention((post.mentions ?? []).map((value) => `@${value.replace(/^@/, "")}`).join(" "));
+    setMedia(post.media ? { ...post.media } : null);
+    setSettings({
+      declareOriginal: post.declareOriginal ?? false,
+      isPublic: (post.visibility ?? "public") === "public",
+      visibility: post.visibility ?? "public",
+      audienceUserIds: [...(post.audienceUserIds ?? [])],
+      allowComments: post.allowComments ?? true,
+      allowQuotes: true,
+      allowSharing: post.allowSharing ?? true,
+      allowSave: true
+    });
+  }, [currentUserId, editPostQuery.data]);
 
   const draftQuery = useQuery({
-    queryKey: ["compose-draft-session", currentUserId, sessionKey, "post"],
+    queryKey: ["compose-draft-session", currentUserId, sessionKey, "post", editPostId ?? "new"],
     queryFn: () =>
       lineSpaceApi.createPoemDraft({ ownerId: currentUserId, mode: "draft" }),
     enabled: currentUserId.length > 0,
@@ -80,6 +113,7 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
         tags: parseTags(tag),
         mentions: parseMentions(mention),
         media,
+        ...(editPostQuery.data?.layout ? { layout: editPostQuery.data.layout } : {}),
         versionLines,
         settings
       });
@@ -87,7 +121,7 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
     onSuccess: (draft) =>
       router.push({
         pathname: "/compose-preview",
-        params: { draftId: draft.id }
+        params: { draftId: draft.id, ...(editPostId ? { editPostId } : {}) }
       } as Href)
   });
 
@@ -156,7 +190,7 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
         isBusy={draftQuery.isLoading || saveMutation.isPending}
         isDisabled={!draftQuery.data || currentUserId.length === 0}
         onAction={goToPreview}
-        title="new post"
+        title={editPostId ? "edit post" : "new post"}
       />
 
       <View style={styles.intro}>

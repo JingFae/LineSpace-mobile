@@ -34,6 +34,7 @@ type ThreadRow = {
   status: "open" | "complete";
   likes_count: number;
   shares_count: number;
+  saves_count: number;
   created_at: string;
   updated_at: string;
 };
@@ -51,7 +52,7 @@ type ContinuationRow = {
 };
 
 const threadSelect =
-  "id,author_user_id,title,prompt,starting_content,rules,tags,mentions,media,visibility,status,likes_count,shares_count,created_at,updated_at";
+  "id,author_user_id,title,prompt,starting_content,rules,tags,mentions,media,visibility,status,likes_count,shares_count,saves_count,created_at,updated_at";
 const continuationSelect =
   "id,thread_id,parent_continuation_id,line_number,content,author_user_id,shares_count,created_at,updated_at";
 
@@ -129,6 +130,22 @@ export class ThreadRepository {
       thread,
       continuations: await this.mapContinuations(continuationRows, actorId)
     };
+  }
+
+  async listThreadsByIds(ids: string[]): Promise<PoetryThread[]> {
+    if (ids.length === 0) return [];
+    const actorId = await getCurrentLinespaceUserId(this.client);
+    const result = await this.client
+      .from("poetry_threads")
+      .select(threadSelect)
+      .in("id", [...new Set(ids)]);
+    ensureDatabaseResult(result.error);
+    const mapped = await this.mapThreads((result.data as ThreadRow[] | null) ?? [], actorId);
+    const byId = new Map(mapped.map((item) => [item.id, item]));
+    return ids.flatMap((id) => {
+      const item = byId.get(id);
+      return item ? [item] : [];
+    });
   }
 
   async getContinuationDetail(continuationId: string): Promise<ContinuationDetail | null> {
@@ -465,7 +482,7 @@ export class ThreadRepository {
             likes: countValue(row.likes_count),
             continuations: continuationCount.get(row.id) ?? 0,
             shares: countValue(row.shares_count),
-            saves: 0
+            saves: countValue(row.saves_count)
           },
           viewer: { liked: liked.has(row.id), saved: saved.has(row.id) }
         }

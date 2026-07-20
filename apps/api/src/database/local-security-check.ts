@@ -404,6 +404,56 @@ async function run() {
         repeatedExperience.data?.creator_experience === experienceAfter.data.creator_experience,
       "Removing and recreating one engagement awarded duplicate experience."
     );
+    const savedThread = await userB.client.from("thread_saves").insert({
+      thread_id: threadId,
+      user_id: userB.userId
+    });
+    assert(!savedThread.error, "Could not save the Thread fixture.");
+    const savedThreadCount = await admin
+      .from("poetry_threads")
+      .select("saves_count")
+      .eq("id", threadId)
+      .single();
+    assert(savedThreadCount.data?.saves_count === 1, "Thread save count did not update atomically.");
+
+    const commentId = `rls-comment-${suffix}`;
+    const createdComment = await userB.client.from("post_comments").insert({
+      id: commentId,
+      post_id: postId,
+      author_user_id: userB.userId,
+      body: "A durable engagement fixture."
+    });
+    assert(!createdComment.error, "Could not create the comment engagement fixture.");
+    const commentLike = await userC.client.from("post_comment_engagements").insert({
+      user_id: userC.userId,
+      comment_id: commentId,
+      kind: "liked"
+    });
+    const commentSave = await userC.client.from("post_comment_engagements").insert({
+      user_id: userC.userId,
+      comment_id: commentId,
+      kind: "saved"
+    });
+    assert(!commentLike.error && !commentSave.error, "Could not engage with the comment fixture.");
+    const commentCounters = await admin
+      .from("post_comments")
+      .select("likes_count,saves_count")
+      .eq("id", commentId)
+      .single();
+    assert(
+      commentCounters.data?.likes_count === 1 && commentCounters.data?.saves_count === 1,
+      "Comment like/save counts did not update atomically."
+    );
+    const markedRead = await userB.client.rpc("mark_inbox_activity_read", {
+      p_category: "likes"
+    });
+    assert(!markedRead.error && Number(markedRead.data) >= 1, "Inbox activity could not be marked read.");
+    const unreadAfterOpen = await userB.client
+      .from("inbox_activity_events")
+      .select("id", { count: "exact", head: true })
+      .eq("category", "likes")
+      .is("read_at", null);
+    assert(!unreadAfterOpen.error && unreadAfterOpen.count === 0, "Inbox unread count did not clear.");
     const counters = await admin
       .from("poetry_threads")
       .select("shares_count")
@@ -423,8 +473,59 @@ async function run() {
     assert(continuationCounters.data?.shares_count === 1, "Continuation share counter is not atomic.");
     assert(postCounters.data?.shares_count === 1, "Post group-share counter is not atomic.");
 
+    const postLike = await userB.client.from("post_likes").insert({
+      post_id: postId,
+      user_id: userB.userId
+    });
+    const postSave = await userC.client.from("post_saves").insert({
+      post_id: postId,
+      user_id: userC.userId
+    });
+    assert(!postLike.error && !postSave.error, "Could not prepare Post engagement for editing.");
+    const editDraftId = `rls-edit-draft-${suffix}`;
+    const editDraft = await userA.client.from("poem_drafts").insert({
+      id: editDraftId,
+      owner_user_id: userA.userId,
+      mode: "draft",
+      title: "Edited without losing engagement",
+      body: "The durable Post keeps its identity.",
+      tags: ["edited"]
+    });
+    assert(!editDraft.error, "Could not prepare the Post edit draft.");
+    const replacedPost = await userA.client.rpc("publish_draft_over_post", {
+      p_draft_id: editDraftId,
+      p_post_id: postId
+    });
+    assert(!replacedPost.error && replacedPost.data === postId, "The author could not replace their Post.");
+    const editedPost = await admin
+      .from("posts")
+      .select("id,title,likes_count,saves_count")
+      .eq("id", postId)
+      .single();
+    assert(
+      editedPost.data?.title === "Edited without losing engagement" &&
+        editedPost.data.likes_count === 1 &&
+        editedPost.data.saves_count === 1,
+      "Post editing changed its identity or engagement counters."
+    );
+    const publishedEditDraft = await admin
+      .from("poem_drafts")
+      .select("status,published_post_id")
+      .eq("id", editDraftId)
+      .single();
+    assert(
+      publishedEditDraft.data?.status === "published" &&
+        publishedEditDraft.data.published_post_id === postId,
+      "The edit draft was not closed after publishing."
+    );
+
+    const foreignDelete = await userB.client.rpc("delete_my_post", { p_post_id: postId });
+    assert(!foreignDelete.error && foreignDelete.data === false, "A non-author deleted another user's Post.");
+    const ownerDelete = await userA.client.rpc("delete_my_post", { p_post_id: postId });
+    assert(!ownerDelete.error && ownerDelete.data === true, "The Post author could not delete their Post.");
+
     process.stdout.write(
-      "Local database security check passed: profile/follow/inbox isolation, atomic group transactions, JWT-derived group senders, content-event experience, Thread-version publication, click targets, and atomic share counters.\n"
+      "Local database security check passed: profile/follow/inbox isolation, atomic group transactions, JWT-derived group senders, engagement counters, Inbox read state, engagement-preserving Post edits, owner-only Post deletion, content-event experience, Thread-version publication, click targets, and atomic share counters.\n"
     );
   } finally {
     for (const fixture of fixtures.reverse()) {

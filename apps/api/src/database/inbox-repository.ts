@@ -1,5 +1,6 @@
 import type {
   CreateInboxGroupInput,
+  InboxActivityKind,
   InboxActivitySummary,
   InboxConversationMessage,
   InboxGroup,
@@ -139,6 +140,18 @@ export class InboxRepository {
       });
     }
     return summary;
+  }
+
+  async markInboxActivityRead(
+    userId: string,
+    kind: InboxActivityKind
+  ): Promise<InboxActivitySummary> {
+    await this.assertActor(userId);
+    const result = await this.client.rpc("mark_inbox_activity_read", {
+      p_category: kind
+    });
+    ensureDatabaseResult(result.error);
+    return this.getInboxActivitySummary(userId);
   }
 
   async listInboxMessages(

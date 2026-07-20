@@ -5,12 +5,15 @@ import type {
   PoemSummary,
   UpdatePoemCollectionInput
 } from "@linespace/api-client";
-import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
+import { lineSpaceApi } from "@/services/lineSpaceApi";
+import { useAuth } from "@/auth/AuthSessionProvider";
 
 type CacheSnapshot = Array<readonly [QueryKey, unknown]>;
 
 export function usePoemEngagement() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const currentUserId = user?.id ?? "";
   const mutation = useMutation<
     PoemEngagementResult,
     Error,
@@ -50,14 +53,13 @@ export function usePoemEngagement() {
         queryKey: ["user-profile", result.poem.author.id]
       });
 
-      if (input.collection === "saved") {
-        void queryClient.invalidateQueries({
-          queryKey: ["user-profile", result.collections.userId]
-        });
-        void queryClient.invalidateQueries({
-          queryKey: ["user-profile-content", result.collections.userId, "saves"]
-        });
-      }
+      void queryClient.invalidateQueries({
+        queryKey: ["user-profile", result.collections.userId]
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["user-profile-content", result.collections.userId]
+      });
+      void queryClient.invalidateQueries({ queryKey: ["inbox-summary"] });
     }
   });
 
@@ -67,7 +69,10 @@ export function usePoemEngagement() {
       poemId: string,
       collection: PoemCollectionKind,
       isActive: boolean
-    ) => mutation.mutate({ userId: currentUserId, poemId, collection, isActive })
+    ) => {
+      if (!currentUserId) return;
+      mutation.mutate({ userId: currentUserId, poemId, collection, isActive });
+    }
   };
 }
 

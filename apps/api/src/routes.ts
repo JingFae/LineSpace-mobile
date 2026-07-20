@@ -477,11 +477,18 @@ export async function handleApiRequest(
       if (method === "POST" && draftRoute.resource === "publish") {
         const actor = await authenticateRequest(context);
         if (!actor.ok) return actor.response;
+        const request = body as { replacePostId?: unknown } | undefined;
+        if (request?.replacePostId !== undefined && typeof request.replacePostId !== "string") {
+          return json(400, { code: "INVALID_POST_REPLACEMENT" });
+        }
         return json(
           200,
           await api.publishPoemDraft({
             draftId: draftRoute.draftId,
-            userId: actor.user.id
+            userId: actor.user.id,
+            ...(typeof request?.replacePostId === "string"
+              ? { replacePostId: request.replacePostId }
+              : {})
           })
         );
       }
@@ -581,6 +588,11 @@ export async function handleApiRequest(
     try {
       if (method === "GET" && poemRoute.resource === "poem") {
         return json(200, await api.getPoem(poemRoute.poemId, searchParams.get("viewerId") ?? undefined));
+      }
+      if (method === "DELETE" && poemRoute.resource === "poem") {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        return json(200, await api.deletePoem({ poemId: poemRoute.poemId, userId: actor.user.id }));
       }
       if (method === "POST" && poemRoute.resource === "comments") {
         const actor = await authenticateRequest(context);
@@ -832,6 +844,19 @@ export async function handleApiRequest(
     }
   }
 
+  const inboxSummaryReadRoute = parseInboxSummaryReadRoute(pathname);
+  if (method === "PUT" && inboxSummaryReadRoute) {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
+    if (inboxSummaryReadRoute.userId !== actor.user.id) {
+      return json(403, { code: "FORBIDDEN", message: "This inbox belongs to another user." });
+    }
+    return json(
+      200,
+      await api.markInboxActivityRead(actor.user.id, inboxSummaryReadRoute.kind)
+    );
+  }
+
   const inboxSummaryUserId = parseInboxSummaryRoute(pathname);
   if (method === "GET" && inboxSummaryUserId) {
     const actor = await authenticateRequest(context);
@@ -924,10 +949,12 @@ export async function handleApiRequest(
   }
 
   if (profileRoute?.resource === "profile-content" && method === "GET") {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
     return json(
       200,
       await api.listUserProfileContent(profileRoute.userId, profileRoute.section, {
-        viewerId: searchParams.get("viewerId") ?? undefined,
+        viewerId: actor.user.id,
         threadRelation: parseThreadRelation(searchParams.get("threadRelation")),
         collection: parseProfileCollection(searchParams.get("collection")),
         contentKind: parseProfileContentKind(searchParams.get("contentKind"))
@@ -1274,6 +1301,26 @@ function parseInboxSummaryRoute(pathname: string) {
     segments[2] &&
     segments[3] === "inbox-summary"
     ? segments[2]
+    : null;
+}
+
+function parseInboxSummaryReadRoute(pathname: string): {
+  userId: string;
+  kind: "comments" | "likes" | "thread" | "social";
+} | null {
+  const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  const kind = segments[4];
+  const activityKind = kind === "comments" || kind === "likes" || kind === "thread" || kind === "social"
+    ? kind
+    : null;
+  return segments.length === 6 &&
+    segments[0] === "v1" &&
+    segments[1] === "users" &&
+    segments[2] &&
+    segments[3] === "inbox-summary" &&
+    activityKind !== null &&
+    segments[5] === "read"
+    ? { userId: segments[2], kind: activityKind }
     : null;
 }
 

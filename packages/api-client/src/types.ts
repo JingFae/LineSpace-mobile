@@ -191,6 +191,8 @@ export type InviteDraftCollaboratorInput = {
 export type PublishPoemDraftInput = {
   draftId: string;
   userId: string;
+  /** When set, atomically replaces this owned published Post without changing its identity. */
+  replacePostId?: string;
 };
 
 export type PublishPoemDraftResult = {
@@ -404,6 +406,16 @@ export type UpdatePoemCollectionInput = {
   poemId: string;
   collection: PoemCollectionKind;
   isActive: boolean;
+};
+
+export type DeletePoemInput = {
+  userId: string;
+  poemId: string;
+};
+
+export type DeletePoemResult = {
+  poemId: string;
+  deleted: true;
 };
 
 export type UserPoemCollections = {

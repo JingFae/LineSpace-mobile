@@ -50,6 +50,7 @@ export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
   const { user: authUser } = useAuth();
   const currentUserId = authUser?.id ?? "";
   const draftId = getParam(params.draftId);
+  const editPostId = getParam(params.editPostId);
   const [activeTool, setActiveTool] = useState<LayoutTool>("template");
   const [layout, setLayout] = useState<PoemLayoutConfig | null>(null);
   const [finishOpen, setFinishOpen] = useState(false);
@@ -84,7 +85,11 @@ export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
         await lineSpaceApi.updatePoemDraft({ draftId, userId: currentUserId, settings });
       }
       if (draftQuery.data?.mode === "relay") return lineSpaceApi.publishThreadDraft({ draftId, userId: currentUserId });
-      return lineSpaceApi.publishPoemDraft({ draftId, userId: currentUserId });
+      return lineSpaceApi.publishPoemDraft({
+        draftId,
+        userId: currentUserId,
+        ...(editPostId ? { replacePostId: editPostId } : {})
+      });
     },
     onSuccess: () => {
       setFinishOpen(false);

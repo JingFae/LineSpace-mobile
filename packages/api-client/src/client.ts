@@ -22,8 +22,11 @@ import type {
   ContentSearchResult,
   DraftInvitation,
   DraftOperationInput,
+  DeletePoemInput,
+  DeletePoemResult,
   FeedQuery,
   InboxActivitySummary,
+  InboxActivityKind,
   InboxActivityPreview,
   InboxGroup,
   InviteDraftCollaboratorInput,
@@ -70,6 +73,7 @@ import type {
   UserPoemCollections,
   UserProfile,
   UserProfileContentPage,
+  UserProfileContentItem,
   UserProfileContentQuery,
   UserProfileContentSection,
   UserProfileDetails,
@@ -103,9 +107,11 @@ export interface LineSpaceApi {
   searchContent(query: string, viewerId: string): Promise<ContentSearchResult>;
   listTagContent(tag: string, viewerId: string): Promise<TagContentResult>;
   getPoem(id: string, viewerId?: string): Promise<PoemSummary | null>;
+  deletePoem(input: DeletePoemInput): Promise<DeletePoemResult>;
   setPoemCollection(input: UpdatePoemCollectionInput): Promise<PoemEngagementResult>;
   getUserPoemCollections(userId: string): Promise<UserPoemCollections>;
   getInboxActivitySummary(userId: string): Promise<InboxActivitySummary>;
+  markInboxActivityRead(userId: string, kind: InboxActivityKind): Promise<InboxActivitySummary>;
   getUserProfile(userId: string): Promise<UserProfileDetails | null>;
   updateUserProfile(input: UpdateUserProfileInput): Promise<UserProfileDetails>;
   setUserFollow(input: UpdateUserFollowInput): Promise<UserFollowResult>;
@@ -331,8 +337,15 @@ export class MockLineSpaceApi implements LineSpaceApi {
     if (draft.mode === "relay") throw new Error("Relay drafts must be published as threads");
     const owner = this.profiles.find((profile) => profile.id === draft.ownerId)!;
     const now = new Date().toISOString();
+    const replacedIndex = input.replacePostId
+      ? this.poems.findIndex((item) => item.id === input.replacePostId)
+      : -1;
+    const replaced = replacedIndex >= 0 ? this.poems[replacedIndex] : undefined;
+    if (input.replacePostId && (!replaced || replaced.author.id !== input.userId)) {
+      throw new Error("Post access denied");
+    }
     const poem: PoemSummary = {
-      id: `poem-${draft.id}`,
+      id: replaced?.id ?? `poem-${draft.id}`,
       title: draft.title.trim() || "untitled line",
       lines: draft.body.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
       author: profileToUser(owner),
@@ -345,13 +358,14 @@ export class MockLineSpaceApi implements LineSpaceApi {
       allowComments: draft.settings.allowComments,
       allowSharing: draft.settings.allowSharing,
       status: "growing",
-      startedAt: draft.createdAt,
+      startedAt: replaced?.startedAt ?? draft.createdAt,
       editedAt: now,
-      metrics: { comments: 0, likes: 0, shares: 0, contributions: 0, saves: 0 },
-      viewer: { liked: false, saved: false },
+      metrics: replaced ? { ...replaced.metrics } : { comments: 0, likes: 0, shares: 0, contributions: 0, saves: 0 },
+      viewer: replaced ? { ...replaced.viewer } : { liked: false, saved: false },
       artworkTone: draft.layout.backgroundId === "midnight" ? "night" : "paper",
       media: draft.media ? { ...draft.media } : undefined,
       layout: cloneLayout(draft.layout),
+      comments: replaced?.comments?.map(cloneComment),
       credits: {
         startedBy: profileToUser(owner),
         commentContributors: draft.collaborators
@@ -366,10 +380,11 @@ export class MockLineSpaceApi implements LineSpaceApi {
     draft.status = "published";
     draft.updatedAt = now;
     draft.version += 1;
-    this.poems.unshift(poem);
+    if (replacedIndex >= 0) this.poems.splice(replacedIndex, 1, poem);
+    else this.poems.unshift(poem);
     const profileContent = mockUserProfileContent[owner.id];
     if (profileContent) {
-      profileContent.posts.unshift({
+      const item: UserProfileContentItem = {
         id: `profile-${poem.id}`,
         kind: "post",
         poemId: poem.id,
@@ -377,11 +392,14 @@ export class MockLineSpaceApi implements LineSpaceApi {
         excerpt: poem.lines[0] ?? "",
         tags: [...poem.tags],
         finishedAt: now,
-        highlightCount: 0
-      });
-      owner.contentCounts.posts += 1;
+        highlightCount: poem.metrics.likes
+      };
+      const existingItem = profileContent.posts.findIndex((entry) => entry.poemId === poem.id);
+      if (existingItem >= 0) profileContent.posts.splice(existingItem, 1, item);
+      else profileContent.posts.unshift(item);
+      if (!replaced) owner.contentCounts.posts += 1;
     }
-    this.awardExperience(owner.id, "creator", 5, `publish-post:${poem.id}`);
+    if (!replaced) this.awardExperience(owner.id, "creator", 5, `publish-post:${poem.id}`);
     this.notifyMentions(owner.id, poem.mentions ?? [], {
       kind: "post",
       title: poem.title,
@@ -588,6 +606,25 @@ export class MockLineSpaceApi implements LineSpaceApi {
   async getPoem(id: string, viewerId?: string): Promise<PoemSummary | null> {
     const poem = this.poems.find((item) => item.id === id);
     return poem && canViewContent(poem.visibility, poem.audienceUserIds, poem.author.id, viewerId) ? this.withViewer(poem, viewerId) : null;
+  }
+
+  async deletePoem(input: DeletePoemInput): Promise<DeletePoemResult> {
+    const index = this.poems.findIndex((item) => item.id === input.poemId);
+    const poem = index >= 0 ? this.poems[index] : undefined;
+    if (!poem || poem.author.id !== input.userId) throw new Error("Post access denied");
+    this.poems.splice(index, 1);
+    const profile = this.profiles.find((item) => item.id === input.userId);
+    if (profile) profile.contentCounts.posts = Math.max(0, profile.contentCounts.posts - 1);
+    const content = mockUserProfileContent[input.userId]?.posts;
+    if (content) {
+      const contentIndex = content.findIndex((item) => item.poemId === input.poemId);
+      if (contentIndex >= 0) content.splice(contentIndex, 1);
+    }
+    for (const collections of this.collectionsByUser.values()) {
+      collections.liked.delete(input.poemId);
+      collections.saved.delete(input.poemId);
+    }
+    return { poemId: input.poemId, deleted: true };
   }
 
   async searchContent(query: string, viewerId: string): Promise<ContentSearchResult> {
@@ -1118,6 +1155,23 @@ export class MockLineSpaceApi implements LineSpaceApi {
     };
   }
 
+  async markInboxActivityRead(
+    userId: string,
+    kind: InboxActivityKind
+  ): Promise<InboxActivitySummary> {
+    const current = await this.getInboxActivitySummary(userId);
+    const next: InboxActivitySummary = {
+      ...current,
+      unread: { ...current.unread, [kind]: 0 },
+      recent: {
+        ...current.recent,
+        [kind]: current.recent[kind].map((item) => ({ ...item, unread: false }))
+      }
+    };
+    this.inboxActivitySummaries.set(userId, cloneInboxActivitySummary(next));
+    return next;
+  }
+
   async getUserProfile(userId: string): Promise<UserProfileDetails | null> {
     const profile = this.profiles.find((item) => item.id === userId);
     if (profile) return cloneUserProfile(profile);
@@ -1217,6 +1271,29 @@ export class MockLineSpaceApi implements LineSpaceApi {
     }
     if (section === "saves") {
       items = this.listSavedProfileContent(userId, query.collection, query.contentKind);
+    }
+    if (section === "comments") {
+      const samples = items;
+      const sampleIds = new Set(samples.map((item) => item.commentId));
+      const dynamic = this.poems.flatMap((poem) =>
+        poem.author.id === userId
+          ? []
+          : (poem.comments ?? [])
+              .filter((comment) => comment.author.id === userId && !sampleIds.has(comment.id))
+              .map((comment) => ({
+                id: `profile-comment-${comment.id}`,
+                kind: "comment" as const,
+                poemId: poem.id,
+                commentId: comment.id,
+                title: poem.title,
+                excerpt: comment.body,
+                tags: [...poem.tags],
+                finishedAt: comment.createdAt ?? poem.startedAt,
+                highlightCount: comment.likes ?? 0,
+                reference: { kind: "post" as const, text: poem.title }
+              }))
+      );
+      items = [...samples, ...dynamic];
     }
     if (section === "threads" && query.threadRelation) {
       items = items.filter((item) => item.threadRelation === query.threadRelation);
@@ -1719,19 +1796,22 @@ export class MockLineSpaceApi implements LineSpaceApi {
     collection?: "liked" | "saved",
     contentKind?: "post" | "thread" | "comment"
   ) {
-    const savedIds = this.getOrCreateCollections(userId).saved;
+    const postIds = this.getOrCreateCollections(userId)[collection ?? "saved"];
     const samples = mockUserProfileContent[userId]?.saves ?? [];
     const samplePoemIds = new Set(samples.map((item) => item.poemId));
     const dynamicItems = this.poems
-      .filter((poem) => savedIds.has(poem.id) && !samplePoemIds.has(poem.id))
-      .map(profileContentFromPoem);
-    const dynamicThreads = [...(this.savedThreadsByUser.get(userId) ?? new Set<string>())]
+      .filter((poem) => postIds.has(poem.id) && !samplePoemIds.has(poem.id))
+      .map((poem) => ({ ...profileContentFromPoem(poem), collection: collection ?? "saved" }));
+    const threadIds = collection === "liked"
+      ? this.likedThreadsByUser.get(userId) ?? new Set<string>()
+      : this.savedThreadsByUser.get(userId) ?? new Set<string>();
+    const dynamicThreads = [...threadIds]
       .map((threadId) => this.threads.find((thread) => thread.id === threadId))
       .filter((thread): thread is PoetryThread => Boolean(thread))
       .map((thread) => ({
         ...profileContentFromThread(thread, "started"),
         id: `saved-thread-${thread.id}`,
-        collection: "saved" as const,
+        collection: (collection ?? "saved") as "liked" | "saved",
         threadRelation: undefined
       }));
     const commentKeys = collection === "liked"
@@ -1761,9 +1841,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
 
     const items = [
       ...samples.filter((item) =>
-        collection === "liked"
-          ? item.collection === "liked"
-          : item.poemId && savedIds.has(item.poemId)
+        collection ? item.collection === collection : item.collection !== "liked"
       ),
       ...dynamicItems,
       ...dynamicThreads,

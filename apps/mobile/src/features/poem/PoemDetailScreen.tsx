@@ -27,7 +27,8 @@ import {
 } from "@linespace/ui";
 import { colors, radius, spacing } from "@linespace/tokens";
 import type { PoemComment, PoemCreditPerson, PoemSummary } from "@linespace/api-client";
-import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
+import { lineSpaceApi } from "@/services/lineSpaceApi";
+import { useAuth } from "@/auth/AuthSessionProvider";
 import { getPoemLayoutPresentation } from "./poemPresentation";
 import { usePoemEngagement } from "./usePoemEngagement";
 
@@ -44,6 +45,8 @@ type PoemDetailScreenProps = {
 
 export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreenProps) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const currentUserId = user?.id ?? "";
   const [creditsOpen, setCreditsOpen] = useState(false);
   const [commentComposerOpen, setCommentComposerOpen] = useState(false);
   const [replyTarget, setReplyTarget] = useState<PoemComment | null>(null);
@@ -53,7 +56,7 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
   const engagement = usePoemEngagement();
   const poemQuery = useQuery({
     queryKey: ["poem", id, currentUserId],
-    enabled: Boolean(id),
+    enabled: Boolean(id) && currentUserId.length > 0,
     queryFn: () => lineSpaceApi.getPoem(id!, currentUserId)
   });
 
@@ -81,6 +84,8 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
       setReplyTarget(null);
       setCommentComposerOpen(false);
       setNotice("Comment posted");
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", currentUserId] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile-content", currentUserId] });
     } catch {
       setNotice("Could not post comment");
     } finally {
@@ -93,6 +98,10 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
     try {
       const result = await lineSpaceApi.setCommentCollection({ poemId: id, commentId: comment.id, userId: currentUserId, collection, isActive });
       updatePoemCache(result.poem);
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", currentUserId] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile-content", currentUserId] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", comment.author.id] });
+      void queryClient.invalidateQueries({ queryKey: ["inbox-summary"] });
       if (collection === "saved" && isActive) setNotice("Comment saved to your profile");
     } catch {
       setNotice("Could not update comment");

@@ -39,6 +39,9 @@ import type {
   ThreadContinuation,
   ThreadDetail,
   ThreadSort,
+  UpdateContinuationLikeInput,
+  UpdateThreadCollectionInput,
+  UpdateThreadLikeInput,
   UserProfileDetails
 } from "@linespace/api-client";
 import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
@@ -1695,6 +1698,9 @@ function ContinueComposer({
   onClose: () => void;
   onSubmitted: (continuation: ThreadContinuation, target: ComposerTarget) => void;
 }) {
+  const { user } = useAuth();
+  const actorUserId = user?.id ?? "";
+  const queryClient = useQueryClient();
   const [content, setContent] = useState("");
   const [draftByTarget, setDraftByTarget] = useState<Record<string, string>>({});
   const translateY = useRef(new Animated.Value(340)).current;
@@ -1709,7 +1715,7 @@ function ContinueComposer({
       if (!target || target.kind !== "thread") throw new Error("Missing thread target");
       return lineSpaceApi.createThreadContinuation({
         threadId: target.thread.id,
-        userId: currentUserId,
+        userId: actorUserId,
         content
       });
     },
@@ -1719,6 +1725,9 @@ function ContinueComposer({
       if (targetKey) {
         setDraftByTarget((current) => ({ ...current, [targetKey]: "" }));
       }
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", actorUserId] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile-content", actorUserId] });
+      void queryClient.invalidateQueries({ queryKey: ["inbox-summary"] });
       onSubmitted(continuation, target);
     }
   });
@@ -1727,7 +1736,7 @@ function ContinueComposer({
       if (!target || target.kind !== "continuation") throw new Error("Missing continuation target");
       return lineSpaceApi.createContinuation({
         continuationId: target.continuation.id,
-        userId: currentUserId,
+        userId: actorUserId,
         content
       });
     },
@@ -1737,6 +1746,9 @@ function ContinueComposer({
       if (targetKey) {
         setDraftByTarget((current) => ({ ...current, [targetKey]: "" }));
       }
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", actorUserId] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile-content", actorUserId] });
+      void queryClient.invalidateQueries({ queryKey: ["inbox-summary"] });
       onSubmitted(continuation, target);
     }
   });
@@ -1965,10 +1977,14 @@ function useCurrentProfile(userId: string) {
 function useThreadLikeMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: lineSpaceApi.setThreadLike.bind(lineSpaceApi),
-    onSuccess: () => {
+    mutationFn: (input: UpdateThreadLikeInput) => lineSpaceApi.setThreadLike(input),
+    onSuccess: (thread, input) => {
       void queryClient.invalidateQueries({ queryKey: ["threads"] });
       void queryClient.invalidateQueries({ queryKey: ["thread-detail"] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", thread.author.id] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", input.userId] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile-content", input.userId] });
+      void queryClient.invalidateQueries({ queryKey: ["inbox-summary"] });
     }
   });
 }
@@ -1976,10 +1992,13 @@ function useThreadLikeMutation() {
 function useContinuationLikeMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: lineSpaceApi.setContinuationLike.bind(lineSpaceApi),
-    onSuccess: () => {
+    mutationFn: (input: UpdateContinuationLikeInput) => lineSpaceApi.setContinuationLike(input),
+    onSuccess: (continuation, input) => {
       void queryClient.invalidateQueries({ queryKey: ["thread-detail"] });
       void queryClient.invalidateQueries({ queryKey: ["continuation-detail"] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", continuation.author.id] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", input.userId] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile-content", input.userId] });
     }
   });
 }
@@ -1987,10 +2006,13 @@ function useContinuationLikeMutation() {
 function useThreadSaveMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: lineSpaceApi.setThreadCollection.bind(lineSpaceApi),
-    onSuccess: () => {
+    mutationFn: (input: UpdateThreadCollectionInput) => lineSpaceApi.setThreadCollection(input),
+    onSuccess: (thread, input) => {
       void queryClient.invalidateQueries({ queryKey: ["threads"] });
       void queryClient.invalidateQueries({ queryKey: ["thread-detail"] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", thread.author.id] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", input.userId] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile-content", input.userId] });
     }
   });
 }

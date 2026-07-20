@@ -41,6 +41,8 @@ export type {
   DraftCollaborator,
   DraftInvitation,
   DraftOperationInput,
+  DeletePoemInput,
+  DeletePoemResult,
   FeedFilter,
   FeedQuery,
   FeedSection,

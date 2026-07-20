@@ -213,6 +213,12 @@ async function main() {
       inboxSummary.unread.comments > 0 && inboxSummary.unread.likes > 0,
       "Inbox summary did not return unread activity counts."
     );
+    const readInboxSummary = await httpApi.markInboxActivityRead(profile.id, "comments");
+    assert(
+      readInboxSummary.unread.comments === 0 &&
+        readInboxSummary.recent.comments.every((item) => !item.unread),
+      "Opening an Inbox activity category did not clear its unread state."
+    );
     const httpGroup = await httpApi.createInboxGroup({
       ownerId: profile.id,
       name: "HTTP Lines",
@@ -325,6 +331,36 @@ async function main() {
     const collections = await httpApi.getUserPoemCollections(profile.id);
     assert(collections.savedPoemIds.includes(published.poem.id), "Saved collection was not updated.");
 
+    const savedPosts = await httpApi.listUserProfileContent(profile.id, "saves", {
+      collection: "saved",
+      contentKind: "post"
+    });
+    assert(
+      savedPosts.items.some((item) => item.poemId === published.poem.id),
+      "Profile Saves did not reflect a saved Post."
+    );
+
+    const threadBeforeSave = await httpApi.getThread("thread-city-edge", profile.id);
+    assert(threadBeforeSave, "Thread save smoke target was not found.");
+    const savedThread = await httpApi.setThreadCollection({
+      userId: profile.id,
+      threadId: threadBeforeSave.thread.id,
+      isActive: true
+    });
+    assert(
+      savedThread.viewer.saved &&
+        (savedThread.metrics.saves ?? 0) >= (threadBeforeSave.thread.metrics.saves ?? 0),
+      "Thread save state and count did not update together."
+    );
+    const savedThreads = await httpApi.listUserProfileContent(profile.id, "saves", {
+      collection: "saved",
+      contentKind: "thread"
+    });
+    assert(
+      savedThreads.items.some((item) => item.threadId === savedThread.id),
+      "Profile Saves did not reflect a saved Thread."
+    );
+
     const content = await httpApi.listUserProfileContent(profile.id, "posts");
     assert(content.userId === profile.id, "Profile content route returned the wrong user.");
     const connections = await httpApi.listUserConnections(profile.id, "following", {
@@ -358,6 +394,66 @@ async function main() {
         (comment) => comment.author.id === profile.id && comment.author.avatarUrl === avatarUrl
       ),
       "Comment avatar was not refreshed from the profile."
+    );
+    const foreignPost = feed.find((poem) => poem.author.id !== profile.id);
+    if (foreignPost) {
+      const profileComment = await httpApi.createPoemComment({
+        poemId: foreignPost.id,
+        userId: profile.id,
+        body: "A comment that belongs in Profile."
+      });
+      const likedComment = await httpApi.setCommentCollection({
+        poemId: foreignPost.id,
+        commentId: profileComment.id,
+        userId: profile.id,
+        collection: "liked",
+        isActive: true
+      });
+      assert(
+        likedComment.comment.viewer?.liked && (likedComment.comment.likes ?? 0) > 0,
+        "Comment like state and count did not update together."
+      );
+      const profileComments = await httpApi.listUserProfileContent(profile.id, "comments");
+      assert(
+        profileComments.items.some((item) => item.commentId === profileComment.id),
+        "Profile Comments did not reflect a comment on another user's Post."
+      );
+      const likedComments = await httpApi.listUserProfileContent(profile.id, "saves", {
+        collection: "liked",
+        contentKind: "comment"
+      });
+      assert(
+        likedComments.items.some((item) => item.commentId === profileComment.id),
+        "Profile Saves did not reflect a liked Comment."
+      );
+    }
+
+    const replacementDraft = await httpApi.createPoemDraft({ ownerId: profile.id, mode: "draft" });
+    await httpApi.updatePoemDraft({
+      draftId: replacementDraft.id,
+      userId: profile.id,
+      title: "Contract check edited",
+      body: "The same Post now carries a new line."
+    });
+    const replaced = await httpApi.publishPoemDraft({
+      draftId: replacementDraft.id,
+      userId: profile.id,
+      replacePostId: published.poem.id
+    });
+    assert(
+      replaced.poem.id === published.poem.id &&
+        replaced.poem.title === "Contract check edited" &&
+        replaced.poem.metrics.saves === 1,
+      "Editing a Post did not preserve its identity and engagement."
+    );
+    assert(
+      !(await httpApi.listUserDrafts(profile.id)).items.some((item) => item.id === replacementDraft.id),
+      "A published edit remained visible in Drafts."
+    );
+    const deleted = await httpApi.deletePoem({ userId: profile.id, poemId: published.poem.id });
+    assert(
+      deleted.deleted && !(await httpApi.getPoem(published.poem.id, profile.id)),
+      "An owner could not delete their published Post."
     );
     const inviteCandidates = await httpApi.listDraftInviteCandidates("user-ray");
     assert(
@@ -441,6 +537,11 @@ async function verifyUserDomainHttpIdentity() {
     viewerId: "untrusted-environment-user",
     cursor: "thread-cursor",
     limit: 3
+  });
+  await httpApi.listUserProfileContent(smokeUser.id, "saves", {
+    viewerId: "untrusted-environment-user",
+    collection: "liked",
+    contentKind: "post"
   });
 
   assert(sawAuthorization, "User-domain HTTP requests did not carry the Access Token.");

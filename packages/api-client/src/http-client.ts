@@ -11,8 +11,11 @@ import type {
   ContentSearchResult,
   DraftInvitation,
   DraftOperationInput,
+  DeletePoemInput,
+  DeletePoemResult,
   FeedQuery,
   InboxActivitySummary,
+  InboxActivityKind,
   InboxGroup,
   InviteDraftCollaboratorInput,
   InviteInboxGroupMembersInput,
@@ -206,6 +209,12 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     );
   }
 
+  async deletePoem(input: DeletePoemInput): Promise<DeletePoemResult> {
+    return this.deleteJson<DeletePoemResult>(
+      `/v1/poems/${encodeURIComponent(input.poemId)}`
+    );
+  }
+
   async searchContent(query: string, viewerId: string): Promise<ContentSearchResult> {
     const params = new URLSearchParams({ query, viewerId });
     return this.getJson<ContentSearchResult>(`/v1/search?${params.toString()}`);
@@ -355,6 +364,16 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     );
   }
 
+  async markInboxActivityRead(
+    userId: string,
+    kind: InboxActivityKind
+  ): Promise<InboxActivitySummary> {
+    return this.putJson<InboxActivitySummary>(
+      `/v1/users/${encodeURIComponent(userId)}/inbox-summary/${encodeURIComponent(kind)}/read`,
+      {}
+    );
+  }
+
   async getUserProfile(userId: string): Promise<UserProfileDetails | null> {
     return this.getJson<UserProfileDetails | null>(
       `/v1/users/${encodeURIComponent(userId)}/profile`
@@ -386,7 +405,6 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     query: UserProfileContentQuery = {}
   ): Promise<UserProfileContentPage> {
     const params = new URLSearchParams();
-    if (query.viewerId) params.set("viewerId", query.viewerId);
     if (query.threadRelation) params.set("threadRelation", query.threadRelation);
     if (query.collection) params.set("collection", query.collection);
     if (query.contentKind) params.set("contentKind", query.contentKind);

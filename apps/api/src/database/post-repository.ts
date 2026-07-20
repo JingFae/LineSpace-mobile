@@ -1,4 +1,6 @@
 import type {
+  DeletePoemInput,
+  DeletePoemResult,
   FeedQuery,
   InboxConversationMessage,
   PoemComment,
@@ -156,6 +158,15 @@ export class PostRepository {
     if (!summary) return null;
     summary.comments = await this.listComments(id);
     return summary;
+  }
+
+  async deletePoem(input: DeletePoemInput): Promise<DeletePoemResult> {
+    const actorId = await getCurrentLinespaceUserId(this.client);
+    if (!actorId || actorId !== input.userId) throw new Error("post actor mismatch");
+    const result = await this.client.rpc("delete_my_post", { p_post_id: input.poemId });
+    ensureDatabaseResult(result.error);
+    if (result.data !== true) throw new Error("post not found or forbidden");
+    return { poemId: input.poemId, deleted: true };
   }
 
   async createPoemComment(input: {
@@ -329,6 +340,23 @@ export class PostRepository {
       .limit(50);
     ensureDatabaseResult(result.error);
     return this.mapSummaries((result.data as PostRow[] | null) ?? [], actorId);
+  }
+
+  async listPoemsByIds(ids: string[]): Promise<PoemSummary[]> {
+    if (ids.length === 0) return [];
+    const actorId = await getCurrentLinespaceUserId(this.client);
+    const result = await this.client
+      .from("posts")
+      .select(postSelect)
+      .in("id", [...new Set(ids)])
+      .eq("status", "published");
+    ensureDatabaseResult(result.error);
+    const mapped = await this.mapSummaries((result.data as PostRow[] | null) ?? [], actorId);
+    const byId = new Map(mapped.map((item) => [item.id, item]));
+    return ids.flatMap((id) => {
+      const item = byId.get(id);
+      return item ? [item] : [];
+    });
   }
 
   private async mapSummaries(

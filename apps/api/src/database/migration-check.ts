@@ -57,6 +57,10 @@ const threadEngagementPermissionsMigration = await readFile(
   new URL("20260720000500_thread_engagement_delete_permissions.sql", canonicalMigrationsUrl),
   "utf8"
 );
+const engagementProfileInboxPostManagementMigration = await readFile(
+  new URL("20260720000600_engagement_profile_inbox_post_management.sql", canonicalMigrationsUrl),
+  "utf8"
+);
 const profileRepository = await readFile(
   new URL("./profile-repository.ts", import.meta.url),
   "utf8"
@@ -104,6 +108,22 @@ for (const required of [
   /posts_count\s*=\s*greatest/i
 ] as const) {
   assert(required.test(contentMigration), `Content migration is missing ${required}.`);
+}
+
+for (const required of [
+  /add\s+column\s+if\s+not\s+exists\s+saves_count/i,
+  /thread_saves_sync_thread_count/i,
+  /post_comment_engagements_sync_count/i,
+  /create\s+or\s+replace\s+function\s+public\.mark_inbox_activity_read/i,
+  /create\s+or\s+replace\s+function\s+public\.publish_draft_over_post/i,
+  /create\s+or\s+replace\s+function\s+public\.delete_my_post/i,
+  /actor_id\s+text\s*:=\s*public\.current_linespace_user_id\(\)/i,
+  /grant\s+execute\s+on\s+function\s+public\.mark_inbox_activity_read[\s\S]*to\s+authenticated/i
+] as const) {
+  assert(
+    required.test(engagementProfileInboxPostManagementMigration),
+    `Engagement/Profile/Inbox/Post migration is missing ${required}.`
+  );
 }
 
 assert(
