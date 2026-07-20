@@ -32,6 +32,7 @@ type ThreadRow = {
   media: unknown;
   visibility: "public" | "include" | "exclude";
   status: "open" | "complete";
+  likes_count: number;
   shares_count: number;
   created_at: string;
   updated_at: string;
@@ -50,7 +51,7 @@ type ContinuationRow = {
 };
 
 const threadSelect =
-  "id,author_user_id,title,prompt,starting_content,rules,tags,mentions,media,visibility,status,shares_count,created_at,updated_at";
+  "id,author_user_id,title,prompt,starting_content,rules,tags,mentions,media,visibility,status,likes_count,shares_count,created_at,updated_at";
 const continuationSelect =
   "id,thread_id,parent_continuation_id,line_number,content,author_user_id,shares_count,created_at,updated_at";
 
@@ -59,12 +60,38 @@ export class ThreadRepository {
 
   async listThreads(query: ThreadFeedQuery = {}): Promise<PoetryThread[]> {
     const actorId = await getCurrentLinespaceUserId(this.client);
+    const limit = Math.min(50, Math.max(1, query.limit ?? 20));
     let request = this.client
       .from("poetry_threads")
       .select(threadSelect)
-      .order("created_at", { ascending: false })
-      .order("id", { ascending: false })
-      .limit(100);
+      .limit(limit);
+
+    request = query.sort === "top"
+      ? request
+          .order("likes_count", { ascending: false })
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+      : request
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false });
+
+    if (query.cursor) {
+      const cursorResult = await this.client
+        .from("poetry_threads")
+        .select("id,created_at,likes_count")
+        .eq("id", query.cursor)
+        .maybeSingle();
+      ensureDatabaseResult(cursorResult.error);
+      const cursor = cursorResult.data as Pick<ThreadRow, "id" | "created_at" | "likes_count"> | null;
+      if (!cursor) return [];
+      request = query.sort === "top"
+        ? request.or(
+            `likes_count.lt.${cursor.likes_count},and(likes_count.eq.${cursor.likes_count},created_at.lt.${cursor.created_at}),and(likes_count.eq.${cursor.likes_count},created_at.eq.${cursor.created_at},id.lt.${cursor.id})`
+          )
+        : request.or(
+            `created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`
+          );
+    }
 
     if (query.sort === "following") {
       if (!actorId) return [];
@@ -82,11 +109,7 @@ export class ThreadRepository {
     const result = await request;
     ensureDatabaseResult(result.error);
     const rows = (result.data as ThreadRow[] | null) ?? [];
-    const mapped = await this.mapThreads(rows, actorId);
-    if (query.sort === "top") {
-      return mapped.sort((left, right) => right.metrics.likes - left.metrics.likes);
-    }
-    return mapped;
+    return this.mapThreads(rows, actorId);
   }
 
   async getThread(threadId: string): Promise<ThreadDetail | null> {
@@ -389,6 +412,7 @@ export class ThreadRepository {
     rows: ThreadRow[],
     actorId: string | null
   ): Promise<PoetryThread[]> {
+    if (rows.length === 0) return [];
     const profiles = await loadProfiles(
       this.client,
       rows.map((row) => row.author_user_id)
@@ -421,7 +445,6 @@ export class ThreadRepository {
         (row) => row.thread_id
       )
     );
-    const likeCounts = await this.loadLikeCounts(ids);
     return rows.flatMap((row) => {
       const author = profiles.get(row.author_user_id);
       if (!author) return [];
@@ -439,7 +462,7 @@ export class ThreadRepository {
           createdAt: row.created_at,
           status: row.status,
           metrics: {
-            likes: likeCounts.get(row.id) ?? 0,
+            likes: countValue(row.likes_count),
             continuations: continuationCount.get(row.id) ?? 0,
             shares: countValue(row.shares_count),
             saves: 0
@@ -454,6 +477,7 @@ export class ThreadRepository {
     rows: ContinuationRow[],
     actorId: string | null
   ): Promise<ThreadContinuation[]> {
+    if (rows.length === 0) return [];
     const profiles = await loadProfiles(
       this.client,
       rows.map((row) => row.author_user_id)

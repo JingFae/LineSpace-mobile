@@ -189,9 +189,8 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     if (query.filter) {
       params.set("filter", query.filter);
     }
-    if (query.viewerId) {
-      params.set("viewerId", query.viewerId);
-    }
+    if (query.cursor) params.set("cursor", query.cursor);
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
 
     return this.getJson<PoemSummary[]>(`/v1/feed?${params.toString()}`);
   }
@@ -419,7 +418,8 @@ export class HttpLineSpaceApi implements LineSpaceApi {
   async listThreads(query: ThreadFeedQuery = {}): Promise<PoetryThread[]> {
     const params = new URLSearchParams();
     if (query.sort) params.set("sort", query.sort);
-    if (query.viewerId) params.set("viewerId", query.viewerId);
+    if (query.cursor) params.set("cursor", query.cursor);
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
     const suffix = params.size > 0 ? `?${params.toString()}` : "";
     return this.getJson<PoetryThread[]>(`/v1/threads${suffix}`);
   }

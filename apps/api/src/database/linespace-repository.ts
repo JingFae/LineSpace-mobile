@@ -222,14 +222,7 @@ export class SupabaseLineSpaceApi implements LineSpaceApi {
   }
 
   async getInboxActivitySummary(userId: string): Promise<InboxActivitySummary> {
-    const actorId = await getCurrentLinespaceUserId(this.client);
-    if (!actorId || actorId !== userId) throw new Error("inbox actor mismatch");
-    return {
-      userId,
-      unread: { comments: 0, likes: 0, thread: 0 },
-      totals: { comments: 0, likes: 0, thread: 0 },
-      recent: { comments: [], likes: [], thread: [] }
-    };
+    return this.inbox.getInboxActivitySummary(userId);
   }
 
   getUserProfile(userId: string): Promise<UserProfileDetails | null> {

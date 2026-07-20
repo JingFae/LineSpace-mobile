@@ -1,6 +1,6 @@
 import { router, type Href, useFocusEffect } from "expo-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { QueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
@@ -8,9 +8,11 @@ import {
   Animated,
   BackHandler,
   Easing,
+  FlatList,
   Image,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -40,6 +42,7 @@ import type {
   UserProfileDetails
 } from "@linespace/api-client";
 import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
+import { useAuth } from "@/auth/AuthSessionProvider";
 import { mainTabs, tabRoutes } from "@/navigation/tabs";
 import { FeedTopChrome } from "@/components/FeedTopChrome";
 import {
@@ -92,6 +95,7 @@ const sortTabs: Array<{ value: ThreadSort; label: string }> = [
   { value: "top", label: "Popular" },
   { value: "following", label: "Follow" }
 ];
+const threadPageSize = 3;
 
 const continuationHorizontalPadding = spacing.lg;
 const continuationRowPaddingVertical = 8;
@@ -137,20 +141,39 @@ type ContinuationPathRenderNode = {
 };
 
 export function ThreadFeedScreen() {
+  const { user: authUser } = useAuth();
+  const currentUserId = authUser?.id ?? "";
   const queryClient = useQueryClient();
   const [sort, setSort] = useState<ThreadSort>("latest");
   const [composerTarget, setComposerTarget] = useState<ComposerTarget | null>(null);
   const [shareNotice, setShareNotice] = useState<ShareNotice | null>(null);
 
-  const profileQuery = useCurrentProfile();
-  const threadQuery = useQuery({
+  const profileQuery = useCurrentProfile(currentUserId);
+  const threadQuery = useInfiniteQuery({
     queryKey: ["threads", sort, currentUserId],
-    queryFn: () => lineSpaceApi.listThreads({ sort, viewerId: currentUserId })
+    queryFn: ({ pageParam }) =>
+      lineSpaceApi.listThreads({
+        sort,
+        viewerId: currentUserId,
+        cursor: pageParam,
+        limit: threadPageSize
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) =>
+      lastPage.length === threadPageSize ? lastPage.at(-1)?.id : undefined,
+    enabled: currentUserId.length > 0
   });
   const likeMutation = useThreadLikeMutation();
   const saveMutation = useThreadSaveMutation();
 
-  const threads = threadQuery.data ?? [];
+  const threads = useMemo(() => {
+    const seen = new Set<string>();
+    return (threadQuery.data?.pages ?? []).flat().filter((thread) => {
+      if (seen.has(thread.id)) return false;
+      seen.add(thread.id);
+      return true;
+    });
+  }, [threadQuery.data]);
 
   return (
     <AppScreen scroll={false} padded={false} style={styles.safeArea} contentContainerStyle={styles.screen}>
@@ -162,27 +185,25 @@ export function ThreadFeedScreen() {
         tabs={sortTabs}
       />
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[styles.feedContent, composerTarget && styles.composerOpenContentInset]}
-        showsVerticalScrollIndicator={false}
-      >
-        {threadQuery.isLoading ? (
-          <ThreadListState title="Loading threads" />
-        ) : threadQuery.isError ? (
-          <EmptyState
-            title="Threads unavailable"
-            body="The community thread feed could not be loaded."
+      <FlatList
+        data={threads}
+        keyExtractor={(thread) => thread.id}
+        onEndReached={() => {
+          if (threadQuery.hasNextPage && !threadQuery.isFetchingNextPage) {
+            void threadQuery.fetchNextPage();
+          }
+        }}
+        onEndReachedThreshold={0.35}
+        refreshControl={
+          <RefreshControl
+            refreshing={threadQuery.isRefetching && !threadQuery.isFetchingNextPage}
+            onRefresh={() => void threadQuery.refetch()}
+            tintColor={colors.accent}
           />
-        ) : threads.length === 0 ? (
-          <EmptyState
-            title="No poetry threads yet"
-            body="Start a prompt and invite the community to continue it."
-          />
-        ) : (
-          threads.map((thread) => (
+        }
+        renderItem={({ item: thread }) => (
+          <ThreadCardReveal>
             <ThreadCard
-              key={thread.id}
               thread={thread}
               onContinue={() => setComposerTarget({ kind: "thread", thread })}
               onLike={() =>
@@ -213,9 +234,26 @@ export function ThreadFeedScreen() {
                 } as unknown as Href)
               }
             />
-          ))
+          </ThreadCardReveal>
         )}
-      </ScrollView>
+        style={styles.scroll}
+        contentContainerStyle={[styles.feedContent, composerTarget && styles.composerOpenContentInset]}
+        showsVerticalScrollIndicator={false}
+        ListEmptyComponent={
+          threadQuery.isLoading ? (
+            <ThreadListState title="Loading threads" />
+          ) : threadQuery.isError ? (
+            <EmptyState title="Threads unavailable" body="Pull down to try loading threads again." />
+          ) : (
+            <EmptyState title="No poetry threads yet" body="Start a prompt and invite the community to continue it." />
+          )
+        }
+        ListFooterComponent={
+          threadQuery.isFetchingNextPage
+            ? <View style={styles.pageLoader}><ActivityIndicator color={colors.accent} /></View>
+            : null
+        }
+      />
 
       <BottomNavigation
         items={mainTabs}
@@ -241,6 +279,28 @@ export function ThreadFeedScreen() {
       />
       <ShareToast notice={shareNotice} onDismiss={() => setShareNotice(null)} />
     </AppScreen>
+  );
+}
+
+function ThreadCardReveal({ children }: { children: ReactNode }) {
+  const progress = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(progress, {
+      toValue: 1,
+      duration: 260,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true
+    }).start();
+  }, [progress]);
+  return (
+    <Animated.View
+      style={{
+        opacity: progress,
+        transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }]
+      }}
+    >
+      {children}
+    </Animated.View>
   );
 }
 
@@ -1894,10 +1954,11 @@ function ShareToast({ notice, onDismiss }: { notice: ShareNotice | null; onDismi
   );
 }
 
-function useCurrentProfile() {
+function useCurrentProfile(userId: string) {
   return useQuery({
-    queryKey: ["user-profile", currentUserId],
-    queryFn: () => lineSpaceApi.getUserProfile(currentUserId)
+    queryKey: ["user-profile", userId],
+    queryFn: () => lineSpaceApi.getUserProfile(userId),
+    enabled: userId.length > 0
   });
 }
 
@@ -2105,12 +2166,20 @@ function updateThreadListCaches(
   queryClient: QueryClient,
   continuation: ThreadContinuation
 ) {
-  queryClient.setQueriesData<PoetryThread[]>({ queryKey: ["threads"] }, (threads) => {
-    if (!threads) return threads;
-    return threads.map((thread) =>
-      thread.id === continuation.threadId ? addContinuationMetric(thread) : thread
-    );
-  });
+  queryClient.setQueriesData<InfiniteData<PoetryThread[], string | undefined>>(
+    { queryKey: ["threads"] },
+    (data) => {
+      if (!data) return data;
+      return {
+        ...data,
+        pages: data.pages.map((page) =>
+          page.map((thread) =>
+            thread.id === continuation.threadId ? addContinuationMetric(thread) : thread
+          )
+        )
+      };
+    }
+  );
 }
 
 function updateThreadDetailCache(
@@ -2275,6 +2344,7 @@ const styles = StyleSheet.create({
   detailIconButton: { width: 40, height: 44, alignItems: "center", justifyContent: "center" },
   backGlyph: { fontSize: 35, lineHeight: 38, color: colors.ink },
   feedContent: { paddingBottom: 96 },
+  pageLoader: { alignItems: "center", paddingVertical: spacing.lg },
   detailContent: { paddingBottom: 86 },
   composerOpenContentInset: { paddingBottom: 390 },
   threadCard: {

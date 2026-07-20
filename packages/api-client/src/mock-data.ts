@@ -158,18 +158,21 @@ export const mockInboxActivitySummaries: Record<string, InboxActivitySummary> = 
     unread: {
       comments: 132,
       likes: 99,
-      thread: 10
+      thread: 10,
+      social: 3
     },
     totals: {
       comments: 132,
       likes: 590,
-      thread: 10
+      thread: 10,
+      social: 12
     },
     recent: {
       comments: [
         {
           id: "comment-jinghe-moon-image",
           kind: "comments",
+          action: "commented",
           actor: {
             id: "user-jinghe",
             handle: "jinghe",
@@ -189,6 +192,7 @@ export const mockInboxActivitySummaries: Record<string, InboxActivitySummary> = 
         {
           id: "comment-zhihan-autofill",
           kind: "comments",
+          action: "commented",
           actor: {
             id: "user-zhihan",
             handle: "zhihan",
@@ -209,6 +213,7 @@ export const mockInboxActivitySummaries: Record<string, InboxActivitySummary> = 
         {
           id: "like-lili-summer",
           kind: "likes",
+          action: "liked",
           actor: mockUsers[0]!,
           target: {
             kind: "post",
@@ -222,6 +227,7 @@ export const mockInboxActivitySummaries: Record<string, InboxActivitySummary> = 
         {
           id: "like-zhihan-older",
           kind: "likes",
+          action: "saved",
           actor: {
             id: "user-zhihan",
             handle: "zhihan",
@@ -242,6 +248,7 @@ export const mockInboxActivitySummaries: Record<string, InboxActivitySummary> = 
         {
           id: "thread-ray-light",
           kind: "thread",
+          action: "continued",
           actor: mockUsers[1]!,
           target: {
             kind: "thread",
@@ -256,6 +263,7 @@ export const mockInboxActivitySummaries: Record<string, InboxActivitySummary> = 
         {
           id: "thread-lili-orbit",
           kind: "thread",
+          action: "continued",
           actor: mockUsers[0]!,
           target: {
             kind: "thread",
@@ -267,6 +275,40 @@ export const mockInboxActivitySummaries: Record<string, InboxActivitySummary> = 
           dateLabel: "8/29",
           unread: true
         }
+      ],
+      social: [
+        {
+          id: "social-ray-followed",
+          kind: "social",
+          action: "followed",
+          actor: mockUsers[1]!,
+          target: {
+            kind: "profile",
+            title: "New follower",
+            excerpt: "Ray started following you."
+          },
+          dateLabel: "09:42",
+          unread: true
+        },
+        {
+          id: "social-jinghe-mentioned",
+          kind: "social",
+          action: "mentioned",
+          actor: {
+            id: "user-jinghe",
+            handle: "jinghe",
+            displayName: "Jinghe",
+            avatarColor: "#7AA0DD"
+          },
+          target: {
+            kind: "post",
+            title: "light",
+            excerpt: "Jinghe mentioned you in a new post.",
+            poemId: "poem-light"
+          },
+          dateLabel: "Yesterday",
+          unread: true
+        }
       ]
     }
   },
@@ -275,17 +317,20 @@ export const mockInboxActivitySummaries: Record<string, InboxActivitySummary> = 
     unread: {
       comments: 31,
       likes: 18,
-      thread: 2
+      thread: 2,
+      social: 1
     },
     totals: {
       comments: 31,
       likes: 274,
-      thread: 2
+      thread: 2,
+      social: 4
     },
     recent: {
       comments: [],
       likes: [],
-      thread: []
+      thread: [],
+      social: []
     }
   }
 };

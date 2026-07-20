@@ -125,6 +125,14 @@ request-scoped；不会复用携带某个用户 JWT 的全局 Client，也不会
 3. `supabase/migrations/20260716000400_auth_trigger_idempotent.sql`
 4. `supabase/migrations/20260718000100_user_domain_persistence.sql`
 5. `supabase/migrations/20260718000200_inbox_groups.sql`
+6. `supabase/migrations/20260718000300_profile_experience.sql`
+7. `supabase/migrations/20260719000100_service_role_profile_access.sql`
+8. `supabase/migrations/20260719000200_thread_persistence.sql`
+9. `supabase/migrations/20260719000300_content_draft_inbox_persistence.sql`
+10. `supabase/migrations/20260719000400_group_content_sharing.sql`
+11. `supabase/migrations/20260719000500_content_discovery.sql`
+12. `supabase/migrations/20260720000100_live_content_runtime.sql`
+13. `supabase/migrations/20260720000200_inbox_activity_notifications.sql`
 
 最后一个迁移启用用户关系域的 RLS、最近联系人索引、关注计数器和
 `search_public_users`/`list_public_connections` RPC。执行前应先运行
@@ -146,8 +154,9 @@ request-scoped；不会复用携带某个用户 JWT 的全局 Client，也不会
 The repository now uses `supabase/config.toml` and
 `supabase/migrations/` as the canonical database deployment entry point.
 `apps/api/src/database/deferred-migrations/` is intentionally excluded from
-the current cloud push because it contains Post/Poem/Compose persistence that
-is still Mock-backed.
+the current cloud push because it contains historical design references.
+Post, Thread, Compose, Inbox, and discovery persistence are deployed only
+from the ordered canonical migration chain above.
 
 For local Supabase, run:
 

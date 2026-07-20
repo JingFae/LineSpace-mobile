@@ -77,11 +77,30 @@ export class PostRepository {
 
   async listFeed(query: FeedQuery = {}): Promise<PoemSummary[]> {
     const actorId = await getCurrentLinespaceUserId(this.client);
+    const limit = Math.min(50, Math.max(1, query.limit ?? 20));
     let request = this.client
       .from("posts")
       .select(postSelect)
       .eq("status", "published")
-      .limit(100);
+      .limit(limit);
+
+    if (query.cursor) {
+      const cursorResult = await this.client
+        .from("posts")
+        .select("id,started_at,likes_count")
+        .eq("id", query.cursor)
+        .maybeSingle();
+      ensureDatabaseResult(cursorResult.error);
+      const cursor = cursorResult.data as Pick<PostRow, "id" | "started_at" | "likes_count"> | null;
+      if (!cursor) return [];
+      request = query.section === "popular"
+        ? request.or(
+            `likes_count.lt.${cursor.likes_count},and(likes_count.eq.${cursor.likes_count},started_at.lt.${cursor.started_at}),and(likes_count.eq.${cursor.likes_count},started_at.eq.${cursor.started_at},id.lt.${cursor.id})`
+          )
+        : request.or(
+            `started_at.lt.${cursor.started_at},and(started_at.eq.${cursor.started_at},id.lt.${cursor.id})`
+          );
+    }
 
     request = query.section === "popular"
       ? request

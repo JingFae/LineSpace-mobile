@@ -50,7 +50,19 @@ export function DiscoveryThreadCard({ thread }: { thread: PoetryThread }) {
   );
 }
 
-export function DiscoveryUserRow({ user }: { user: UserProfile }) {
+export function DiscoveryUserRow({
+  user,
+  showFollow = false,
+  isFollowing = false,
+  followPending = false,
+  onFollow
+}: {
+  user: UserProfile;
+  showFollow?: boolean;
+  isFollowing?: boolean;
+  followPending?: boolean;
+  onFollow?: () => void;
+}) {
   return (
     <Pressable
       accessibilityRole="button"
@@ -68,7 +80,22 @@ export function DiscoveryUserRow({ user }: { user: UserProfile }) {
         <Text numberOfLines={1} style={styles.userHandle}>@{user.handle}</Text>
         {user.bio ? <Text numberOfLines={2} style={styles.userBio}>{user.bio}</Text> : null}
       </View>
-      <Text style={styles.openArrow}>›</Text>
+      {showFollow && onFollow ? (
+        <Pressable
+          accessibilityLabel={`${isFollowing ? "Unfollow" : "Follow"} ${user.displayName}`}
+          disabled={followPending}
+          onPress={(event) => {
+            event.stopPropagation();
+            onFollow();
+          }}
+          style={[styles.followButton, isFollowing && styles.followButtonActive]}
+        >
+          <Text style={[styles.followText, isFollowing && styles.followTextActive]}>
+            {followPending ? "…" : isFollowing ? "Following" : "Follow"}
+          </Text>
+        </Pressable>
+      ) : null}
+      {!showFollow ? <Text style={styles.openArrow}>›</Text> : null}
     </Pressable>
   );
 }
@@ -121,5 +148,9 @@ const styles = StyleSheet.create({
   userName: { color: colors.ink, fontSize: 16, lineHeight: 20, fontWeight: "600" },
   userHandle: { marginTop: 1, color: "#1677D2", fontSize: 12, lineHeight: 16 },
   userBio: { marginTop: 4, color: colors.profileMuted, fontSize: 11, lineHeight: 15 },
-  openArrow: { marginLeft: 10, color: colors.profileMuted, fontSize: 26, lineHeight: 28 }
+  openArrow: { marginLeft: 6, color: colors.profileMuted, fontSize: 20, lineHeight: 24 },
+  followButton: { borderRadius: 15, backgroundColor: colors.ink, marginLeft: 10, minWidth: 72, paddingHorizontal: 12, paddingVertical: 8 },
+  followButtonActive: { backgroundColor: colors.surfaceMuted, borderColor: colors.line, borderWidth: StyleSheet.hairlineWidth },
+  followText: { color: colors.white, fontSize: 11, fontWeight: "700", textAlign: "center" },
+  followTextActive: { color: colors.ink }
 });

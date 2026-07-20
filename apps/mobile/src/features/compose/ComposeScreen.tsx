@@ -15,7 +15,8 @@ import {
 import { AppScreen } from "@linespace/ui";
 import { colors, radius, spacing } from "@linespace/tokens";
 import type { PoemDraft, PoemDraftMedia, PoemDraftSettings } from "@linespace/api-client";
-import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
+import { lineSpaceApi } from "@/services/lineSpaceApi";
+import { useAuth } from "@/auth/AuthSessionProvider";
 import { getMediaAspectRatio } from "@/features/poem/poemPresentation";
 
 type ComposeScreenProps = {
@@ -35,6 +36,8 @@ const initialSettings: PoemDraftSettings = {
 };
 
 export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
+  const { user: authUser } = useAuth();
+  const currentUserId = authUser?.id ?? "";
   const sourceVersionId = getParam(params.sourceVersionId);
   const lockedVersionContent = getParam(params.lockedVersionContent) === "true";
   const contributorHandles = parseList(getParam(params.contributorHandles));
@@ -57,6 +60,8 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
     queryKey: ["compose-draft-session", currentUserId, sessionKey, "post"],
     queryFn: () =>
       lineSpaceApi.createPoemDraft({ ownerId: currentUserId, mode: "draft" }),
+    enabled: currentUserId.length > 0,
+    retry: 1,
     staleTime: Infinity
   });
 
@@ -126,6 +131,14 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
       setError("Write at least one line before opening layout.");
       return;
     }
+    if (!draftQuery.data) {
+      setError(
+        draftQuery.isError
+          ? "The draft service is unavailable. Pull back and try again after the database migration is applied."
+          : "Preparing your draft. Please try again in a moment."
+      );
+      return;
+    }
     setError(null);
     saveMutation.mutate();
   };
@@ -140,7 +153,8 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
       contentContainerStyle={styles.screen}
     >
       <ComposeHeader
-        isBusy={saveMutation.isPending}
+        isBusy={draftQuery.isLoading || saveMutation.isPending}
+        isDisabled={!draftQuery.data || currentUserId.length === 0}
         onAction={goToPreview}
         title="new post"
       />
@@ -222,9 +236,9 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
         />
       </View>
 
-      {error || saveMutation.isError ? (
+      {error || draftQuery.isError || saveMutation.isError ? (
         <Text style={styles.error}>
-          {error ?? "The draft could not be saved."}
+          {error ?? (draftQuery.isError ? "The draft service is temporarily unavailable." : "The draft could not be saved.")}
         </Text>
       ) : null}
 
@@ -235,10 +249,12 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
 function ComposeHeader({
   title,
   isBusy,
+  isDisabled,
   onAction
 }: {
   title: string;
   isBusy: boolean;
+  isDisabled: boolean;
   onAction: () => void;
 }) {
   return (
@@ -256,9 +272,9 @@ function ComposeHeader({
       </View>
       <Pressable
         accessibilityRole="button"
-        disabled={isBusy}
+        disabled={isBusy || isDisabled}
         onPress={onAction}
-        style={styles.actionButton}
+        style={[styles.actionButton, isDisabled && styles.actionButtonDisabled]}
       >
         {isBusy ? (
           <ActivityIndicator color={colors.profileMuted} />
@@ -417,6 +433,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center"
   },
+  actionButtonDisabled: { opacity: 0.45 },
   actionText: {
     color: colors.ink,
     fontSize: 16,

@@ -20,6 +20,7 @@ import {
   BackIcon,
   BottomNavigation,
   CommentIcon,
+  EmptyState,
   LineSpaceLogoIcon,
   LikeIcon,
   MoreIcon,
@@ -27,13 +28,15 @@ import {
 } from "@linespace/ui";
 import { colors, spacing, typography } from "@linespace/tokens";
 import type {
+  InboxActivityAction,
   InboxActivityKind,
-  InboxActivityPreview,
   InboxActivitySummary,
+  InboxActivityTargetKind,
   InboxConversationMessage,
   InboxGroup,
   InboxGroupMember,
-  UserProfile
+  UserProfile,
+  UserSearchResult
 } from "@linespace/api-client";
 import { mainTabs, tabRoutes, type MainTab } from "@/navigation/tabs";
 import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
@@ -47,128 +50,16 @@ type InboxView =
 
 const activityLabels: Record<InboxActivityKind, string> = {
   comments: "Comments",
-  likes: "Likes",
-  thread: "Thread"
-};
-
-const fallbackContacts: Array<UserProfile & { preview: string; date: string; unread?: number }> = [
-  {
-    id: "user-ray",
-    handle: "ray",
-    displayName: "Ray",
-    avatarColor: "#8C7DE4",
-    preview: "The summer thread is ready whenever you are.",
-    date: "Mon"
-  },
-  {
-    id: "user-jinghe",
-    handle: "jinghe",
-    displayName: "Jinghe",
-    avatarColor: "#7AA0DD",
-    preview: "Can I quote the moon image in my reply?",
-    date: "Yesterday",
-    unread: 2
-  },
-  {
-    id: "user-zhihan",
-    handle: "zhihan",
-    displayName: "Zhihan",
-    avatarColor: "#0B75DE",
-    preview: "Your draft feels warmer after the second stanza.",
-    date: "12:10"
-  },
-  {
-    id: "user-roma",
-    handle: "roma",
-    displayName: "Roma",
-    avatarColor: "#F63D49",
-    preview: "I found your poem through the relay page.",
-    date: "03/09"
-  }
-];
-
-const fallbackActivity: Record<InboxActivityKind, InboxActivityPreview[]> = {
-  comments: [
-    {
-      id: "activity-comment-1",
-      kind: "comments",
-      actor: {
-        id: "user-ray",
-        handle: "ray",
-        displayName: "Ray",
-        avatarColor: "#8C7DE4"
-      },
-      target: {
-        kind: "post",
-        title: "summer folded into rain",
-        excerpt: "I kept the window open for the weather to answer.",
-        poemId: "poem-summer"
-      },
-      dateLabel: "Today"
-    },
-    {
-      id: "activity-comment-2",
-      kind: "comments",
-      actor: {
-        id: "user-jinghe",
-        handle: "jinghe",
-        displayName: "Jinghe",
-        avatarColor: "#7AA0DD"
-      },
-      target: {
-        kind: "comment",
-        title: "A softer ending",
-        excerpt: "This image stays with me.",
-        commentId: "comment-1",
-        poemId: "poem-summer"
-      },
-      dateLabel: "Yesterday"
-    }
-  ],
-  likes: [
-    {
-      id: "activity-like-1",
-      kind: "likes",
-      actor: {
-        id: "user-lili",
-        handle: "lili",
-        displayName: "Lili",
-        avatarColor: "#5A0000"
-      },
-      target: {
-        kind: "post",
-        title: "summer folded into rain",
-        excerpt: "liked your post",
-        poemId: "poem-summer"
-      },
-      dateLabel: "14:28"
-    }
-  ],
-  thread: [
-    {
-      id: "activity-thread-1",
-      kind: "thread",
-      actor: {
-        id: "user-ray",
-        handle: "ray",
-        displayName: "Ray",
-        avatarColor: "#8C7DE4"
-      },
-      target: {
-        kind: "thread",
-        title: "The summer thread",
-        excerpt: "Ray added a new line to your shared thread.",
-        threadId: "thread-summer"
-      },
-      dateLabel: "Mon"
-    }
-  ]
+  likes: "Like & Save",
+  thread: "Thread",
+  social: "New Followers & Mention"
 };
 
 export function InboxScreen() {
   const { user: authUser } = useAuth();
   const currentUserId = authUser?.id ?? "";
   const [view, setView] = useState<InboxView>({ kind: "home" });
+  const [showCreateMenu, setShowCreateMenu] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [settingsGroupId, setSettingsGroupId] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -190,6 +81,11 @@ export function InboxScreen() {
   const invitesQuery = useQuery({
     queryKey: ["inbox-group-invites", currentUserId],
     queryFn: () => lineSpaceApi.listInboxGroupInvites(currentUserId),
+    enabled: currentUserId.length > 0
+  });
+  const contactsQuery = useQuery({
+    queryKey: ["inbox-recent-contacts", currentUserId],
+    queryFn: () => lineSpaceApi.searchUsers("", currentUserId, { limit: 8 }),
     enabled: currentUserId.length > 0
   });
 
@@ -224,12 +120,13 @@ export function InboxScreen() {
         <HomePage
           profile={currentProfile ?? undefined}
           summary={summaryQuery.data}
+          contacts={contactsQuery.data?.recent ?? []}
           groups={groups}
           invites={invites}
           onOpenActivity={(activity) => setView({ kind: "activity", activity })}
           onOpenDirect={(contact) => setView({ kind: "direct", contact })}
           onOpenGroup={(groupId) => setView({ kind: "group", groupId })}
-          onCreateGroup={() => setShowCreateGroup(true)}
+          onOpenCreateMenu={() => setShowCreateMenu(true)}
           onRespondInvite={(groupId, accept) => respondInvite.mutate({ groupId, accept })}
         />
       ) : view.kind === "activity" ? (
@@ -277,6 +174,19 @@ export function InboxScreen() {
           void queryClient.invalidateQueries({ queryKey: ["inbox-groups", currentUserId] });
           void queryClient.invalidateQueries({ queryKey: ["inbox-group-invites", currentUserId] });
           setView({ kind: "group", groupId: group.id });
+        }}
+      />
+
+      <CreateConversationSheet
+        visible={showCreateMenu}
+        onClose={() => setShowCreateMenu(false)}
+        onAddUser={() => {
+          setShowCreateMenu(false);
+          router.push({ pathname: "/search", params: { mode: "users" } } as Href);
+        }}
+        onCreateGroup={() => {
+          setShowCreateMenu(false);
+          setShowCreateGroup(true);
         }}
       />
 
@@ -328,32 +238,33 @@ function InboxHeader({
 function HomePage({
   profile,
   summary,
+  contacts,
   groups,
   invites,
   onOpenActivity,
   onOpenDirect,
   onOpenGroup,
-  onCreateGroup,
+  onOpenCreateMenu,
   onRespondInvite
 }: {
   profile?: UserProfile;
   summary?: InboxActivitySummary;
+  contacts: UserSearchResult[];
   groups: InboxGroup[];
   invites: InboxGroup[];
   onOpenActivity: (kind: InboxActivityKind) => void;
   onOpenDirect: (contact: UserProfile) => void;
   onOpenGroup: (groupId: string) => void;
-  onCreateGroup: () => void;
+  onOpenCreateMenu: () => void;
   onRespondInvite: (groupId: string, accept: boolean) => void;
 }) {
-  const contacts = fallbackContacts.filter((contact) => contact.id !== currentUserId);
   const pending = invites[0];
 
   return (
     <View style={styles.page}>
       <InboxHeader
         right={
-          <Pressable accessibilityLabel="Create group" hitSlop={10} onPress={onCreateGroup} style={styles.plusButton}>
+          <Pressable accessibilityLabel="Start a conversation" hitSlop={10} onPress={onOpenCreateMenu} style={styles.plusButton}>
             <Text style={styles.plusText}>＋</Text>
           </Pressable>
         }
@@ -387,7 +298,7 @@ function HomePage({
           />
           <ActivityShortcut
             icon={<LikeIcon color={colors.ink} />}
-            label="Likes"
+            label="Like & Save"
             count={summary?.unread.likes ?? 0}
             onPress={() => onOpenActivity("likes")}
           />
@@ -396,6 +307,12 @@ function HomePage({
             label="Thread"
             count={summary?.unread.thread ?? 0}
             onPress={() => onOpenActivity("thread")}
+          />
+          <ActivityShortcut
+            icon={<SocialActivityIcon />}
+            label="New Followers & Mention"
+            count={summary?.unread.social ?? 0}
+            onPress={() => onOpenActivity("social")}
           />
         </View>
 
@@ -407,7 +324,7 @@ function HomePage({
           />
         ) : null}
 
-        <SectionHeader title="Conversations" action="New group" onAction={onCreateGroup} />
+        <SectionHeader title="Conversations" />
         {groups.map((group) => (
           <ConversationRow
             key={group.id}
@@ -418,6 +335,16 @@ function HomePage({
         {contacts.map((contact) => (
           <ConversationRow key={contact.id} contact={contact} onPress={() => onOpenDirect(contact)} />
         ))}
+        {groups.length === 0 && contacts.length === 0 ? (
+          <View style={styles.emptyInbox}>
+            <View style={styles.emptyInboxMark}><Text style={styles.emptyInboxGlyph}>+</Text></View>
+            <Text style={styles.emptyInboxTitle}>No conversations yet</Text>
+            <Text style={styles.emptyInboxBody}>Find a writer or create a group to begin exchanging lines.</Text>
+            <Pressable onPress={onOpenCreateMenu} style={styles.emptyInboxButton}>
+              <Text style={styles.emptyInboxButtonText}>Start a conversation</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -437,10 +364,14 @@ function ActivityShortcut({
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.activityShortcut, pressed && styles.pressed]}>
       <View style={styles.activityIcon}>{icon}</View>
-      <Text style={styles.activityLabel}>{label}</Text>
+      <Text numberOfLines={2} style={styles.activityLabel}>{label}</Text>
       {count > 0 ? <View style={styles.countBadge}><Text style={styles.countText}>{count}</Text></View> : null}
     </Pressable>
   );
+}
+
+function SocialActivityIcon() {
+  return <Text style={styles.socialActivityGlyph}>@+</Text>;
 }
 
 function SectionHeader({
@@ -469,7 +400,7 @@ function ConversationRow({
   group,
   onPress
 }: {
-  contact?: UserProfile & { preview: string; date: string; unread?: number };
+  contact?: UserProfile & { preview?: string; date?: string; unread?: number };
   group?: InboxGroup;
   onPress: () => void;
 }) {
@@ -477,7 +408,7 @@ function ConversationRow({
   const label = group?.name ?? contact?.displayName ?? "";
   const preview = group
     ? latest?.text ?? `${group.members.filter((member) => member.status === "active").length} members`
-    : contact?.preview ?? "";
+    : contact?.preview ?? "Recent conversation";
   const date = group ? formatMessageTime(latest?.createdAt ?? group.updatedAt) : contact?.date ?? "";
 
   return (
@@ -558,7 +489,7 @@ function ActivityPage({
   onBack: () => void;
   onOpenDirect: (contact: UserProfile) => void;
 }) {
-  const rows = summary?.recent[activity] ?? fallbackActivity[activity];
+  const rows = summary?.recent[activity] ?? [];
   return (
     <View style={styles.page}>
       <InboxHeader title={activityLabels[activity]} onBack={onBack} />
@@ -569,18 +500,32 @@ function ActivityPage({
             key={row.id}
             style={({ pressed }) => [styles.activityRow, pressed && styles.pressed]}
             onPress={() => {
-              if (row.actor.id !== currentUserId) onOpenDirect(row.actor);
-              else if (row.target.poemId) router.push({ pathname: "/poem/[id]", params: { id: row.target.poemId } });
+              if (row.action === "followed") {
+                openProfile(row.actor.id);
+                return;
+              }
+              if (row.target.threadId) {
+                router.push({ pathname: "/thread/[id]", params: { id: row.target.threadId } } as unknown as Href);
+                return;
+              }
+              if (row.target.poemId) {
+                router.push({ pathname: "/poem/[id]", params: { id: row.target.poemId, commentId: row.target.commentId } } as unknown as Href);
+                return;
+              }
+              onOpenDirect(row.actor);
             }}
           >
             <ProfileAvatar profile={row.actor} size={46} />
             <View style={styles.activityRowCopy}>
-              <Text style={styles.activityRowTitle}>{row.actor.displayName} <Text style={styles.activityRowMuted}>{activity === "likes" ? "liked your post" : activity === "thread" ? "continued your thread" : "commented on your post"}</Text></Text>
+              <Text style={styles.activityRowTitle}>{row.actor.displayName} <Text style={styles.activityRowMuted}>{activityActionLabel(row.action, row.target.kind)}</Text></Text>
               <Text numberOfLines={2} style={styles.activityRowBody}>{row.target.excerpt}</Text>
             </View>
             <Text style={styles.activityRowDate}>{row.dateLabel}</Text>
           </Pressable>
         ))}
+        {rows.length === 0 ? (
+          <EmptyState title={`No ${activityLabels[activity]} yet`} body="New activity will appear here." />
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -897,12 +842,52 @@ function CreateGroupSheet({
             })}
             {!friendsQuery.isLoading && friends.length === 0 ? <Text style={styles.emptyPicker}>Only mutual connections can be invited.</Text> : null}
           </ScrollView>
-          {createMutation.isError ? <Text style={styles.errorText}>{createMutation.error instanceof Error ? createMutation.error.message : "Unable to create group."}</Text> : null}
-          <Pressable disabled={!name.trim() || selected.length === 0 || createMutation.isPending} onPress={() => createMutation.mutate()} style={[styles.primaryButton, (!name.trim() || selected.length === 0) && styles.primaryButtonDisabled]}>
+          {createMutation.isError ? <Text style={styles.errorText}>The group could not be created. Please try again.</Text> : null}
+          <Pressable disabled={!name.trim() || createMutation.isPending} onPress={() => createMutation.mutate()} style={[styles.primaryButton, !name.trim() && styles.primaryButtonDisabled]}>
             {createMutation.isPending ? <ActivityIndicator color={colors.white} /> : <Text style={styles.primaryButtonText}>Create group</Text>}
           </Pressable>
         </View>
       </View>
+    </Modal>
+  );
+}
+
+function CreateConversationSheet({
+  visible,
+  onClose,
+  onAddUser,
+  onCreateGroup
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onAddUser: () => void;
+  onCreateGroup: () => void;
+}) {
+  return (
+    <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
+      <Pressable onPress={onClose} style={styles.actionBackdrop}>
+        <View style={styles.actionSheet}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.actionTitle}>Start something new</Text>
+          <Text style={styles.actionSubtitle}>Connect with another writer or make a shared room.</Text>
+          <Pressable accessibilityRole="button" onPress={onAddUser} style={styles.actionRow}>
+            <View style={styles.actionIcon}><SearchIcon color={colors.ink} width={20} height={20} /></View>
+            <View style={styles.actionCopy}>
+              <Text style={styles.actionLabel}>Add user</Text>
+              <Text style={styles.actionHint}>Search profiles and follow writers</Text>
+            </View>
+            <Text style={styles.actionArrow}>›</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" onPress={onCreateGroup} style={styles.actionRow}>
+            <View style={styles.actionIcon}><Text style={styles.actionGroupGlyph}>+</Text></View>
+            <View style={styles.actionCopy}>
+              <Text style={styles.actionLabel}>Create group</Text>
+              <Text style={styles.actionHint}>Open a room now and invite friends</Text>
+            </View>
+            <Text style={styles.actionArrow}>›</Text>
+          </Pressable>
+        </View>
+      </Pressable>
     </Modal>
   );
 }
@@ -999,6 +984,15 @@ function openProfile(userId: string) {
   router.push({ pathname: "/profile/[id]", params: { id: userId } } as unknown as Href);
 }
 
+function activityActionLabel(action: InboxActivityAction, target: InboxActivityTargetKind) {
+  if (action === "saved") return `saved your ${target}`;
+  if (action === "liked") return `liked your ${target}`;
+  if (action === "followed") return "started following you";
+  if (action === "mentioned") return `mentioned you in a ${target}`;
+  if (action === "continued") return "continued your thread";
+  return `commented on your ${target === "comment" ? "comment" : "post"}`;
+}
+
 function formatMessageTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.valueOf())) return "";
@@ -1024,11 +1018,12 @@ const styles = StyleSheet.create({
   eyebrow: { ...typography.caption, color: colors.profileMuted, fontWeight: "700", letterSpacing: 1.6 },
   pageTitle: { ...typography.title, color: colors.ink, fontSize: 26, marginTop: 5 },
   profileHalo: { alignItems: "center", backgroundColor: colors.canvas, borderRadius: 28, height: 58, justifyContent: "center", width: 58 },
-  activityRail: { backgroundColor: colors.canvas, borderRadius: 20, flexDirection: "row", justifyContent: "space-around", marginBottom: 26, paddingVertical: 12 },
-  activityShortcut: { alignItems: "center", gap: 4, minWidth: 80, position: "relative" },
+  activityRail: { backgroundColor: colors.canvas, borderRadius: 20, flexDirection: "row", justifyContent: "space-around", marginBottom: 26, paddingHorizontal: 4, paddingVertical: 12 },
+  activityShortcut: { alignItems: "center", flex: 1, gap: 4, minWidth: 0, position: "relative" },
   activityIcon: { alignItems: "center", backgroundColor: colors.white, borderRadius: 18, height: 36, justifyContent: "center", width: 36 },
-  activityLabel: { ...typography.caption, color: colors.ink },
-  countBadge: { backgroundColor: colors.accent, borderRadius: 9, minWidth: 18, paddingHorizontal: 5, position: "absolute", right: 10, top: -4 },
+  activityLabel: { ...typography.caption, color: colors.ink, fontSize: 9, lineHeight: 12, minHeight: 24, textAlign: "center" },
+  socialActivityGlyph: { color: colors.ink, fontSize: 13, fontWeight: "800", letterSpacing: -0.5 },
+  countBadge: { backgroundColor: colors.accent, borderRadius: 9, minWidth: 18, paddingHorizontal: 5, position: "absolute", right: 3, top: -4 },
   countText: { color: colors.white, fontSize: 10, fontWeight: "700", textAlign: "center" },
   sectionHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", marginBottom: 10 },
   sectionTitle: { ...typography.label, color: colors.ink, fontSize: 18, fontWeight: "700" },
@@ -1039,6 +1034,13 @@ const styles = StyleSheet.create({
   conversationName: { ...typography.label, color: colors.ink, flex: 1, fontSize: 16, fontWeight: "700" },
   conversationDate: { ...typography.caption, color: colors.profileMuted, marginLeft: 8 },
   conversationPreview: { ...typography.body, color: colors.profileMuted, marginTop: 5 },
+  emptyInbox: { alignItems: "center", paddingHorizontal: 28, paddingTop: 46 },
+  emptyInboxMark: { alignItems: "center", backgroundColor: colors.canvas, borderRadius: 24, height: 48, justifyContent: "center", width: 48 },
+  emptyInboxGlyph: { color: colors.ink, fontSize: 28, fontWeight: "300", lineHeight: 30 },
+  emptyInboxTitle: { ...typography.label, color: colors.ink, fontSize: 17, fontWeight: "700", marginTop: 15 },
+  emptyInboxBody: { ...typography.caption, color: colors.profileMuted, lineHeight: 19, marginTop: 6, maxWidth: 280, textAlign: "center" },
+  emptyInboxButton: { backgroundColor: colors.ink, borderRadius: 14, marginTop: 18, paddingHorizontal: 18, paddingVertical: 11 },
+  emptyInboxButtonText: { ...typography.caption, color: colors.white, fontWeight: "700" },
   rowBadge: { alignItems: "center", backgroundColor: colors.accent, borderRadius: 10, minWidth: 20, paddingHorizontal: 5 },
   rowBadgeText: { color: colors.white, fontSize: 10, fontWeight: "700" },
   groupAvatar: { alignItems: "center", backgroundColor: colors.ink, justifyContent: "center" },
@@ -1100,6 +1102,17 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.72 },
   loadingWrap: { alignItems: "center", flex: 1, justifyContent: "center" },
   sheetBackdrop: { backgroundColor: "rgba(0,0,0,0.32)", flex: 1, justifyContent: "flex-end" },
+  actionBackdrop: { backgroundColor: "rgba(0,0,0,0.26)", flex: 1, justifyContent: "flex-end" },
+  actionSheet: { backgroundColor: colors.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: spacing.lg, paddingBottom: 30 },
+  actionTitle: { ...typography.title, color: colors.ink, fontSize: 23 },
+  actionSubtitle: { ...typography.caption, color: colors.profileMuted, lineHeight: 18, marginBottom: 17, marginTop: 5 },
+  actionRow: { alignItems: "center", backgroundColor: colors.canvas, borderRadius: 17, flexDirection: "row", marginTop: 9, minHeight: 70, paddingHorizontal: 13, paddingVertical: 11 },
+  actionIcon: { alignItems: "center", backgroundColor: colors.white, borderRadius: 19, height: 38, justifyContent: "center", width: 38 },
+  actionGroupGlyph: { color: colors.ink, fontSize: 25, fontWeight: "300", lineHeight: 27 },
+  actionCopy: { flex: 1, marginLeft: 12 },
+  actionLabel: { ...typography.label, color: colors.ink, fontSize: 15, fontWeight: "700" },
+  actionHint: { ...typography.caption, color: colors.profileMuted, marginTop: 2 },
+  actionArrow: { color: colors.profileMuted, fontSize: 28, fontWeight: "300" },
   sheet: { backgroundColor: colors.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: "88%", padding: spacing.lg, paddingBottom: 24 },
   sheetHandle: { alignSelf: "center", backgroundColor: "#D8D8D8", borderRadius: 3, height: 5, marginBottom: 18, width: 42 },
   sheetHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", marginBottom: 18 },

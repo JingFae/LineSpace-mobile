@@ -117,7 +117,13 @@ Redirect URL，并在隔离数据库中执行迁移幂等性与 RLS 测试。当
 For the current browser/cloud phase, deploy the complete canonical chain in
 `supabase/migrations/`, including the Post/Comment, Draft, Inbox, direct/group
 Thread/Post sharing, click-target metadata, Thread Version publication, and
-Storage contracts. The SQL under
+Storage contracts. The final `20260720000100_live_content_runtime.sql`
+migration adds the Feed/Thread keyset indexes, atomically maintained Thread
+like counts, and the JWT-derived Compose draft creation RPC. It deliberately
+seeds no demo identities, conversations, Threads, or Posts. The following
+`20260720000200_inbox_activity_notifications.sql` migration persists comment,
+like/save, Thread continuation, follow, and mention activity with recipient-only
+RLS. The SQL under
 `apps/api/src/database/deferred-migrations/` is historical reference material,
 is not part of the cloud push, and must not be copied into the migration
 directory:

@@ -108,14 +108,22 @@ export async function handleApiRequest(
   }
 
   if (method === "GET" && pathname === "/v1/threads") {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
     const sort = searchParams.get("sort");
-    return json(
-      200,
-      await api.listThreads({
-        sort: sort === "top" || sort === "latest" || sort === "following" ? sort : undefined,
-        viewerId: searchParams.get("viewerId") ?? undefined
-      })
-    );
+    try {
+      return json(
+        200,
+        await api.listThreads({
+          sort: sort === "top" || sort === "latest" || sort === "following" ? sort : undefined,
+          viewerId: actor.user.id,
+          cursor: searchParams.get("cursor") ?? undefined,
+          limit: parsePageLimit(searchParams.get("limit"), 3)
+        })
+      );
+    } catch (error) {
+      return profileRepositoryErrorResponse(error);
+    }
   }
 
   const threadVersionPublishRoute = parseThreadVersionPublishRoute(pathname);
@@ -519,15 +527,22 @@ export async function handleApiRequest(
   }
 
   if (method === "GET" && pathname === "/v1/feed") {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
     const filter = searchParams.get("filter") ?? undefined;
     const section = searchParams.get("section") ?? undefined;
-    const feed = await api.listFeed({
-      filter: isFeedFilter(filter) ? filter : undefined,
-      section: isFeedSection(section) ? section : undefined,
-      viewerId: searchParams.get("viewerId") ?? undefined
-    });
-
-    return json(200, feed);
+    try {
+      const feed = await api.listFeed({
+        filter: isFeedFilter(filter) ? filter : undefined,
+        section: isFeedSection(section) ? section : undefined,
+        viewerId: actor.user.id,
+        cursor: searchParams.get("cursor") ?? undefined,
+        limit: parsePageLimit(searchParams.get("limit"), 3)
+      });
+      return json(200, feed);
+    } catch (error) {
+      return profileRepositoryErrorResponse(error);
+    }
   }
 
   if (method === "GET" && pathname === "/v1/users/search") {
@@ -1102,6 +1117,11 @@ function isFeedFilter(value: string | undefined): value is FeedFilter {
 
 function isFeedSection(value: string | undefined): value is FeedSection {
   return value === "latest" || value === "popular" || value === "following";
+}
+
+function parsePageLimit(value: string | null, fallback: number): number {
+  const parsed = Number(value ?? fallback);
+  return Number.isInteger(parsed) ? Math.min(50, Math.max(1, parsed)) : fallback;
 }
 
 function parseTagContentRoute(pathname: string) {

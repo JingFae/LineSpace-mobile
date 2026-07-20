@@ -189,26 +189,11 @@ export class DraftRepository {
   async createPoemDraft(input: CreatePoemDraftInput): Promise<PoemDraft> {
     const actorId = await getCurrentLinespaceUserId(this.client);
     if (!actorId || actorId !== input.ownerId) throw new Error("draft actor mismatch");
-    const result = await this.client
-      .from("poem_drafts")
-      .insert({
-        id: crypto.randomUUID(),
-        owner_user_id: actorId,
-        mode: input.mode,
-        status: "editing",
-        title: "",
-        body: "",
-        byline: "",
-        tags: [],
-        mentions: [],
-        version_lines: [],
-        media: null,
-        settings: defaultSettings(),
-        layout: defaultLayout()
-      })
-      .select(draftSelect)
-      .single();
+    const result = await this.client.rpc("create_poem_draft", {
+      p_mode: input.mode
+    });
     ensureDatabaseResult(result.error);
+    if (!result.data) throw new Error("draft was not created");
     return this.mapDraft(result.data as DraftRow);
   }
 

@@ -1,5 +1,6 @@
 import type {
   CreateInboxGroupInput,
+  InboxActivitySummary,
   InboxConversationMessage,
   InboxGroup,
   InviteInboxGroupMembersInput,
@@ -40,6 +41,22 @@ type GroupRow = {
   updated_at: string;
 };
 
+type ActivityRow = {
+  id: string;
+  recipient_user_id: string;
+  actor_user_id: string;
+  category: "comments" | "likes" | "thread" | "social";
+  action: "commented" | "liked" | "saved" | "continued" | "followed" | "mentioned";
+  target_kind: "post" | "comment" | "thread" | "profile";
+  post_id: string | null;
+  comment_id: string | null;
+  thread_id: string | null;
+  title: string;
+  excerpt: string;
+  created_at: string;
+  read_at: string | null;
+};
+
 type MemberRow = {
   group_id: string;
   user_id: string;
@@ -52,9 +69,77 @@ type MemberRow = {
 
 const messageSelect =
   "id,sender_user_id,recipient_user_id,kind,text_body,post_id,thread_id,continuation_id,excerpt,line_number,created_at";
+const activityKinds = ["comments", "likes", "thread", "social"] as const;
 
 export class InboxRepository {
   constructor(private readonly client: DatabaseClient) {}
+
+  async getInboxActivitySummary(userId: string): Promise<InboxActivitySummary> {
+    await this.assertActor(userId);
+    const [result, countResults] = await Promise.all([
+      this.client
+        .from("inbox_activity_events")
+        .select(
+          "id,recipient_user_id,actor_user_id,category,action,target_kind,post_id,comment_id,thread_id,title,excerpt,created_at,read_at"
+        )
+        .eq("recipient_user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(200),
+      Promise.all(
+        activityKinds.flatMap((kind) => [
+          this.client
+            .from("inbox_activity_events")
+            .select("id", { count: "exact", head: true })
+            .eq("recipient_user_id", userId)
+            .eq("category", kind),
+          this.client
+            .from("inbox_activity_events")
+            .select("id", { count: "exact", head: true })
+            .eq("recipient_user_id", userId)
+            .eq("category", kind)
+            .is("read_at", null)
+        ])
+      )
+    ]);
+    ensureDatabaseResult(result.error);
+    const rows = (result.data as ActivityRow[] | null) ?? [];
+    const profiles = await loadProfiles(this.client, rows.map((row) => row.actor_user_id));
+    const summary: InboxActivitySummary = {
+      userId,
+      unread: { comments: 0, likes: 0, thread: 0, social: 0 },
+      totals: { comments: 0, likes: 0, thread: 0, social: 0 },
+      recent: { comments: [], likes: [], thread: [], social: [] }
+    };
+    activityKinds.forEach((kind, index) => {
+      const totalResult = countResults[index * 2];
+      const unreadResult = countResults[index * 2 + 1];
+      if (!totalResult || !unreadResult) return;
+      ensureDatabaseResult(totalResult.error);
+      ensureDatabaseResult(unreadResult.error);
+      summary.totals[kind] = totalResult.count ?? 0;
+      summary.unread[kind] = unreadResult.count ?? 0;
+    });
+    for (const row of rows) {
+      if (summary.recent[row.category].length >= 50) continue;
+      summary.recent[row.category].push({
+        id: row.id,
+        kind: row.category,
+        action: row.action,
+        actor: profiles.get(row.actor_user_id) ?? unknownProfile(row.actor_user_id),
+        target: {
+          kind: row.target_kind,
+          title: row.title,
+          excerpt: row.excerpt,
+          ...(row.post_id ? { poemId: row.post_id } : {}),
+          ...(row.comment_id ? { commentId: row.comment_id } : {}),
+          ...(row.thread_id ? { threadId: row.thread_id } : {})
+        },
+        dateLabel: activityDateLabel(row.created_at),
+        unread: !row.read_at
+      });
+    }
+    return summary;
+  }
 
   async listInboxMessages(
     userId: string,
@@ -547,4 +632,17 @@ function unknownProfile(id: string): UserProfile {
     displayName: "Unknown",
     avatarColor: "#DCD8D3"
   };
+}
+
+function activityDateLabel(value: string): string {
+  const date = new Date(value);
+  const elapsed = Math.max(0, Date.now() - date.getTime());
+  const minutes = Math.floor(elapsed / 60000);
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d`;
+  return `${date.getMonth() + 1}/${date.getDate()}`;
 }

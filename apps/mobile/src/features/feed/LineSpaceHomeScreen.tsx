@@ -1,9 +1,11 @@
 import { router, type Href } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
-  ScrollView,
+  Animated,
+  FlatList,
+  RefreshControl,
   StyleSheet,
   View,
   type ImageSourcePropType
@@ -32,6 +34,7 @@ const sectionTabs: Array<{ value: FeedSection; label: string }> = [
   { value: "popular", label: "Popular" },
   { value: "following", label: "Follow" }
 ];
+const feedPageSize = 3;
 
 export function LineSpaceHomeScreen() {
   const { user: authUser } = useAuth();
@@ -44,14 +47,29 @@ export function LineSpaceHomeScreen() {
     enabled: currentUserId.length > 0
   });
 
-  const feedQuery = useQuery({
+  const feedQuery = useInfiniteQuery({
     queryKey: ["feed", section, currentUserId],
-    queryFn: () => lineSpaceApi.listFeed({ section, viewerId: currentUserId }),
+    queryFn: ({ pageParam }) =>
+      lineSpaceApi.listFeed({
+        section,
+        viewerId: currentUserId,
+        cursor: pageParam,
+        limit: feedPageSize
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) =>
+      lastPage.length === feedPageSize ? lastPage.at(-1)?.id : undefined,
     enabled: currentUserId.length > 0
   });
 
   const poems = useMemo(
-    () => (feedQuery.data ?? []).map(mapPoemToCard),
+    () => {
+      const seen = new Set<string>();
+      return (feedQuery.data?.pages ?? [])
+        .flat()
+        .filter((poem) => !seen.has(poem.id) && Boolean(seen.add(poem.id)))
+        .map(mapPoemToCard);
+    },
     [feedQuery.data]
   );
 
@@ -70,25 +88,26 @@ export function LineSpaceHomeScreen() {
         tabs={sectionTabs}
       />
 
-      <ScrollView style={styles.feed} contentContainerStyle={styles.feedContent} showsVerticalScrollIndicator={false}>
-        {feedQuery.isLoading ? (
-          <View style={styles.loadingWrap}>
-            <ActivityIndicator color={colors.accent} />
-          </View>
-        ) : feedQuery.isError ? (
-          <EmptyState
-            title="Feed unavailable"
-            body="The feed request failed. Keep this branch behind the API client so the screen remains stable."
+      <FlatList
+        contentContainerStyle={styles.feedContent}
+        data={poems}
+        keyExtractor={(poem) => poem.id}
+        onEndReached={() => {
+          if (feedQuery.hasNextPage && !feedQuery.isFetchingNextPage) {
+            void feedQuery.fetchNextPage();
+          }
+        }}
+        onEndReachedThreshold={0.35}
+        refreshControl={
+          <RefreshControl
+            refreshing={feedQuery.isRefetching && !feedQuery.isFetchingNextPage}
+            onRefresh={() => void feedQuery.refetch()}
+            tintColor={colors.accent}
           />
-        ) : poems.length === 0 ? (
-          <EmptyState
-            title="No poems here yet"
-            body="This filter is ready for real API data when the backend is connected."
-          />
-        ) : (
-          poems.map((poem) => (
+        }
+        renderItem={({ item: poem }) => (
+          <FeedCardReveal>
             <PoemCard
-              key={poem.id}
               interactionsDisabled={engagement.isPending}
               poem={poem}
               onAuthorPress={(userId) => router.push({ pathname: "/profile/[id]", params: { id: userId } } as unknown as Href)}
@@ -107,9 +126,25 @@ export function LineSpaceHomeScreen() {
               }
               onTagPress={(tag) => router.push({ pathname: "/tags/[tag]", params: { tag, section: "posts" } } as unknown as Href)}
             />
-          ))
+          </FeedCardReveal>
         )}
-      </ScrollView>
+        ListEmptyComponent={
+          feedQuery.isLoading ? (
+            <View style={styles.loadingWrap}><ActivityIndicator color={colors.accent} /></View>
+          ) : feedQuery.isError ? (
+            <EmptyState title="Feed unavailable" body="Pull down to try loading the feed again." />
+          ) : (
+            <EmptyState title="No posts yet" body="Published posts from the community will appear here." />
+          )
+        }
+        ListFooterComponent={
+          feedQuery.isFetchingNextPage
+            ? <View style={styles.pageLoader}><ActivityIndicator color={colors.accent} /></View>
+            : null
+        }
+        showsVerticalScrollIndicator={false}
+        style={styles.feed}
+      />
 
       <BottomNavigation
         items={mainTabs}
@@ -138,6 +173,27 @@ export function LineSpaceHomeScreen() {
       />
 
     </AppScreen>
+  );
+}
+
+function FeedCardReveal({ children }: { children: ReactNode }) {
+  const progress = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(progress, {
+      toValue: 1,
+      duration: 260,
+      useNativeDriver: true
+    }).start();
+  }, [progress]);
+  return (
+    <Animated.View
+      style={{
+        opacity: progress,
+        transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }]
+      }}
+    >
+      {children}
+    </Animated.View>
   );
 }
 
@@ -197,5 +253,8 @@ const styles = StyleSheet.create({
   },
   loadingWrap: {
     paddingTop: spacing.xxxl
+  },
+  pageLoader: {
+    paddingVertical: spacing.lg
   }
 });

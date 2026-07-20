@@ -104,6 +104,22 @@ async function main() {
     popularThreads.every((thread, index) => index === 0 || popularThreads[index - 1]!.metrics.likes >= thread.metrics.likes),
     "Popular Threads are not sorted by likes."
   );
+  const firstFeedPage = await mockApi.listFeed({
+    section: "latest",
+    viewerId: "user-lili",
+    limit: 3
+  });
+  const secondFeedPage = await mockApi.listFeed({
+    section: "latest",
+    viewerId: "user-lili",
+    cursor: firstFeedPage.at(-1)?.id,
+    limit: 3
+  });
+  assert(firstFeedPage.length <= 3, "Feed pagination returned more than three records.");
+  assert(
+    secondFeedPage.every((item) => !firstFeedPage.some((first) => first.id === item.id)),
+    "Feed cursor pagination returned duplicate records."
+  );
   const mockGroup = await mockApi.createInboxGroup({
     ownerId: "user-lili",
     name: "Smoke Lines",
@@ -112,6 +128,15 @@ async function main() {
   assert(
     mockGroup.members.some((member) => member.user.id === "user-ray" && member.status === "invited"),
     "Mock group creation did not create a pending invitation."
+  );
+  const emptyMemberGroup = await mockApi.createInboxGroup({
+    ownerId: "user-lili",
+    name: "Private writing room",
+    inviteeIds: []
+  });
+  assert(
+    emptyMemberGroup.members.length === 1 && emptyMemberGroup.members[0]?.user.id === "user-lili",
+    "A new user must be able to create an owner-only group."
   );
   await mockApi.respondInboxGroupInvite({
     groupId: mockGroup.id,
@@ -278,7 +303,12 @@ async function main() {
     const loadedPoem = await httpApi.getPoem(published.poem.id, profile.id);
     assert(loadedPoem?.id === published.poem.id, "Published poem was not available over HTTP.");
 
-    const feed = await httpApi.listFeed({ section: "latest", filter: "all", viewerId: profile.id });
+    const feed = await httpApi.listFeed({
+      section: "latest",
+      filter: "all",
+      viewerId: profile.id,
+      limit: 50
+    });
     assert(feed.some((poem) => poem.id === published.poem.id), "Published poem was missing from feed.");
     const discovery = await httpApi.searchContent("Contract check", profile.id);
     assert(
@@ -371,13 +401,17 @@ async function verifyUserDomainHttpIdentity() {
     requestUrls.push(url);
     sawAuthorization =
       new Headers(init?.headers).get("authorization") === "Bearer smoke-token";
-    if (new URL(url).pathname.endsWith("/following")) {
+    const pathname = new URL(url).pathname;
+    if (pathname.endsWith("/following")) {
       return jsonResponse({
         userId: smokeUser.id,
         kind: "following",
         total: 0,
         items: []
       });
+    }
+    if (pathname.endsWith("/feed") || pathname.endsWith("/threads")) {
+      return jsonResponse([]);
     }
     return jsonResponse({
       query: "ray",
@@ -396,11 +430,32 @@ async function verifyUserDomainHttpIdentity() {
     viewerId: "untrusted-environment-user"
   });
   await httpApi.searchUsers("ray", "untrusted-environment-user", { limit: 10 });
+  await httpApi.listFeed({
+    section: "latest",
+    viewerId: "untrusted-environment-user",
+    cursor: "post-cursor",
+    limit: 3
+  });
+  await httpApi.listThreads({
+    sort: "latest",
+    viewerId: "untrusted-environment-user",
+    cursor: "thread-cursor",
+    limit: 3
+  });
 
   assert(sawAuthorization, "User-domain HTTP requests did not carry the Access Token.");
   assert(
     requestUrls.every((url) => !new URL(url).searchParams.has("viewerId")),
-    "HTTP user-domain requests must not send viewerId."
+    "HTTP user, Feed, and Thread requests must not send viewerId."
+  );
+  const contentPageUrls = requestUrls.filter((url) => {
+    const pathname = new URL(url).pathname;
+    return pathname.endsWith("/feed") || pathname.endsWith("/threads");
+  });
+  assert(
+    contentPageUrls.length === 2 &&
+      contentPageUrls.every((url) => new URL(url).searchParams.get("limit") === "3"),
+    "HTTP Feed and Thread requests must preserve the three-item page size."
   );
   globalThis.fetch = routeAdapter;
 }
@@ -443,6 +498,7 @@ async function verifyInjectedUserDomainRepository() {
         handle: "ray",
         displayName: "Ray",
         avatarColor: "#DCD8D3",
+        isFollowing: true,
         isFriend: true,
         hasRecentChat: false
       };

@@ -28,6 +28,20 @@ as $$
   ) deduplicated
 $$;
 
+-- PostgreSQL marks array_to_string as STABLE, so using it directly in a GIN
+-- expression index fails with "functions in index expression must be marked
+-- IMMUTABLE". Tags are plain text values, making this narrow immutable
+-- wrapper safe and allowing the search query to use the exact indexed form.
+create or replace function public.content_search_document(parts text[])
+returns text
+language sql
+immutable
+parallel safe
+set search_path = pg_catalog
+as $$
+  select lower(array_to_string(coalesce(parts, '{}'::text[]), ' '))
+$$;
+
 create or replace function public.normalize_content_tags_before_write()
 returns trigger
 language plpgsql
@@ -83,12 +97,12 @@ create index if not exists poetry_threads_tags_gin_idx
   on public.poetry_threads using gin (tags);
 create index if not exists posts_search_trgm_idx
   on public.posts using gin (
-    lower(coalesce(title, '') || ' ' || coalesce(body, '') || ' ' || array_to_string(tags, ' '))
+    public.content_search_document(array[title, body] || tags)
     extensions.gin_trgm_ops
   );
 create index if not exists poetry_threads_search_trgm_idx
   on public.poetry_threads using gin (
-    lower(coalesce(title, '') || ' ' || coalesce(prompt, '') || ' ' || coalesce(starting_content, '') || ' ' || coalesce(rules, '') || ' ' || array_to_string(tags, ' '))
+    public.content_search_document(array[title, prompt, starting_content, rules] || tags)
     extensions.gin_trgm_ops
   );
 create index if not exists thread_continuations_search_trgm_idx
@@ -221,14 +235,14 @@ as $$
     from public.posts post cross join input
     where post.status = 'published'
       and input.query <> ''
-      and lower(coalesce(post.title, '') || ' ' || coalesce(post.body, '') || ' ' || array_to_string(post.tags, ' '))
+      and public.content_search_document(array[post.title, post.body] || post.tags)
         like '%' || input.query || '%' escape '\'
     union all
     select 'thread'::text, thread.id, thread.created_at
     from public.poetry_threads thread cross join input
     where input.query <> ''
       and (
-        lower(coalesce(thread.title, '') || ' ' || coalesce(thread.prompt, '') || ' ' || coalesce(thread.starting_content, '') || ' ' || coalesce(thread.rules, '') || ' ' || array_to_string(thread.tags, ' '))
+        public.content_search_document(array[thread.title, thread.prompt, thread.starting_content, thread.rules] || thread.tags)
           like '%' || input.query || '%' escape '\'
         or exists (
           select 1 from public.thread_continuations continuation

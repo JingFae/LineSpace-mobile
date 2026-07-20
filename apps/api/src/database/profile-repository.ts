@@ -343,6 +343,10 @@ class SupabaseProfileRepository implements ProfileRepository {
       .slice(0, limit + reservedIds.size)
       .filter((row) => !reservedIds.has(row.id))
       .slice(0, limit);
+    const pageFollowingIds = await this.loadFollowingIds(
+      actorUserId,
+      pageRows.map((row) => row.id)
+    );
     const lastRow = pageRows.at(-1);
     const hasMore = resultRows[0]?.has_more ?? false;
 
@@ -350,7 +354,7 @@ class SupabaseProfileRepository implements ProfileRepository {
       query,
       recent,
       friends,
-      results: pageRows.map((row) => toSearchResult(row)),
+      results: pageRows.map((row) => toSearchResult(row, pageFollowingIds.has(row.id))),
       nextCursor:
         hasMore && lastRow
           ? encodeSearchCursor({
@@ -480,9 +484,27 @@ class SupabaseProfileRepository implements ProfileRepository {
       .filter((row): row is UserRow => Boolean(row))
       .map((row) => ({
         ...toUserProfile(row),
+        isFollowing: outgoing.has(row.id),
         isFriend: outgoing.has(row.id) && incoming.has(row.id),
         hasRecentChat: true
       }));
+  }
+
+  private async loadFollowingIds(
+    actorUserId: string,
+    targetIds: string[]
+  ): Promise<Set<string>> {
+    if (targetIds.length === 0) return new Set();
+    const result = await this.client
+      .from("user_follows")
+      .select("following_user_id")
+      .eq("follower_user_id", actorUserId)
+      .in("following_user_id", [...new Set(targetIds)]);
+    ensureDatabaseResult(result.error);
+    return new Set(
+      ((result.data as Array<{ following_user_id: string }> | null) ?? [])
+        .map((row) => row.following_user_id)
+    );
   }
 
   async setUserFollow(input: UpdateUserFollowInput): Promise<UserFollowResult> {
@@ -634,9 +656,10 @@ function toProfileDetails(
   };
 }
 
-function toSearchResult(row: SearchRow): UserSearchResult {
+function toSearchResult(row: SearchRow, isFollowing = row.is_friend): UserSearchResult {
   return {
     ...toUserProfile(row),
+    isFollowing,
     isFriend: row.is_friend,
     hasRecentChat: row.has_recent_chat
   };

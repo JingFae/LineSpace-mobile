@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { router } from "expo-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -12,16 +12,22 @@ import {
 } from "react-native";
 import { AppScreen, EmptyState, SearchIcon } from "@linespace/ui";
 import { colors, spacing } from "@linespace/tokens";
-import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
+import { lineSpaceApi } from "@/services/lineSpaceApi";
+import { useAuth } from "@/auth/AuthSessionProvider";
 import { DiscoveryPostCard, DiscoveryThreadCard, DiscoveryUserRow } from "./DiscoveryCards";
 
 type SearchCategory = "posts" | "threads" | "users";
 
 export function SearchScreen() {
+  const params = useLocalSearchParams<{ mode?: string }>();
+  const userOnly = params.mode === "users";
+  const { user: authUser } = useAuth();
+  const currentUserId = authUser?.id ?? "";
+  const queryClient = useQueryClient();
   const inputRef = useRef<TextInput>(null);
   const [text, setText] = useState("");
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState<SearchCategory>("posts");
+  const [category, setCategory] = useState<SearchCategory>(userOnly ? "users" : "posts");
 
   useEffect(() => {
     const timer = setTimeout(() => setQuery(text.trim()), 260);
@@ -30,15 +36,43 @@ export function SearchScreen() {
 
   const search = useQuery({
     queryKey: ["content-search", query.toLocaleLowerCase(), currentUserId],
-    enabled: query.length > 0,
+    enabled: query.length > 0 && !userOnly && category !== "users" && currentUserId.length > 0,
     queryFn: () => lineSpaceApi.searchContent(query, currentUserId)
   });
+
+  const userSearch = useQuery({
+    queryKey: ["user-search", currentUserId, query.toLocaleLowerCase()],
+    enabled: query.length > 0 && category === "users" && currentUserId.length > 0,
+    queryFn: () => lineSpaceApi.searchUsers(query, currentUserId, { limit: 30 })
+  });
+  const followMutation = useMutation({
+    mutationFn: ({ targetUserId, isActive }: { targetUserId: string; isActive: boolean }) =>
+      lineSpaceApi.setUserFollow({ userId: currentUserId, targetUserId, isActive }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["user-search", currentUserId] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile"] });
+      void queryClient.invalidateQueries({ queryKey: ["inbox-mutuals", currentUserId] });
+    }
+  });
+  const users = useMemo(() => {
+    const seen = new Set<string>();
+    return [
+      ...(userSearch.data?.recent ?? []),
+      ...(userSearch.data?.friends ?? []),
+      ...(userSearch.data?.results ?? [])
+    ].filter((user) => {
+      if (seen.has(user.id)) return false;
+      seen.add(user.id);
+      return true;
+    });
+  }, [userSearch.data]);
 
   const tabs = useMemo(() => [
     { value: "posts" as const, label: "Post", count: search.data?.posts.length ?? 0 },
     { value: "threads" as const, label: "Thread", count: search.data?.threads.length ?? 0 },
-    { value: "users" as const, label: "User", count: search.data?.users.length ?? 0 }
-  ], [search.data]);
+    { value: "users" as const, label: "User", count: users.length }
+  ], [search.data, users.length]);
+  const activeQuery = category === "users" ? userSearch : search;
 
   return (
     <AppScreen scroll={false} padded={false} style={styles.safeArea} contentContainerStyle={styles.screen}>
@@ -54,7 +88,7 @@ export function SearchScreen() {
             autoFocus
             maxLength={80}
             onChangeText={setText}
-            placeholder="Search posts, threads and users"
+            placeholder={userOnly ? "Search users by name or username" : "Search posts, threads and users"}
             placeholderTextColor={colors.profileMuted}
             ref={inputRef}
             returnKeyType="search"
@@ -69,7 +103,7 @@ export function SearchScreen() {
         </Pressable>
       </View>
 
-      <View style={styles.tabs}>
+      {!userOnly ? <View style={styles.tabs}>
         {tabs.map((tab) => {
           const active = tab.value === category;
           return (
@@ -79,25 +113,34 @@ export function SearchScreen() {
             </Pressable>
           );
         })}
-      </View>
+      </View> : null}
 
       <ScrollView keyboardShouldPersistTaps="handled" style={styles.results} contentContainerStyle={styles.resultsContent} showsVerticalScrollIndicator={false}>
         {!query ? (
           <View style={styles.welcome}>
             <View style={styles.searchMark}><SearchIcon color="#1677D2" height={28} width={28} /></View>
-            <Text style={styles.welcomeTitle}>Find a line worth returning to</Text>
-            <Text style={styles.welcomeBody}>Search every published Post and Thread, or find someone by username.</Text>
+            <Text style={styles.welcomeTitle}>{userOnly ? "Find another writer" : "Find a line worth returning to"}</Text>
+            <Text style={styles.welcomeBody}>{userOnly ? "Search by username or display name, open a profile, and follow from here." : "Search every published Post and Thread, or find someone by username."}</Text>
           </View>
-        ) : search.isLoading ? (
+        ) : activeQuery.isLoading ? (
           <View style={styles.loading}><ActivityIndicator color="#1677D2" /><Text style={styles.loadingText}>Searching LineSpace…</Text></View>
-        ) : search.isError ? (
+        ) : activeQuery.isError ? (
           <EmptyState title="Search unavailable" body="Please try again in a moment." />
         ) : category === "posts" ? (
           search.data?.posts.length ? search.data.posts.map((poem) => <DiscoveryPostCard key={poem.id} poem={poem} />) : <NoResults query={query} type="posts" />
         ) : category === "threads" ? (
           search.data?.threads.length ? search.data.threads.map((thread) => <DiscoveryThreadCard key={thread.id} thread={thread} />) : <NoResults query={query} type="threads" />
-        ) : search.data?.users.length ? (
-          search.data.users.map((user) => <DiscoveryUserRow key={user.id} user={user} />)
+        ) : users.length ? (
+          users.map((user) => (
+            <DiscoveryUserRow
+              followPending={followMutation.isPending && followMutation.variables?.targetUserId === user.id}
+              isFollowing={user.isFollowing}
+              key={user.id}
+              onFollow={() => followMutation.mutate({ targetUserId: user.id, isActive: !user.isFollowing })}
+              showFollow
+              user={user}
+            />
+          ))
         ) : <NoResults query={query} type="users" />}
       </ScrollView>
     </AppScreen>

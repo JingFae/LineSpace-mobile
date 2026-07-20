@@ -412,15 +412,24 @@ export type UserPoemCollections = {
   savedPoemIds: string[];
 };
 
-export type InboxActivityKind = "comments" | "likes" | "thread";
+export type InboxActivityKind = "comments" | "likes" | "thread" | "social";
 
 export type InboxActivityCounts = Record<InboxActivityKind, number>;
 
-export type InboxActivityTargetKind = "post" | "comment" | "thread";
+export type InboxActivityTargetKind = "post" | "comment" | "thread" | "profile";
+
+export type InboxActivityAction =
+  | "commented"
+  | "liked"
+  | "saved"
+  | "continued"
+  | "followed"
+  | "mentioned";
 
 export type InboxActivityPreview = {
   id: string;
   kind: InboxActivityKind;
+  action: InboxActivityAction;
   actor: UserProfile;
   target: {
     kind: InboxActivityTargetKind;
@@ -518,6 +527,7 @@ export type PoemCommentEngagementResult = {
 };
 
 export type UserSearchResult = UserProfile & {
+  isFollowing: boolean;
   isFriend: boolean;
   hasRecentChat: boolean;
 };
@@ -656,6 +666,9 @@ export type FeedQuery = {
   section?: FeedSection;
   filter?: FeedFilter;
   viewerId?: string;
+  /** Opaque content id used as the keyset page anchor. */
+  cursor?: string;
+  limit?: number;
 };
 
 export type ContentSearchResult = {
@@ -729,6 +742,9 @@ export type ThreadContinuation = {
 export type ThreadFeedQuery = {
   sort?: ThreadSort;
   viewerId?: string;
+  /** Opaque content id used as the keyset page anchor. */
+  cursor?: string;
+  limit?: number;
 };
 
 export type ThreadDetail = {

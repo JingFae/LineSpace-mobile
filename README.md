@@ -273,6 +273,9 @@ supabase/migrations/20260719000100_service_role_profile_access.sql
 supabase/migrations/20260719000200_thread_persistence.sql
 supabase/migrations/20260719000300_content_draft_inbox_persistence.sql
 supabase/migrations/20260719000400_group_content_sharing.sql
+supabase/migrations/20260719000500_content_discovery.sql
+supabase/migrations/20260720000100_live_content_runtime.sql
+supabase/migrations/20260720000200_inbox_activity_notifications.sql
 ```
 
 新环境和已有环境都必须按顺序执行。迁移会检查非法 handle、资料字段和缺失表，

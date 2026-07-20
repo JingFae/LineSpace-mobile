@@ -24,6 +24,7 @@ import type {
   DraftOperationInput,
   FeedQuery,
   InboxActivitySummary,
+  InboxActivityPreview,
   InboxGroup,
   InviteDraftCollaboratorInput,
   InviteInboxGroupMembersInput,
@@ -170,15 +171,20 @@ export class MockLineSpaceApi implements LineSpaceApi {
   private readonly inboxGroupMessages: InboxConversationMessage[] = [];
   private readonly experienceEvents = new Set<string>();
   private readonly followingByUser = new Map<string, Set<string>>();
+  private readonly inboxActivitySummaries = new Map<string, InboxActivitySummary>();
   private draftSequence = 0;
   private continuationSequence = 0;
   private shareSequence = 0;
   private inboxMessageSequence = 0;
   private inboxGroupSequence = 0;
   private threadSequence = 0;
+  private activitySequence = 0;
 
   constructor() {
     this.seedInbox();
+    for (const [userId, summary] of Object.entries(mockInboxActivitySummaries)) {
+      this.inboxActivitySummaries.set(userId, cloneInboxActivitySummary(summary));
+    }
   }
 
   async getPoemDesignCatalog(): Promise<PoemDesignCatalog> {
@@ -376,6 +382,12 @@ export class MockLineSpaceApi implements LineSpaceApi {
       owner.contentCounts.posts += 1;
     }
     this.awardExperience(owner.id, "creator", 5, `publish-post:${poem.id}`);
+    this.notifyMentions(owner.id, poem.mentions ?? [], {
+      kind: "post",
+      title: poem.title,
+      excerpt: poem.lines[0] ?? "",
+      poemId: poem.id
+    });
     return { draft: cloneDraft(draft), poem: clonePoem(poem) };
   }
 
@@ -422,6 +434,12 @@ export class MockLineSpaceApi implements LineSpaceApi {
       owner.contentCounts.threads += 1;
     }
     this.awardExperience(owner.id, "creator", 5, `publish-thread:${thread.id}`);
+    this.notifyMentions(owner.id, thread.mentions ?? [], {
+      kind: "thread",
+      title: thread.title ?? "Untitled poem relay",
+      excerpt: thread.content,
+      threadId: thread.id
+    });
     return { draft: cloneDraft(draft), thread: cloneThread(thread) };
   }
 
@@ -557,7 +575,14 @@ export class MockLineSpaceApi implements LineSpaceApi {
       );
     }
 
-    return poems.map((poem) => this.withViewer(poem, viewerId));
+    const cursorIndex = query.cursor
+      ? poems.findIndex((poem) => poem.id === query.cursor) + 1
+      : 0;
+    const start = Math.max(0, cursorIndex);
+    const limit = Math.min(50, Math.max(1, query.limit ?? Math.max(1, poems.length)));
+    return poems
+      .slice(start, start + limit)
+      .map((poem) => this.withViewer(poem, viewerId));
   }
 
   async getPoem(id: string, viewerId?: string): Promise<PoemSummary | null> {
@@ -626,8 +651,39 @@ export class MockLineSpaceApi implements LineSpaceApi {
     poem.metrics.comments += 1;
     const profile = this.profiles.find((item) => item.id === input.userId);
     if (profile) profile.contentCounts.comments += 1;
+    const parentComment = input.parentCommentId
+      ? poem.comments.find((item) => item.id === input.parentCommentId)
+      : undefined;
     if (poem.author.id !== input.userId) {
       this.awardExperience(input.userId, "reviewer", 5, `comment:${comment.id}`);
+      this.pushInboxActivity(poem.author.id, input.userId, {
+        kind: "comments",
+        action: "commented",
+        target: {
+          kind: "post",
+          title: poem.title,
+          excerpt: comment.body,
+          poemId: poem.id,
+          commentId: comment.id
+        }
+      });
+    }
+    if (
+      parentComment &&
+      parentComment.author.id !== input.userId &&
+      parentComment.author.id !== poem.author.id
+    ) {
+      this.pushInboxActivity(parentComment.author.id, input.userId, {
+        kind: "comments",
+        action: "commented",
+        target: {
+          kind: "comment",
+          title: poem.title,
+          excerpt: comment.body,
+          poemId: poem.id,
+          commentId: comment.id
+        }
+      });
     }
     return cloneComment(comment);
   }
@@ -655,6 +711,17 @@ export class MockLineSpaceApi implements LineSpaceApi {
           2,
           `comment-${input.collection}:${input.userId}:${input.commentId}`
         );
+        this.pushInboxActivity(comment.author.id, input.userId, {
+          kind: "likes",
+          action: input.collection === "liked" ? "liked" : "saved",
+          target: {
+            kind: "comment",
+            title: poem.title,
+            excerpt: comment.body,
+            poemId: poem.id,
+            commentId: comment.id
+          }
+        });
       }
     }
     comment.viewer = {
@@ -672,6 +739,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
       .filter((profile) => profile.id !== viewerId)
       .map((profile) => ({
         ...profileToUser(profile),
+        isFollowing: this.getFollowingIds(viewerId).has(profile.id),
         isFriend: this.isMutualConnection(viewerId, profile.id),
         hasRecentChat: this.inboxMessages.some((message) =>
           (message.sender.id === viewerId && message.recipient?.id === profile.id) ||
@@ -848,17 +916,16 @@ export class MockLineSpaceApi implements LineSpaceApi {
     if (!owner || !name) throw new Error("A group owner and name are required");
 
     const now = new Date().toISOString();
-    const invitees = [...new Set(input.inviteeIds)]
-      .filter(
-        (userId) =>
-          userId !== input.ownerId &&
-          this.isMutualConnection(input.ownerId, userId)
-      )
-      .map((userId) => this.findAnyProfile(userId))
-      .filter((profile): profile is UserProfileDetails => Boolean(profile));
-    if (invitees.length === 0) {
-      throw new Error("Invite at least one mutual connection");
-    }
+    const requestedInviteeIds = [...new Set(input.inviteeIds)].filter(
+      (userId) => userId !== input.ownerId
+    );
+    const invitees = requestedInviteeIds.map((userId) => {
+      const profile = this.findAnyProfile(userId);
+      if (!profile || !this.isMutualConnection(input.ownerId, userId)) {
+        throw new Error("Only mutual connections can be invited");
+      }
+      return profile;
+    });
 
     const group: InboxGroup = {
       id: `group-${++this.inboxGroupSequence}`,
@@ -1006,6 +1073,16 @@ export class MockLineSpaceApi implements LineSpaceApi {
           2,
           `poem-${input.collection}:${input.userId}:${input.poemId}`
         );
+        this.pushInboxActivity(poem.author.id, input.userId, {
+          kind: "likes",
+          action: input.collection === "liked" ? "liked" : "saved",
+          target: {
+            kind: "post",
+            title: poem.title,
+            excerpt: poem.lines[0] ?? "",
+            poemId: poem.id
+          }
+        });
       }
     }
 
@@ -1022,7 +1099,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
 
   async getInboxActivitySummary(userId: string): Promise<InboxActivitySummary> {
     const profile = this.profiles.find((item) => item.id === userId);
-    const explicit = mockInboxActivitySummaries[userId];
+    const explicit = this.inboxActivitySummaries.get(userId);
     const totals = explicit?.totals ?? this.deriveInboxTotals(userId);
     const unread = explicit?.unread ?? totals;
 
@@ -1034,9 +1111,10 @@ export class MockLineSpaceApi implements LineSpaceApi {
         ? {
             comments: explicit.recent.comments.map((item) => ({ ...item, actor: { ...item.actor }, target: { ...item.target } })),
             likes: explicit.recent.likes.map((item) => ({ ...item, actor: { ...item.actor }, target: { ...item.target } })),
-            thread: explicit.recent.thread.map((item) => ({ ...item, actor: { ...item.actor }, target: { ...item.target } }))
+            thread: explicit.recent.thread.map((item) => ({ ...item, actor: { ...item.actor }, target: { ...item.target } })),
+            social: explicit.recent.social.map((item) => ({ ...item, actor: { ...item.actor }, target: { ...item.target } }))
           }
-        : { comments: [], likes: [], thread: [] }
+        : { comments: [], likes: [], thread: [], social: [] }
     };
   }
 
@@ -1200,12 +1278,24 @@ export class MockLineSpaceApi implements LineSpaceApi {
     }
 
     const following = this.getFollowingIds(input.userId);
+    const wasFollowing = following.has(input.targetUserId);
     if (input.isActive) {
       following.add(input.targetUserId);
     } else {
       following.delete(input.targetUserId);
     }
     this.followingByUser.set(input.userId, following);
+    if (input.isActive && !wasFollowing) {
+      this.pushInboxActivity(input.targetUserId, input.userId, {
+        kind: "social",
+        action: "followed",
+        target: {
+          kind: "profile",
+          title: "New follower",
+          excerpt: "started following you"
+        }
+      });
+    }
 
     const reverse = this.getFollowingIds(input.targetUserId).has(input.userId);
     return {
@@ -1237,7 +1327,14 @@ export class MockLineSpaceApi implements LineSpaceApi {
       );
     }
 
-    return threads.map((thread) => this.withThreadViewer(thread, viewerId));
+    const cursorIndex = query.cursor
+      ? threads.findIndex((thread) => thread.id === query.cursor) + 1
+      : 0;
+    const start = Math.max(0, cursorIndex);
+    const limit = Math.min(50, Math.max(1, query.limit ?? Math.max(1, threads.length)));
+    return threads
+      .slice(start, start + limit)
+      .map((thread) => this.withThreadViewer(thread, viewerId));
   }
 
   async getThread(threadId: string, viewerId?: string): Promise<ThreadDetail | null> {
@@ -1290,6 +1387,16 @@ export class MockLineSpaceApi implements LineSpaceApi {
     thread.metrics.continuations += 1;
     if (thread.author.id !== input.userId) {
       this.awardExperience(input.userId, "creator", 5, `participate-thread:${continuation.id}`);
+      this.pushInboxActivity(thread.author.id, input.userId, {
+        kind: "thread",
+        action: "continued",
+        target: {
+          kind: "thread",
+          title: thread.title ?? "Untitled poem relay",
+          excerpt: continuation.content,
+          threadId: thread.id
+        }
+      });
     }
     return this.withContinuationViewer(continuation, input.userId);
   }
@@ -1313,6 +1420,18 @@ export class MockLineSpaceApi implements LineSpaceApi {
     if (thread) thread.metrics.continuations += 1;
     if (thread?.author.id !== input.userId) {
       this.awardExperience(input.userId, "creator", 5, `participate-thread:${continuation.id}`);
+      if (thread) {
+        this.pushInboxActivity(thread.author.id, input.userId, {
+          kind: "thread",
+          action: "continued",
+          target: {
+            kind: "thread",
+            title: thread.title ?? "Untitled poem relay",
+            excerpt: continuation.content,
+            threadId: thread.id
+          }
+        });
+      }
     }
     return this.withContinuationViewer(continuation, input.userId);
   }
@@ -1332,6 +1451,16 @@ export class MockLineSpaceApi implements LineSpaceApi {
           2,
           `thread-liked:${input.userId}:${thread.id}`
         );
+        this.pushInboxActivity(thread.author.id, input.userId, {
+          kind: "likes",
+          action: "liked",
+          target: {
+            kind: "thread",
+            title: thread.title ?? "Untitled poem relay",
+            excerpt: thread.content,
+            threadId: thread.id
+          }
+        });
       }
     }
     return this.withThreadViewer(thread, input.userId);
@@ -1357,6 +1486,16 @@ export class MockLineSpaceApi implements LineSpaceApi {
           2,
           `continuation-liked:${input.userId}:${continuation.id}`
         );
+        this.pushInboxActivity(continuation.author.id, input.userId, {
+          kind: "likes",
+          action: "liked",
+          target: {
+            kind: "thread",
+            title: "Thread continuation",
+            excerpt: continuation.content,
+            threadId: continuation.threadId
+          }
+        });
       }
     }
     return this.withContinuationViewer(continuation, input.userId);
@@ -1376,6 +1515,18 @@ export class MockLineSpaceApi implements LineSpaceApi {
           0,
           profile.contentCounts.saves + (input.isActive ? 1 : -1)
         );
+      }
+      if (input.isActive && thread.author.id !== input.userId) {
+        this.pushInboxActivity(thread.author.id, input.userId, {
+          kind: "likes",
+          action: "saved",
+          target: {
+            kind: "thread",
+            title: thread.title ?? "Untitled poem relay",
+            excerpt: thread.content,
+            threadId: thread.id
+          }
+        });
       }
     }
     return this.withThreadViewer(thread, input.userId);
@@ -1740,6 +1891,49 @@ export class MockLineSpaceApi implements LineSpaceApi {
     return member;
   }
 
+  private pushInboxActivity(
+    recipientUserId: string,
+    actorUserId: string,
+    activity: Omit<InboxActivityPreview, "id" | "actor" | "dateLabel" | "unread">
+  ) {
+    if (recipientUserId === actorUserId) return;
+    const actor = this.findAnyProfile(actorUserId);
+    if (!actor) return;
+    const summary = this.inboxActivitySummaries.get(recipientUserId) ?? {
+      userId: recipientUserId,
+      unread: { comments: 0, likes: 0, thread: 0, social: 0 },
+      totals: { comments: 0, likes: 0, thread: 0, social: 0 },
+      recent: { comments: [], likes: [], thread: [], social: [] }
+    };
+    const preview: InboxActivityPreview = {
+      ...activity,
+      id: `activity-${++this.activitySequence}`,
+      actor: profileToUser(actor),
+      dateLabel: "now",
+      unread: true
+    };
+    summary.recent[activity.kind] = [preview, ...summary.recent[activity.kind]].slice(0, 50);
+    summary.unread[activity.kind] += 1;
+    summary.totals[activity.kind] += 1;
+    this.inboxActivitySummaries.set(recipientUserId, summary);
+  }
+
+  private notifyMentions(
+    actorUserId: string,
+    handles: readonly string[],
+    target: InboxActivityPreview["target"]
+  ) {
+    for (const handle of new Set(handles.map((item) => item.replace(/^@+/, "").toLowerCase()))) {
+      const recipient = this.getAllProfiles().find((profile) => profile.handle.toLowerCase() === handle);
+      if (!recipient) continue;
+      this.pushInboxActivity(recipient.id, actorUserId, {
+        kind: "social",
+        action: "mentioned",
+        target
+      });
+    }
+  }
+
   private deriveInboxTotals(userId: string): InboxActivitySummary["totals"] {
     const profile = this.profiles.find((item) => item.id === userId);
     const authoredPoems = this.poems.filter((poem) => poem.author.id === userId);
@@ -1756,7 +1950,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
       0
     );
 
-    return { comments, likes, thread };
+    return { comments, likes, thread, social: 0 };
   }
 
   private withCurrentProfileSummary(item: UserConnectionPage["items"][number]) {
@@ -2033,6 +2227,24 @@ function cloneInboxMessage(message: InboxConversationMessage): InboxConversation
         }
       : undefined
   };
+}
+
+function cloneInboxActivitySummary(summary: InboxActivitySummary): InboxActivitySummary {
+  return {
+    userId: summary.userId,
+    unread: { ...summary.unread },
+    totals: { ...summary.totals },
+    recent: {
+      comments: summary.recent.comments.map(cloneInboxActivityPreview),
+      likes: summary.recent.likes.map(cloneInboxActivityPreview),
+      thread: summary.recent.thread.map(cloneInboxActivityPreview),
+      social: summary.recent.social.map(cloneInboxActivityPreview)
+    }
+  };
+}
+
+function cloneInboxActivityPreview(item: InboxActivityPreview): InboxActivityPreview {
+  return { ...item, actor: { ...item.actor }, target: { ...item.target } };
 }
 
 function cloneInboxGroup(group: InboxGroup): InboxGroup {

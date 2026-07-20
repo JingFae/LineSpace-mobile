@@ -45,6 +45,7 @@ export type {
   FeedQuery,
   FeedSection,
   InboxActivityCounts,
+  InboxActivityAction,
   InboxActivityKind,
   InboxActivityPreview,
   InboxActivitySummary,

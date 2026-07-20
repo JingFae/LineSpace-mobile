@@ -33,6 +33,18 @@ const groupSharingMigration = await readFile(
   new URL("20260719000400_group_content_sharing.sql", canonicalMigrationsUrl),
   "utf8"
 );
+const contentDiscoveryMigration = await readFile(
+  new URL("20260719000500_content_discovery.sql", canonicalMigrationsUrl),
+  "utf8"
+);
+const liveContentRuntimeMigration = await readFile(
+  new URL("20260720000100_live_content_runtime.sql", canonicalMigrationsUrl),
+  "utf8"
+);
+const inboxActivityMigration = await readFile(
+  new URL("20260720000200_inbox_activity_notifications.sql", canonicalMigrationsUrl),
+  "utf8"
+);
 const profileRepository = await readFile(
   new URL("./profile-repository.ts", import.meta.url),
   "utf8"
@@ -154,6 +166,43 @@ assert(
   "Group sharing migration must fail with repair guidance instead of rewriting historical messages."
 );
 
+assert(
+  /create\s+or\s+replace\s+function\s+public\.content_search_document[\s\S]*immutable/i.test(
+    contentDiscoveryMigration
+  ) &&
+    /posts_search_trgm_idx[\s\S]*public\.content_search_document/i.test(
+      contentDiscoveryMigration
+    ) &&
+    /poetry_threads_search_trgm_idx[\s\S]*public\.content_search_document/i.test(
+      contentDiscoveryMigration
+    ),
+  "Content search indexes must use the immutable search-document expression accepted by PostgreSQL."
+);
+
+for (const required of [
+  /add\s+column\s+if\s+not\s+exists\s+likes_count/i,
+  /create\s+trigger\s+thread_likes_sync_counter/i,
+  /create\s+index\s+if\s+not\s+exists\s+posts_latest_page_idx/i,
+  /create\s+index\s+if\s+not\s+exists\s+posts_popular_page_idx/i,
+  /create\s+index\s+if\s+not\s+exists\s+threads_latest_page_idx/i,
+  /create\s+index\s+if\s+not\s+exists\s+threads_popular_page_idx/i,
+  /create\s+or\s+replace\s+function\s+public\.create_poem_draft/i,
+  /actor_id\s+text\s*:=\s*public\.current_linespace_user_id\(\)/i,
+  /revoke\s+execute\s+on\s+function\s+public\.create_poem_draft\(text\)[\s\S]*from\s+public,\s*anon/i,
+  /grant\s+execute\s+on\s+function\s+public\.create_poem_draft\(text\)[\s\S]*to\s+authenticated/i
+] as const) {
+  assert(
+    required.test(liveContentRuntimeMigration),
+    `Live content runtime migration is missing ${required}.`
+  );
+}
+assert(
+  !/\b(user-lili|user-ray|user-jinghe|user-zhihan|user-roma)\b/i.test(
+    liveContentRuntimeMigration
+  ),
+  "Live content runtime migration must never seed demo identities or conversations."
+);
+
 for (const [label, sql] of [
   ["auth trigger migration", idempotentMigration],
   ["fresh profile schema", profileSchema]
@@ -215,6 +264,24 @@ assert(
   !/SUPABASE_SERVICE_ROLE_KEY/.test(profileRepository),
   "ProfileRepository must never use the Service Role key."
 );
+for (const required of [
+  /create\s+table\s+if\s+not\s+exists\s+public\.inbox_activity_events/i,
+  /post_likes_notify_inbox/i,
+  /post_saves_notify_inbox/i,
+  /post_comment_engagements_notify_inbox/i,
+  /thread_likes_notify_inbox/i,
+  /thread_saves_notify_inbox/i,
+  /thread_continuation_likes_notify_inbox/i,
+  /user_follows_notify_inbox/i,
+  /posts_mentions_notify_inbox/i,
+  /poetry_threads_mentions_notify_inbox/i,
+  /alter\s+table\s+public\.inbox_activity_events\s+enable\s+row\s+level\s+security/i,
+  /revoke\s+execute\s+on\s+function\s+public\.insert_inbox_activity_event[\s\S]*from\s+public,\s*anon,\s*authenticated/i,
+  /revoke\s+insert,\s*update,\s*delete\s+on\s+public\.inbox_activity_events/i,
+  /grant\s+update\s*\(\s*read_at\s*\)\s+on\s+public\.inbox_activity_events/i
+] as const) {
+  assert(required.test(inboxActivityMigration), `Inbox activity migration is missing ${required}.`);
+}
 assert(
   !/auth_user_id/.test(profileRepository),
   "ProfileRepository must not expose the auth_user_id field."

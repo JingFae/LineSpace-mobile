@@ -329,6 +329,9 @@ supabase/migrations/20260719000100_service_role_profile_access.sql
 supabase/migrations/20260719000200_thread_persistence.sql
 supabase/migrations/20260719000300_content_draft_inbox_persistence.sql
 supabase/migrations/20260719000400_group_content_sharing.sql
+supabase/migrations/20260719000500_content_discovery.sql
+supabase/migrations/20260720000100_live_content_runtime.sql
+supabase/migrations/20260720000200_inbox_activity_notifications.sql
 ```
 
 迁移要求：
@@ -424,11 +427,15 @@ The current cloud-safe chain is:
 20260719000200_thread_persistence.sql
 20260719000300_content_draft_inbox_persistence.sql
 20260719000400_group_content_sharing.sql
+20260719000500_content_discovery.sql
+20260720000100_live_content_runtime.sql
+20260720000200_inbox_activity_notifications.sql
 ```
 
 The canonical chain now includes the durable Post/feed, Comment, Draft,
 Inbox-message, direct/group Post and Thread sharing, click-target metadata,
-idempotent Thread-Version-to-Post publication, Thread-share counters, and
+idempotent Thread-Version-to-Post publication, Thread-share counters,
+three-record keyset Feed/Thread indexes, actor-derived draft creation, and
 Storage contracts. The content migrations
 does not change UI behavior; it supplies the RLS-protected persistence used by
 the API repositories. The files under
