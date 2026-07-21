@@ -65,6 +65,10 @@ const profileRepository = await readFile(
   new URL("./profile-repository.ts", import.meta.url),
   "utf8"
 );
+const threadRepository = await readFile(
+  new URL("./thread-repository.ts", import.meta.url),
+  "utf8"
+);
 const canonicalMigrationFiles = (await readdir(canonicalMigrationsUrl))
   .filter((fileName) => fileName.endsWith(".sql"))
   .sort();
@@ -371,6 +375,12 @@ assert(
 assert(
   !/\.offset\s*\(/.test(profileRepository),
   "User-domain pagination must use keyset cursors rather than offset scans."
+);
+assert(
+  /legacyThreadSelect/.test(threadRepository) &&
+    /isMissingThreadSavesCount/.test(threadRepository) &&
+    /normalizeThreadRows/.test(threadRepository),
+  "Thread reads must remain available while the saves_count migration rolls out."
 );
 assert(
   /grant\s+update\s*\(\s*display_name,\s*avatar_url,\s*avatar_color,\s*bio\s*\)/i.test(

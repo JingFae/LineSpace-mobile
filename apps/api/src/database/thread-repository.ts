@@ -53,6 +53,8 @@ type ContinuationRow = {
 
 const threadSelect =
   "id,author_user_id,title,prompt,starting_content,rules,tags,mentions,media,visibility,status,likes_count,shares_count,saves_count,created_at,updated_at";
+const legacyThreadSelect =
+  "id,author_user_id,title,prompt,starting_content,rules,tags,mentions,media,visibility,status,likes_count,shares_count,created_at,updated_at";
 const continuationSelect =
   "id,thread_id,parent_continuation_id,line_number,content,author_user_id,shares_count,created_at,updated_at";
 
@@ -62,37 +64,8 @@ export class ThreadRepository {
   async listThreads(query: ThreadFeedQuery = {}): Promise<PoetryThread[]> {
     const actorId = await getCurrentLinespaceUserId(this.client);
     const limit = Math.min(50, Math.max(1, query.limit ?? 20));
-    let request = this.client
-      .from("poetry_threads")
-      .select(threadSelect)
-      .limit(limit);
-
-    request = query.sort === "top"
-      ? request
-          .order("likes_count", { ascending: false })
-          .order("created_at", { ascending: false })
-          .order("id", { ascending: false })
-      : request
-          .order("created_at", { ascending: false })
-          .order("id", { ascending: false });
-
-    if (query.cursor) {
-      const cursorResult = await this.client
-        .from("poetry_threads")
-        .select("id,created_at,likes_count")
-        .eq("id", query.cursor)
-        .maybeSingle();
-      ensureDatabaseResult(cursorResult.error);
-      const cursor = cursorResult.data as Pick<ThreadRow, "id" | "created_at" | "likes_count"> | null;
-      if (!cursor) return [];
-      request = query.sort === "top"
-        ? request.or(
-            `likes_count.lt.${cursor.likes_count},and(likes_count.eq.${cursor.likes_count},created_at.lt.${cursor.created_at}),and(likes_count.eq.${cursor.likes_count},created_at.eq.${cursor.created_at},id.lt.${cursor.id})`
-          )
-        : request.or(
-            `created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`
-          );
-    }
+    const cursor = query.cursor ? await this.loadCursor(query.cursor) : null;
+    if (query.cursor && !cursor) return [];
 
     if (query.sort === "following") {
       if (!actorId) return [];
@@ -104,25 +77,30 @@ export class ThreadRepository {
       const ids = ((follows.data as Array<{ following_user_id: string }> | null) ?? [])
         .map((row) => row.following_user_id);
       if (ids.length === 0) return [];
-      request = request.in("author_user_id", ids);
+      const result = await this.loadThreadRows(query, limit, cursor, ids);
+      return this.mapThreads(result, actorId);
     }
-
-    const result = await request;
-    ensureDatabaseResult(result.error);
-    const rows = (result.data as ThreadRow[] | null) ?? [];
+    const rows = await this.loadThreadRows(query, limit, cursor);
     return this.mapThreads(rows, actorId);
   }
 
   async getThread(threadId: string): Promise<ThreadDetail | null> {
-    const result = await this.client
+    const primaryResult = await this.client
       .from("poetry_threads")
       .select(threadSelect)
       .eq("id", threadId)
       .maybeSingle();
+    const result = isMissingThreadSavesCount(primaryResult.error)
+      ? await this.client
+        .from("poetry_threads")
+        .select(legacyThreadSelect)
+        .eq("id", threadId)
+        .maybeSingle()
+      : primaryResult;
     ensureDatabaseResult(result.error);
     if (!result.data) return null;
     const actorId = await getCurrentLinespaceUserId(this.client);
-    const threads = await this.mapThreads([result.data as ThreadRow], actorId);
+    const threads = await this.mapThreads(normalizeThreadRows([result.data]), actorId);
     const thread = threads[0];
     if (!thread) return null;
     const continuationRows = await this.loadContinuations(threadId);
@@ -135,12 +113,18 @@ export class ThreadRepository {
   async listThreadsByIds(ids: string[]): Promise<PoetryThread[]> {
     if (ids.length === 0) return [];
     const actorId = await getCurrentLinespaceUserId(this.client);
-    const result = await this.client
+    const primaryResult = await this.client
       .from("poetry_threads")
       .select(threadSelect)
       .in("id", [...new Set(ids)]);
+    const result = isMissingThreadSavesCount(primaryResult.error)
+      ? await this.client
+        .from("poetry_threads")
+        .select(legacyThreadSelect)
+        .in("id", [...new Set(ids)])
+      : primaryResult;
     ensureDatabaseResult(result.error);
-    const mapped = await this.mapThreads((result.data as ThreadRow[] | null) ?? [], actorId);
+    const mapped = await this.mapThreads(normalizeThreadRows(result.data), actorId);
     const byId = new Map(mapped.map((item) => [item.id, item]));
     return ids.flatMap((id) => {
       const item = byId.get(id);
@@ -490,6 +474,53 @@ export class ThreadRepository {
     });
   }
 
+  private async loadCursor(
+    cursorId: string
+  ): Promise<Pick<ThreadRow, "id" | "created_at" | "likes_count"> | null> {
+    const result = await this.client
+      .from("poetry_threads")
+      .select("id,created_at,likes_count")
+      .eq("id", cursorId)
+      .maybeSingle();
+    ensureDatabaseResult(result.error);
+    return result.data as Pick<ThreadRow, "id" | "created_at" | "likes_count"> | null;
+  }
+
+  private async loadThreadRows(
+    query: ThreadFeedQuery,
+    limit: number,
+    cursor: Pick<ThreadRow, "id" | "created_at" | "likes_count"> | null,
+    authorIds?: string[]
+  ): Promise<ThreadRow[]> {
+    const execute = async (select: string) => {
+      let request = this.client.from("poetry_threads").select(select).limit(limit);
+      request = query.sort === "top"
+        ? request
+            .order("likes_count", { ascending: false })
+            .order("created_at", { ascending: false })
+            .order("id", { ascending: false })
+        : request
+            .order("created_at", { ascending: false })
+            .order("id", { ascending: false });
+      if (cursor) {
+        request = query.sort === "top"
+          ? request.or(
+              `likes_count.lt.${cursor.likes_count},and(likes_count.eq.${cursor.likes_count},created_at.lt.${cursor.created_at}),and(likes_count.eq.${cursor.likes_count},created_at.eq.${cursor.created_at},id.lt.${cursor.id})`
+            )
+          : request.or(
+              `created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`
+            );
+      }
+      if (authorIds) request = request.in("author_user_id", authorIds);
+      return request;
+    };
+
+    let result = await execute(threadSelect);
+    if (isMissingThreadSavesCount(result.error)) result = await execute(legacyThreadSelect);
+    ensureDatabaseResult(result.error);
+    return normalizeThreadRows(result.data);
+  }
+
   private async mapContinuations(
     rows: ContinuationRow[],
     actorId: string | null
@@ -588,6 +619,21 @@ export class ThreadRepository {
       )
     );
   }
+}
+
+function normalizeThreadRows(data: unknown): ThreadRow[] {
+  if (!Array.isArray(data)) return [];
+  return data.map((value) => {
+    const row = value as Omit<ThreadRow, "saves_count"> & { saves_count?: number };
+    return { ...row, saves_count: countValue(row.saves_count) };
+  });
+}
+
+function isMissingThreadSavesCount(
+  error: { code?: string; message?: string } | null | undefined
+): boolean {
+  if (!error || !/saves_count/i.test(error.message ?? "")) return false;
+  return error.code === "42703" || error.code === "PGRST204";
 }
 
 function countBy(ids: string[]): Map<string, number> {
