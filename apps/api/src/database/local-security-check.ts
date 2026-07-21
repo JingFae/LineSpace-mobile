@@ -198,27 +198,48 @@ async function run() {
       }
     ]);
     assert(!versionLines.error, "Could not create local Thread version lines.");
-    const foreignVersionPublish = await userB.client.rpc(
+    const nonParticipantVersionPublish = await userC.client.rpc(
       "publish_thread_version_as_post",
       { p_thread_id: threadId, p_version_id: versionId }
     );
-    assert(Boolean(foreignVersionPublish.error), "User B published user A's Thread version.");
+    assert(
+      Boolean(nonParticipantVersionPublish.error),
+      "A non-participant published another Thread's version."
+    );
+    const participantVersionPublish = await userB.client.rpc(
+      "publish_thread_version_as_post",
+      {
+        p_thread_id: threadId,
+        p_version_id: versionId,
+        p_title: "Participant title"
+      }
+    );
+    assert(
+      !participantVersionPublish.error &&
+        typeof participantVersionPublish.data === "string",
+      "A Thread continuation participant could not publish the version."
+    );
+    const repeatedParticipantPublish = await userB.client.rpc(
+      "publish_thread_version_as_post",
+      { p_thread_id: threadId, p_version_id: versionId, p_title: "Ignored retry title" }
+    );
+    assert(
+      !repeatedParticipantPublish.error &&
+        repeatedParticipantPublish.data === participantVersionPublish.data,
+      "Participant Thread version publication was not idempotent."
+    );
     const versionPublish = await userA.client.rpc("publish_thread_version_as_post", {
       p_thread_id: threadId,
-      p_version_id: versionId
+      p_version_id: versionId,
+      p_title: null
     });
     assert(
       !versionPublish.error && typeof versionPublish.data === "string",
       "Thread version was not published as a Post."
     );
-    const repeatedVersionPublish = await userA.client.rpc(
-      "publish_thread_version_as_post",
-      { p_thread_id: threadId, p_version_id: versionId }
-    );
     assert(
-      !repeatedVersionPublish.error &&
-        repeatedVersionPublish.data === versionPublish.data,
-      "Thread version publication was not idempotent."
+      versionPublish.data !== participantVersionPublish.data,
+      "Different Thread participants did not receive independent Posts."
     );
     const versionPost = await admin
       .from("posts")
@@ -231,6 +252,19 @@ async function run() {
         versionPost.data?.body ===
           "The first shared line.\nThe second shared line.",
       "Published Thread version Post did not preserve its author or ordered lines."
+    );
+    const participantVersionPost = await admin
+      .from("posts")
+      .select("author_user_id,title,body")
+      .eq("id", participantVersionPublish.data)
+      .single();
+    assert(
+      !participantVersionPost.error &&
+        participantVersionPost.data?.author_user_id === userB.userId &&
+        participantVersionPost.data?.title === "Participant title" &&
+        participantVersionPost.data?.body ===
+          "The first shared line.\nThe second shared line.",
+      "Participant publication did not preserve its author, edited title, or immutable lines."
     );
 
     const groupsBeforeRejectedInvite = await userA.client

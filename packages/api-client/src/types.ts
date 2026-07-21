@@ -220,6 +220,7 @@ export type PublishThreadVersionAsPostInput = {
   threadId: string;
   versionId: string;
   userId: string;
+  title?: string;
 };
 
 export type PublishThreadVersionAsPostResult = {

@@ -65,6 +65,10 @@ const relayDraftSemanticsMigration = await readFile(
   new URL("20260721000100_relay_draft_semantics.sql", canonicalMigrationsUrl),
   "utf8"
 );
+const threadVersionParticipantPostsMigration = await readFile(
+  new URL("20260721000200_thread_version_participant_posts.sql", canonicalMigrationsUrl),
+  "utf8"
+);
 const profileRepository = await readFile(
   new URL("./profile-repository.ts", import.meta.url),
   "utf8"
@@ -116,6 +120,21 @@ for (const required of [
   /posts_count\s*=\s*greatest/i
 ] as const) {
   assert(required.test(contentMigration), `Content migration is missing ${required}.`);
+}
+for (const required of [
+  /create\s+table\s+if\s+not\s+exists\s+public\.thread_version_posts/i,
+  /primary\s+key\s*\(version_id,\s*user_id\)/i,
+  /create\s+or\s+replace\s+function\s+public\.publish_thread_version_as_post[\s\S]*p_title\s+text\s+default\s+null/i,
+  /thread_row\.author_user_id\s*<>\s*actor_id[\s\S]*public\.thread_continuations/i,
+  /Only Thread participants can publish this version/i,
+  /coalesce\(nullif\(btrim\(p_title\),\s*''\),\s*version_row\.title\)/i,
+  /insert\s+into\s+public\.thread_version_posts/i,
+  /grant\s+execute\s+on\s+function\s+public\.publish_thread_version_as_post\(text,\s*text,\s*text\)/i
+] as const) {
+  assert(
+    required.test(threadVersionParticipantPostsMigration),
+    `Thread Version participant-post migration is missing ${required}.`
+  );
 }
 
 for (const required of [

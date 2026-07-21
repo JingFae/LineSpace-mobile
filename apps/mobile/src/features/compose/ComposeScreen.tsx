@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Image,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -44,8 +45,9 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
   const lockedVersionContent = getParam(params.lockedVersionContent) === "true";
   const contributorHandles = parseList(getParam(params.contributorHandles));
   const versionLines = parseVersionLines(getParam(params.versionLines));
+  const sourceVersionBody = getParam(params.fullPoemText) ?? "";
   const [title, setTitle] = useState(getParam(params.generatedTitle) ?? "");
-  const [body, setBody] = useState(getParam(params.fullPoemText) ?? "");
+  const [body, setBody] = useState(sourceVersionBody);
   const [tag, setTag] = useState("");
   const [mention, setMention] = useState(contributorHandles.map((handle) => `@${handle}`).join(" "));
   const [media, setMedia] = useState<PoemDraftMedia | null>(() => {
@@ -92,7 +94,13 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
   }, [currentUserId, editPostQuery.data]);
 
   const draftQuery = useQuery({
-    queryKey: ["compose-draft-session", currentUserId, sessionKey, "post", resumeDraftId ?? editPostId ?? "new"],
+    queryKey: [
+      "compose-draft-session",
+      currentUserId,
+      sessionKey,
+      "post",
+      resumeDraftId ?? editPostId ?? sourceVersionId ?? "new"
+    ],
     queryFn: async () => {
       if (!resumeDraftId) {
         return lineSpaceApi.createPoemDraft({ ownerId: currentUserId, mode: "draft" });
@@ -131,7 +139,7 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
         draftId,
         userId: currentUserId,
         title: title.trim(),
-        body: body.trim(),
+        body: (lockedVersionContent ? sourceVersionBody : body).trim(),
         byline: contributorHandles.length
           ? [...contributorHandles].sort((left, right) => left.localeCompare(right)).join(", ")
           : draftQuery.data?.collaborators[0]?.user.displayName ?? "",
@@ -186,7 +194,7 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
   };
 
   const goToPreview = () => {
-    if (!body.trim()) {
+    if (!(lockedVersionContent ? sourceVersionBody : body).trim()) {
       setError("Write at least one line before opening layout.");
       return;
     }
@@ -250,8 +258,8 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
 
       <View style={styles.editorPanel}>
         <TextInput
-        editable={!lockedVersionContent}
-        onChangeText={setTitle}
+          accessibilityLabel="Post title"
+          onChangeText={setTitle}
           placeholder="Title"
           placeholderTextColor={colors.tabMuted}
           returnKeyType="next"
@@ -260,16 +268,33 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
           value={title}
         />
         <View style={styles.divider} />
-        <TextInput
-          multiline
-        editable={!lockedVersionContent}
-        onChangeText={setBody}
-          placeholder="Write your lines"
-          placeholderTextColor={colors.tabMuted}
-          style={styles.lineInput}
-          textAlignVertical="top"
-          value={body}
-        />
+        {lockedVersionContent ? (
+          <Pressable
+            accessibilityHint="Thread Version poem lines cannot be edited"
+            accessibilityLabel="Locked Thread Version poem"
+            accessibilityRole="button"
+            onPress={() => setError("Thread Version poem lines cannot be edited.")}
+            style={styles.lockedPoem}
+          >
+            <View style={styles.lockedPoemHeader}>
+              <Text style={styles.lockedPoemLabel}>THREAD VERSION · LINES LOCKED</Text>
+              <Text style={styles.lockedPoemIcon}>⌁</Text>
+            </View>
+            <ScrollView nestedScrollEnabled style={styles.lockedPoemScroll}>
+              <Text selectable style={styles.lockedPoemText}>{body}</Text>
+            </ScrollView>
+          </Pressable>
+        ) : (
+          <TextInput
+            multiline
+            onChangeText={setBody}
+            placeholder="Write your lines"
+            placeholderTextColor={colors.tabMuted}
+            style={styles.lineInput}
+            textAlignVertical="top"
+            value={body}
+          />
+        )}
         <View style={styles.divider} />
         <TextInput
           autoCapitalize="none"
@@ -668,6 +693,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: spacing.md,
+    color: colors.ink,
+    fontFamily: "Georgia",
+    fontSize: 19,
+    lineHeight: 29
+  },
+  lockedPoem: {
+    minHeight: 190,
+    maxHeight: 300,
+    paddingTop: 12,
+    backgroundColor: colors.surface
+  },
+  lockedPoemHeader: {
+    paddingHorizontal: 20,
+    paddingBottom: 9,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between"
+  },
+  lockedPoemLabel: {
+    color: colors.profileMuted,
+    fontSize: 9,
+    lineHeight: 12,
+    letterSpacing: 1.2,
+    fontWeight: "700"
+  },
+  lockedPoemIcon: { color: colors.profileMuted, fontSize: 17, lineHeight: 20 },
+  lockedPoemScroll: { maxHeight: 246 },
+  lockedPoemText: {
+    paddingHorizontal: 20,
+    paddingBottom: spacing.lg,
     color: colors.ink,
     fontFamily: "Georgia",
     fontSize: 19,

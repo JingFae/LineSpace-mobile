@@ -351,6 +351,7 @@ export class ThreadRepository {
     threadId: string;
     versionId: string;
     userId: string;
+    title?: string;
   }): Promise<string> {
     const actorId = await getCurrentLinespaceUserId(this.client);
     if (!actorId || actorId !== input.userId) {
@@ -358,7 +359,8 @@ export class ThreadRepository {
     }
     const result = await this.client.rpc("publish_thread_version_as_post", {
       p_thread_id: input.threadId,
-      p_version_id: input.versionId
+      p_version_id: input.versionId,
+      p_title: input.title?.trim().slice(0, 180) || null
     });
     ensureDatabaseResult(result.error);
     if (typeof result.data !== "string" || !result.data) {

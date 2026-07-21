@@ -130,23 +130,28 @@ export async function handleApiRequest(
   if (threadVersionPublishRoute && method === "POST") {
     const actor = await authenticateRequest(context);
     if (!actor.ok) return actor.response;
+    const request = body as { title?: unknown } | undefined;
+    if (request?.title !== undefined && typeof request.title !== "string") {
+      return json(400, { code: "INVALID_THREAD_VERSION_TITLE" });
+    }
     try {
       return json(
         201,
         await api.publishThreadVersionAsPost({
           threadId: threadVersionPublishRoute.threadId,
           versionId: threadVersionPublishRoute.versionId,
-          userId: actor.user.id
+          userId: actor.user.id,
+          ...(typeof request?.title === "string" ? { title: request.title } : {})
         })
       );
     } catch (error) {
       if (
         error instanceof Error &&
-        error.message.includes("Only the Thread author")
+        error.message.includes("Only Thread participants")
       ) {
         return json(403, {
           code: "FORBIDDEN",
-          message: "Only the Thread author can publish this version."
+          message: "Only Thread participants can publish this version."
         });
       }
       return profileRepositoryErrorResponse(error);

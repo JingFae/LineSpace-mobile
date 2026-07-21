@@ -160,7 +160,7 @@ export class HttpLineSpaceApi implements LineSpaceApi {
   ): Promise<PublishThreadVersionAsPostResult> {
     return this.postJson<PublishThreadVersionAsPostResult>(
       `/v1/threads/${encodeURIComponent(input.threadId)}/versions/${encodeURIComponent(input.versionId)}/publish`,
-      {}
+      input.title !== undefined ? { title: input.title } : {}
     );
   }
 

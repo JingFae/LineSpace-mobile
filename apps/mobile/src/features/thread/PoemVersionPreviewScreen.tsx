@@ -134,6 +134,12 @@ export function PoemVersionPreviewScreen({
   ]);
   const currentVersion = versions[Math.min(pageIndex, Math.max(versions.length - 1, 0))];
   const creativeThread = detail ? adaptThreadToCreativeViewModel(detail.thread) : null;
+  const canPostVersion = Boolean(
+    detail &&
+      currentUserId &&
+      (detail.thread.author.id === currentUserId ||
+        allContinuations.some((continuation) => continuation.author.id === currentUserId))
+  );
   const media: ThreadMediaPreset = detail
     ? getThreadMedia(detail.thread)
     : { ...threadMediaPresets.paper, uri: undefined };
@@ -179,6 +185,13 @@ export function PoemVersionPreviewScreen({
 
   const handlePost = () => {
     if (!currentVersion || !creativeThread) return;
+    if (!canPostVersion) {
+      setNotice({
+        id: `${currentVersion.id}:post-forbidden`,
+        message: "Join this Thread before publishing one of its versions."
+      });
+      return;
+    }
     const sortedContributors = [...new Map(
       currentVersion.lines.map((line) => [line.author.id, line.author])
     ).values()].sort((left, right) => left.handle.localeCompare(right.handle));
@@ -186,6 +199,7 @@ export function PoemVersionPreviewScreen({
       pathname: "/(tabs)/compose",
       params: {
         type: "post",
+        session: `thread-version-${currentVersion.id}-${Date.now()}`,
         sourceThreadId: currentVersion.threadId,
         sourceVersionId: currentVersion.id,
         generatedTitle: currentVersion.title,
@@ -353,7 +367,11 @@ export function PoemVersionPreviewScreen({
               <Pressable
                 accessibilityRole="button"
                 onPress={handlePost}
-                style={[styles.versionActionButton, styles.postActionButton]}
+                style={[
+                  styles.versionActionButton,
+                  styles.postActionButton,
+                  !canPostVersion && styles.postActionButtonUnavailable
+                ]}
               >
                 <Text style={styles.postActionText}>Post</Text>
               </Pressable>
@@ -810,6 +828,7 @@ const styles = StyleSheet.create({
   },
   versionActionText: { color: colors.ink, fontSize: 15, fontWeight: "700" },
   postActionButton: { backgroundColor: "#E7CC88" },
+  postActionButtonUnavailable: { opacity: 0.52 },
   postActionText: { color: colors.ink, fontSize: 15, fontWeight: "700" },
   previewMenu: {
     position: "absolute",

@@ -224,7 +224,14 @@ export class DraftRepository {
     if (input.byline !== undefined) patch.byline = input.byline.trim().slice(0, 120);
     if (input.tags !== undefined) patch.tags = input.tags.slice(0, 32);
     if (input.mentions !== undefined) patch.mentions = input.mentions.slice(0, 64);
-    if (input.versionLines !== undefined) patch.version_lines = input.versionLines;
+    if (input.versionLines !== undefined) {
+      patch.version_lines = input.versionLines.map((line) => ({
+        lineNumber: line.lineNumber,
+        text: line.text,
+        authorId: line.author.id,
+        ...(line.likes !== undefined ? { likes: line.likes } : {})
+      }));
+    }
     if (input.media !== undefined) patch.media = input.media;
     if (input.settings !== undefined) {
       const current = await this.getPoemDraft(input.draftId);
@@ -445,7 +452,11 @@ export class DraftRepository {
       cursor_line: number | null;
       last_seen_at: string;
     }> | null) ?? [];
-    const ownerIds = [row.owner_user_id, ...collaboratorRows.map((item) => item.user_id)];
+    const ownerIds = [
+      row.owner_user_id,
+      ...collaboratorRows.map((item) => item.user_id),
+      ...versionLineAuthorIds(row.version_lines)
+    ];
     const profiles = await loadProfiles(this.client, ownerIds);
     const owner = profiles.get(row.owner_user_id);
     const collaborators = [
@@ -614,5 +625,13 @@ function parseVersionLines(
         ...(typeof source.likes === "number" ? { likes: source.likes } : {})
       }
     ];
+  });
+}
+
+function versionLineAuthorIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const source = objectValue(item);
+    return typeof source.authorId === "string" ? [source.authorId] : [];
   });
 }

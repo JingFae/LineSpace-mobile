@@ -40,7 +40,7 @@ export type PoemVersionViewModel = {
   threadId: string;
   leafContinuationId: string | null;
   title: string;
-  titleSource: "mock" | "fallback";
+  titleSource: "author" | "mock" | "fallback";
   criterion?: PoemVersionCriterion;
   lines: PoemVersionLineViewModel[];
   contributorIds: string[];
@@ -310,6 +310,20 @@ export function generateMockPoemTitle(lines: readonly PoemVersionLineViewModel[]
   return { title, titleSource: "mock" as const };
 }
 
+export function resolvePoemVersionTitle(
+  thread: PoetryThread,
+  lines: readonly PoemVersionLineViewModel[]
+) {
+  const authoredTitle = thread.title?.trim();
+  if (
+    authoredTitle &&
+    !/^(poem relay|untitled poem relay|untitled thread)$/i.test(authoredTitle)
+  ) {
+    return { title: authoredTitle, titleSource: "author" as const };
+  }
+  return generateMockPoemTitle(lines);
+}
+
 export function getFullPoemText(version: PoemVersionViewModel) {
   return version.lines.map((line) => line.text).join("\n\n");
 }
@@ -339,7 +353,7 @@ function buildVersionFromPath(
       parentContinuationId: continuation.parentContinuationId
     }))
   ];
-  const titleResult = generateMockPoemTitle(lines);
+  const titleResult = resolvePoemVersionTitle(creativeThread.thread, lines);
   const textLength = lines.reduce((total, line) => total + line.text.length, 0);
   const leaf = path[path.length - 1];
 

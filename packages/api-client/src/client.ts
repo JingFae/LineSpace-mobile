@@ -473,10 +473,21 @@ export class MockLineSpaceApi implements LineSpaceApi {
     input: PublishThreadVersionAsPostInput
   ): Promise<PublishThreadVersionAsPostResult> {
     const thread = this.threads.find((item) => item.id === input.threadId);
-    if (!thread || thread.author.id !== input.userId) {
-      throw new Error("Only the Thread author can publish this version");
+    const participant = Boolean(
+      thread &&
+        (thread.author.id === input.userId ||
+          this.continuations.some(
+            (continuation) =>
+              continuation.threadId === input.threadId &&
+              continuation.author.id === input.userId
+          ))
+    );
+    if (!thread || !participant) {
+      throw new Error("Only Thread participants can publish this version");
     }
-    const postId = `post-from-version-${input.versionId}`;
+    const owner = this.profiles.find((profile) => profile.id === input.userId);
+    if (!owner) throw new Error("Thread participant was not found");
+    const postId = `post-from-version-${input.versionId}-${input.userId}`;
     const existing = this.poems.find((item) => item.id === postId);
     if (existing) {
       return {
@@ -495,9 +506,9 @@ export class MockLineSpaceApi implements LineSpaceApi {
     const now = new Date().toISOString();
     const poem: PoemSummary = {
       id: postId,
-      title: thread.title ?? "Thread version",
+      title: input.title?.trim() || thread.title || "Thread version",
       lines: [thread.startingContent ?? thread.content, ...continuationLines.map((item) => item.content)],
-      author: { ...thread.author },
+      author: profileToUser(owner),
       contributorsCount: new Set([
         thread.author.id,
         ...continuationLines.map((item) => item.author.id)
