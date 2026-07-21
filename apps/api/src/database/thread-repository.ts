@@ -454,7 +454,7 @@ export class ThreadRepository {
           id: row.id,
           author,
           ...(row.title ? { title: row.title } : {}),
-          content: row.starting_content,
+          content: row.rules ?? row.prompt,
           startingContent: row.starting_content,
           ...(row.rules ? { rules: row.rules } : {}),
           tags: row.tags ?? [],

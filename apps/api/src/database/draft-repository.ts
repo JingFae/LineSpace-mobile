@@ -37,6 +37,8 @@ type DraftRow = {
   status: "editing" | "ready" | "published";
   title: string;
   body: string;
+  relay_first_line: string | null;
+  relay_rules: string | null;
   byline: string;
   tags: string[] | null;
   mentions: string[] | null;
@@ -50,7 +52,7 @@ type DraftRow = {
 };
 
 const draftSelect =
-  "id,owner_user_id,mode,status,title,body,byline,tags,mentions,version_lines,media,settings,layout,version,created_at,updated_at";
+  "id,owner_user_id,mode,status,title,body,relay_first_line,relay_rules,byline,tags,mentions,version_lines,media,settings,layout,version,created_at,updated_at";
 
 const poemDesignCatalog: PoemDesignCatalog = {
   templates: [
@@ -213,6 +215,12 @@ export class DraftRepository {
     const patch: Record<string, unknown> = {};
     if (input.title !== undefined) patch.title = input.title.trim().slice(0, 180);
     if (input.body !== undefined) patch.body = input.body;
+    if (input.relayFirstLine !== undefined) {
+      patch.relay_first_line = input.relayFirstLine.trim().slice(0, 1000);
+    }
+    if (input.relayRules !== undefined) {
+      patch.relay_rules = input.relayRules.trim().slice(0, 5000);
+    }
     if (input.byline !== undefined) patch.byline = input.byline.trim().slice(0, 120);
     if (input.tags !== undefined) patch.tags = input.tags.slice(0, 32);
     if (input.mentions !== undefined) patch.mentions = input.mentions.slice(0, 64);
@@ -471,6 +479,8 @@ export class DraftRepository {
       status: row.status,
       title: row.title,
       body: row.body,
+      ...(row.relay_first_line !== null ? { relayFirstLine: row.relay_first_line } : {}),
+      ...(row.relay_rules !== null ? { relayRules: row.relay_rules } : {}),
       byline: row.byline,
       tags: row.tags ?? [],
       mentions: row.mentions ?? [],

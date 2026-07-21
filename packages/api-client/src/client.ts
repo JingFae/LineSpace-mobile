@@ -251,6 +251,8 @@ export class MockLineSpaceApi implements LineSpaceApi {
     const draft = this.requireEditableDraft(input.draftId, input.userId);
     if (input.title !== undefined) draft.title = input.title;
     if (input.body !== undefined) draft.body = input.body;
+    if (input.relayFirstLine !== undefined) draft.relayFirstLine = input.relayFirstLine;
+    if (input.relayRules !== undefined) draft.relayRules = input.relayRules;
     if (input.byline !== undefined) draft.byline = input.byline;
     if (input.tags !== undefined) draft.tags = [...input.tags];
     if (input.mentions !== undefined) draft.mentions = [...input.mentions];
@@ -415,12 +417,17 @@ export class MockLineSpaceApi implements LineSpaceApi {
     const owner = this.profiles.find((profile) => profile.id === draft.ownerId);
     if (!owner) throw new Error("Thread owner was not found");
     const now = new Date().toISOString();
+    const title = draft.title.trim() || "poem relay";
+    const startingContent = draft.relayFirstLine?.trim() || draft.body.trim();
+    const rules = draft.relayRules?.trim();
+    if (!startingContent) throw new Error("A poem relay needs a first line");
     const thread: PoetryThread = {
       id: `thread-draft-${++this.threadSequence}`,
       author: profileToUser(owner),
-      title: draft.title.trim() || undefined,
-      content: draft.body.trim() || "A new poem relay is waiting for its first line.",
-      rules: draft.body.trim() || undefined,
+      title,
+      content: rules || title,
+      startingContent,
+      ...(rules ? { rules } : {}),
       tags: [...draft.tags],
       mentions: [...draft.mentions],
       visibility: draft.settings.visibility,
@@ -432,6 +439,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
       metrics: { likes: 0, continuations: 0, shares: 0 },
       viewer: { liked: false }
     };
+    draft.title = title;
     draft.status = "published";
     draft.updatedAt = now;
     draft.version += 1;
@@ -443,7 +451,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
         kind: "thread",
         threadId: thread.id,
         title: thread.title ?? "Untitled poem relay",
-        excerpt: thread.content,
+        excerpt: thread.startingContent ?? thread.content,
         tags: [...thread.tags ?? []],
         finishedAt: now,
         highlightCount: 0,
@@ -455,7 +463,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
     this.notifyMentions(owner.id, thread.mentions ?? [], {
       kind: "thread",
       title: thread.title ?? "Untitled poem relay",
-      excerpt: thread.content,
+      excerpt: thread.startingContent ?? thread.content,
       threadId: thread.id
     });
     return { draft: cloneDraft(draft), thread: cloneThread(thread) };
@@ -488,7 +496,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
     const poem: PoemSummary = {
       id: postId,
       title: thread.title ?? "Thread version",
-      lines: [thread.content, ...continuationLines.map((item) => item.content)],
+      lines: [thread.startingContent ?? thread.content, ...continuationLines.map((item) => item.content)],
       author: { ...thread.author },
       contributorsCount: new Set([
         thread.author.id,

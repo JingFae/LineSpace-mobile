@@ -38,6 +38,7 @@ const initialSettings: PoemDraftSettings = {
 export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
   const { user: authUser } = useAuth();
   const currentUserId = authUser?.id ?? "";
+  const resumeDraftId = getParam(params.draftId);
   const editPostId = getParam(params.editPostId);
   const sourceVersionId = getParam(params.sourceVersionId);
   const lockedVersionContent = getParam(params.lockedVersionContent) === "true";
@@ -57,6 +58,7 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
   const [settings, setSettings] = useState<PoemDraftSettings>(initialSettings);
   const [error, setError] = useState<string | null>(null);
   const editInitialized = useRef(false);
+  const draftInitialized = useRef(false);
 
   const editPostQuery = useQuery({
     queryKey: ["compose-edit-post", editPostId, currentUserId],
@@ -90,13 +92,36 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
   }, [currentUserId, editPostQuery.data]);
 
   const draftQuery = useQuery({
-    queryKey: ["compose-draft-session", currentUserId, sessionKey, "post", editPostId ?? "new"],
-    queryFn: () =>
-      lineSpaceApi.createPoemDraft({ ownerId: currentUserId, mode: "draft" }),
+    queryKey: ["compose-draft-session", currentUserId, sessionKey, "post", resumeDraftId ?? editPostId ?? "new"],
+    queryFn: async () => {
+      if (!resumeDraftId) {
+        return lineSpaceApi.createPoemDraft({ ownerId: currentUserId, mode: "draft" });
+      }
+      const draft = await lineSpaceApi.getPoemDraft(resumeDraftId);
+      if (!draft || draft.ownerId !== currentUserId || draft.mode !== "draft") {
+        throw new Error("Draft was not found");
+      }
+      return draft;
+    },
     enabled: currentUserId.length > 0,
     retry: 1,
     staleTime: Infinity
   });
+
+  useEffect(() => {
+    const draft = draftQuery.data;
+    if (!resumeDraftId || !draft || draftInitialized.current) return;
+    draftInitialized.current = true;
+    setTitle(draft.title);
+    setBody(draft.body);
+    setTag(draft.tags.map((value) => `#${value}`).join(" "));
+    setMention(draft.mentions.map((value) => `@${value.replace(/^@/, "")}`).join(" "));
+    setMedia(draft.media ? { ...draft.media } : null);
+    setSettings({
+      ...draft.settings,
+      audienceUserIds: [...draft.settings.audienceUserIds]
+    });
+  }, [currentUserId, draftQuery.data, resumeDraftId]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {

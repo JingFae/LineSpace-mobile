@@ -17,10 +17,14 @@ export default function ComposeRoute() {
     mediaUri?: string;
     mediaKind?: "image" | "video";
     lockedVersionContent?: string;
+    draftId?: string;
+    editPostId?: string;
   }>();
   if (params.type === "post") {
     return <ComposeScreen params={params} sessionKey={params.session ?? "default"} />;
   }
-  if (params.type === "thread") return <ThreadComposeScreen sessionKey={params.session ?? "default"} />;
+  if (params.type === "thread") {
+    return <ThreadComposeScreen draftId={params.draftId} sessionKey={params.session ?? "default"} />;
+  }
   return <CreateHomeScreen />;
 }

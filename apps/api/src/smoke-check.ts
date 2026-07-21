@@ -309,6 +309,32 @@ async function main() {
     const loadedPoem = await httpApi.getPoem(published.poem.id, profile.id);
     assert(loadedPoem?.id === published.poem.id, "Published poem was not available over HTTP.");
 
+    const relayDraft = await httpApi.createPoemDraft({ ownerId: profile.id, mode: "relay" });
+    const updatedRelayDraft = await httpApi.updatePoemDraft({
+      draftId: relayDraft.id,
+      userId: profile.id,
+      title: "",
+      body: "The first cloud remembers my name.",
+      relayFirstLine: "The first cloud remembers my name.",
+      relayRules: "Continue with one image from the sky."
+    });
+    assert(
+      updatedRelayDraft.relayFirstLine === "The first cloud remembers my name." &&
+        updatedRelayDraft.relayRules === "Continue with one image from the sky.",
+      "Relay first-line and rules fields did not cross the HTTP draft boundary."
+    );
+    const publishedRelay = await httpApi.publishThreadDraft({
+      draftId: relayDraft.id,
+      userId: profile.id
+    });
+    assert(
+      publishedRelay.thread.title === "poem relay" &&
+        publishedRelay.thread.startingContent === "The first cloud remembers my name." &&
+        publishedRelay.thread.content === "Continue with one image from the sky." &&
+        publishedRelay.thread.rules === "Continue with one image from the sky.",
+      "Relay publication did not preserve the default title, first line, and rules."
+    );
+
     const feed = await httpApi.listFeed({
       section: "latest",
       filter: "all",

@@ -61,6 +61,10 @@ const engagementProfileInboxPostManagementMigration = await readFile(
   new URL("20260720000600_engagement_profile_inbox_post_management.sql", canonicalMigrationsUrl),
   "utf8"
 );
+const relayDraftSemanticsMigration = await readFile(
+  new URL("20260721000100_relay_draft_semantics.sql", canonicalMigrationsUrl),
+  "utf8"
+);
 const profileRepository = await readFile(
   new URL("./profile-repository.ts", import.meta.url),
   "utf8"
@@ -382,6 +386,19 @@ assert(
     /normalizeThreadRows/.test(threadRepository),
   "Thread reads must remain available while the saves_count migration rolls out."
 );
+for (const required of [
+  /add\s+column\s+if\s+not\s+exists\s+relay_first_line/i,
+  /add\s+column\s+if\s+not\s+exists\s+relay_rules/i,
+  /resolved_title\s*:=\s*coalesce\([\s\S]*'poem relay'/i,
+  /resolved_first_line[\s\S]*draft_row\.relay_first_line/i,
+  /resolved_rules[\s\S]*draft_row\.relay_rules/i,
+  /grant\s+update\s*\(relay_first_line,\s*relay_rules\)/i
+] as const) {
+  assert(
+    required.test(relayDraftSemanticsMigration),
+    `Relay draft semantics migration is missing ${required}.`
+  );
+}
 assert(
   /grant\s+update\s*\(\s*display_name,\s*avatar_url,\s*avatar_color,\s*bio\s*\)/i.test(
     userDomainMigration

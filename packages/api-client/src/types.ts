@@ -128,6 +128,10 @@ export type PoemDraft = {
   status: PoemDraftStatus;
   title: string;
   body: string;
+  /** Relay-only opening line. Kept separate from the theme/rules. */
+  relayFirstLine?: string;
+  /** Relay-only writing theme or rules. */
+  relayRules?: string;
   byline: string;
   tags: string[];
   mentions: string[];
@@ -156,6 +160,8 @@ export type UpdatePoemDraftInput = {
   userId: string;
   title?: string;
   body?: string;
+  relayFirstLine?: string;
+  relayRules?: string;
   byline?: string;
   tags?: string[];
   mentions?: string[];

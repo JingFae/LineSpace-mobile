@@ -159,12 +159,13 @@ export function getDefaultMediaPreset() {
 }
 
 export function getThreadWritingPrompt(thread: PoetryThread) {
-  return creativeThreadPresets[thread.id]?.writingPrompt ?? thread.content;
+  return creativeThreadPresets[thread.id]?.writingPrompt ?? thread.rules ?? thread.content;
 }
 
 export function getThreadStartingContent(thread: PoetryThread) {
   const presetContent = creativeThreadPresets[thread.id]?.startingContent;
   if (presetContent) return presetContent;
+  if (thread.startingContent?.trim()) return thread.startingContent.trim();
   return deriveStartingContentFallback(thread.content);
 }
 
