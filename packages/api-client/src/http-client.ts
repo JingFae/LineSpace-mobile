@@ -1,6 +1,10 @@
 import type {
+  ApplyCommunitySparkInput,
+  ApplyCommunitySparkResult,
   AiAssistRequest,
   AiAssistResponse,
+  CommunitySparkRequest,
+  CommunitySparkResponse,
   CreatePoemCommentInput,
   CreateInboxGroupInput,
   ContinuationDetail,
@@ -558,6 +562,26 @@ export class HttpLineSpaceApi implements LineSpaceApi {
 
   async requestAiAssist(request: AiAssistRequest): Promise<AiAssistResponse> {
     return this.postJson<AiAssistResponse>("/v1/ai/assist", request);
+  }
+
+  async requestCommunitySpark(
+    request: CommunitySparkRequest
+  ): Promise<CommunitySparkResponse> {
+    const { poemId, ...body } = request;
+    return this.postJson<CommunitySparkResponse>(
+      `/v1/poems/${encodeURIComponent(poemId)}/community-spark`,
+      body
+    );
+  }
+
+  async applyCommunitySpark(
+    input: ApplyCommunitySparkInput
+  ): Promise<ApplyCommunitySparkResult> {
+    const { poemId, ...body } = input;
+    return this.postJson<ApplyCommunitySparkResult>(
+      `/v1/poems/${encodeURIComponent(poemId)}/community-spark/apply`,
+      body
+    );
   }
 
   private async getJson<T>(path: string): Promise<T> {

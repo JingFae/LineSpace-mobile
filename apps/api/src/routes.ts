@@ -1,6 +1,8 @@
 import {
+  type ApplyCommunitySparkInput,
   type AuthUser,
   type AiAssistRequest,
+  type CommunitySparkRequest,
   type CreateContinuationInput,
   type CreatePoemDraftInput,
   type CreatePoemCommentInput,
@@ -33,6 +35,7 @@ import {
 import { DomainRepositoryError } from "./database/core/errors.js";
 import { ProfileRepositoryError } from "./database/profile/profile.errors.js";
 import { requestThreadVersionRecommendation } from "./ai/thread-version-recommendation.js";
+import { requestCommunitySpark } from "./ai/community-spark.js";
 
 let lineSpaceRepositoryPromise:
   | Promise<typeof import("./database/linespace-repository.js")>
@@ -633,6 +636,84 @@ export async function handleApiRequest(
         const request = body as Omit<CreatePoemCommentInput, "poemId" | "userId">;
         if (typeof request?.body !== "string" || !request.body.trim()) return json(400, { code: "INVALID_COMMENT" });
         return json(201, await api.createPoemComment({ poemId: poemRoute.poemId, userId: actor.user.id, body: request.body, parentCommentId: request.parentCommentId }));
+      }
+      if (method === "POST" && poemRoute.resource === "community-spark") {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        const request = (body ?? {}) as Partial<
+          Omit<CommunitySparkRequest, "poemId" | "userId">
+        >;
+        if (!isCommunitySparkRequest(request)) {
+          return json(400, {
+            code: "INVALID_COMMUNITY_SPARK_REQUEST",
+            message: "The Community Spark request is invalid."
+          });
+        }
+        const poem = await api.getPoem(poemRoute.poemId, actor.user.id);
+        if (!poem) return json(404, { code: "POEM_NOT_FOUND" });
+        if (poem.author.id !== actor.user.id) {
+          return json(403, {
+            code: "COMMUNITY_SPARK_FORBIDDEN",
+            message: "Only the post author can open Community Spark."
+          });
+        }
+        try {
+          return json(
+            200,
+            await requestCommunitySpark({
+              poem,
+              workingCopy: request.workingCopy,
+              previousSuggestions: request.previousSuggestions
+            })
+          );
+        } catch (error) {
+          const code = error instanceof Error ? error.message : "LLM_REQUEST_FAILED";
+          return json(503, {
+            code: code.startsWith("LLM_") ? code : "LLM_REQUEST_FAILED",
+            message: "Creative Spark is resting for a moment. Please try again."
+          });
+        }
+      }
+      if (method === "POST" && poemRoute.resource === "community-spark-apply") {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        const request = (body ?? {}) as Partial<
+          Omit<ApplyCommunitySparkInput, "poemId" | "userId">
+        >;
+        if (!isApplyCommunitySparkRequest(request)) {
+          return json(400, {
+            code: "INVALID_COMMUNITY_SPARK_APPLICATION",
+            message: "The selected suggestion cannot be applied."
+          });
+        }
+        try {
+          return json(
+            200,
+            await api.applyCommunitySpark({
+              poemId: poemRoute.poemId,
+              userId: actor.user.id,
+              suggestionId: request.suggestionId,
+              baseRevision: request.baseRevision,
+              proposedLines: request.proposedLines,
+              sourceCommentId: request.sourceCommentId
+            })
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "";
+          if (/older version|stale/i.test(message)) {
+            return json(409, {
+              code: "COMMUNITY_SPARK_STALE",
+              message: "This idea was made for an older version. Refresh for new ideas."
+            });
+          }
+          if (/author|access|actor|forbidden/i.test(message)) {
+            return json(403, { code: "COMMUNITY_SPARK_FORBIDDEN" });
+          }
+          return json(400, {
+            code: "COMMUNITY_SPARK_APPLY_FAILED",
+            message: "This idea could not be applied."
+          });
+        }
       }
       if (method === "POST" && poemRoute.resource === "share") {
         const actor = await authenticateRequest(context);
@@ -1371,7 +1452,15 @@ function isPoemCollectionKind(value: string | undefined): value is PoemCollectio
 }
 
 type ParsedPoemRoute =
-  | { poemId: string; resource: "poem" | "comments" | "share" }
+  | {
+      poemId: string;
+      resource:
+        | "poem"
+        | "comments"
+        | "share"
+        | "community-spark"
+        | "community-spark-apply";
+    }
   | { poemId: string; resource: "comment-collection"; commentId: string; collection: PoemCollectionKind };
 
 function parsePoemRoute(pathname: string): ParsedPoemRoute | null {
@@ -1380,6 +1469,16 @@ function parsePoemRoute(pathname: string): ParsedPoemRoute | null {
   if (segments.length === 3) return { poemId: segments[2], resource: "poem" };
   if (segments.length === 4 && (segments[3] === "comments" || segments[3] === "share")) {
     return { poemId: segments[2], resource: segments[3] };
+  }
+  if (segments.length === 4 && segments[3] === "community-spark") {
+    return { poemId: segments[2], resource: "community-spark" };
+  }
+  if (
+    segments.length === 5 &&
+    segments[3] === "community-spark" &&
+    segments[4] === "apply"
+  ) {
+    return { poemId: segments[2], resource: "community-spark-apply" };
   }
   if (
     segments.length === 7 &&
@@ -1391,6 +1490,60 @@ function parsePoemRoute(pathname: string): ParsedPoemRoute | null {
     return { poemId: segments[2], resource: "comment-collection", commentId: segments[4], collection: segments[6] };
   }
   return null;
+}
+
+function isCommunitySparkRequest(
+  value: Partial<Omit<CommunitySparkRequest, "poemId" | "userId">>
+): boolean {
+  const previous = value.previousSuggestions;
+  if (
+    previous !== undefined &&
+    (!Array.isArray(previous) ||
+      previous.length > 12 ||
+      previous.some((item) => typeof item !== "string" || item.length > 300))
+  ) {
+    return false;
+  }
+  const workingCopy = value.workingCopy;
+  return (
+    workingCopy === undefined ||
+    (typeof workingCopy.title === "string" &&
+      workingCopy.title.length <= 180 &&
+      Array.isArray(workingCopy.lines) &&
+      workingCopy.lines.length > 0 &&
+      workingCopy.lines.length <= 200 &&
+      workingCopy.lines.every(
+        (line) => typeof line === "string" && line.length > 0 && line.length <= 2_000
+      ) &&
+      Array.isArray(workingCopy.tags) &&
+      workingCopy.tags.length <= 32 &&
+      workingCopy.tags.every(
+        (tag) => typeof tag === "string" && tag.length > 0 && tag.length <= 64
+      ))
+  );
+}
+
+function isApplyCommunitySparkRequest(
+  value: Partial<Omit<ApplyCommunitySparkInput, "poemId" | "userId">>
+): value is Omit<ApplyCommunitySparkInput, "poemId" | "userId"> {
+  return (
+    typeof value.suggestionId === "string" &&
+    value.suggestionId.length > 0 &&
+    value.suggestionId.length <= 200 &&
+    typeof value.baseRevision === "string" &&
+    value.baseRevision.length > 0 &&
+    value.baseRevision.length <= 2_500 &&
+    Array.isArray(value.proposedLines) &&
+    value.proposedLines.length > 0 &&
+    value.proposedLines.length <= 200 &&
+    value.proposedLines.every(
+      (line) => typeof line === "string" && line.trim().length > 0 && line.length <= 2_000
+    ) &&
+    (value.sourceCommentId === undefined ||
+      (typeof value.sourceCommentId === "string" &&
+        value.sourceCommentId.length > 0 &&
+        value.sourceCommentId.length <= 200))
+  );
 }
 
 function parseInboxMessagesRoute(pathname: string): string | null {

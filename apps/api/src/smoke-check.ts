@@ -179,6 +179,45 @@ async function main() {
   );
   assert(comment.author.id === "user-ray", "Comment experience smoke setup failed.");
 
+  const spark = await mockApi.requestCommunitySpark({
+    poemId: "poem-light",
+    userId: "user-lili"
+  });
+  assert(
+    spark.suggestions.length === 3 && spark.suggestions[0]?.source,
+    "Community Spark did not return three ideas with a reader source."
+  );
+  const sparkSuggestion = spark.suggestions[0]!;
+  const appliedSpark = await mockApi.applyCommunitySpark({
+    poemId: spark.poemId,
+    userId: "user-lili",
+    suggestionId: sparkSuggestion.id,
+    baseRevision: spark.baseRevision,
+    proposedLines: sparkSuggestion.proposedLines,
+    sourceCommentId: sparkSuggestion.source?.commentId
+  });
+  assert(
+    appliedSpark.reply !== null &&
+      appliedSpark.reply.parentCommentId === sparkSuggestion.source?.commentId &&
+      appliedSpark.reply.body === "this comment gives me inspiration" &&
+      appliedSpark.poem.credits?.commentContributors.some(
+        (person) => person.handle === sparkSuggestion.source?.author.handle
+      ),
+    "Applying Community Spark did not reply to and credit the source reader."
+  );
+  const idempotentSpark = await mockApi.applyCommunitySpark({
+    poemId: spark.poemId,
+    userId: "user-lili",
+    suggestionId: sparkSuggestion.id,
+    baseRevision: spark.baseRevision,
+    proposedLines: sparkSuggestion.proposedLines,
+    sourceCommentId: sparkSuggestion.source?.commentId
+  });
+  assert(
+    idempotentSpark.reply?.id === appliedSpark.reply.id,
+    "Community Spark repeated its reply when the same suggestion was applied twice."
+  );
+
   const health = await handleApiRequest("GET", "/health", new URLSearchParams());
   assert(health.status === 200, "The API health handler did not return 200.");
 

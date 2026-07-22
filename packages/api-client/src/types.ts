@@ -532,6 +532,64 @@ export type PoemSummary = {
   comments?: PoemComment[];
 };
 
+export type CommunitySparkKind = "revise" | "continue";
+
+export type CommunitySparkWorkingCopy = {
+  title: string;
+  lines: string[];
+  tags: string[];
+};
+
+export type CommunitySparkSource = {
+  commentId: string;
+  excerpt: string;
+  author: UserProfile;
+};
+
+export type CommunitySparkSuggestion = {
+  id: string;
+  kind: CommunitySparkKind;
+  suggestion: string;
+  preview: string;
+  proposedLines: string[];
+  source: CommunitySparkSource | null;
+};
+
+export type CommunitySparkRequest = {
+  poemId: string;
+  userId: string;
+  previousSuggestions?: string[];
+  /** The unsaved editor state. Comments and ownership are always loaded server-side. */
+  workingCopy?: CommunitySparkWorkingCopy;
+};
+
+export type CommunitySparkResponse = {
+  id: string;
+  poemId: string;
+  /** Opaque revision of the poem lines used to prevent stale overwrites. */
+  baseRevision: string;
+  summary: string;
+  suggestions: CommunitySparkSuggestion[];
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+  };
+};
+
+export type ApplyCommunitySparkInput = {
+  poemId: string;
+  userId: string;
+  suggestionId: string;
+  baseRevision: string;
+  proposedLines: string[];
+  sourceCommentId?: string;
+};
+
+export type ApplyCommunitySparkResult = {
+  poem: PoemSummary;
+  reply: PoemComment | null;
+};
+
 export type CreatePoemCommentInput = {
   poemId: string;
   userId: string;

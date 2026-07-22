@@ -31,6 +31,9 @@ Current migration order:
 20260719000200_thread_persistence.sql
 20260719000300_content_draft_inbox_persistence.sql
 20260719000400_group_content_sharing.sql
+...
+20260723000100_community_spark.sql
+20260723000200_guest_public_content_access.sql
 ```
 
 ## Current cloud scope
@@ -48,6 +51,8 @@ The canonical chain contains:
 - actor-derived Post/Thread/continuation sharing into direct and group Inbox,
   including durable click targets and derived share counters
 - author-only, idempotent Thread Version publication into a durable Post
+- author-only Community Spark application with revision checks, source-comment
+  replies, and durable comment-contributor credits
 - RLS, grants, triggers, and JWT-scoped RPC functions for these domains
 
 The files under `docs/archive/database/deferred-migrations/` remain historical

@@ -1,4 +1,6 @@
 import type {
+  ApplyCommunitySparkInput,
+  ApplyCommunitySparkResult,
   AiAssistRequest,
   AiAssistResponse,
   CreateInboxGroupInput,
@@ -290,6 +292,16 @@ export class SupabaseLineSpaceApi implements LineSpaceApi {
 
   async requestAiAssist(_request: AiAssistRequest): Promise<AiAssistResponse> {
     throw new Error("AI service is handled by the API route");
+  }
+
+  applyCommunitySpark(
+    input: ApplyCommunitySparkInput
+  ): Promise<ApplyCommunitySparkResult> {
+    return this.posts.applyCommunitySpark(input);
+  }
+
+  async requestCommunitySpark(): Promise<never> {
+    throw new Error("Community Spark generation is handled by the API route");
   }
 
   createPoemComment(input: CreatePoemCommentInput) {

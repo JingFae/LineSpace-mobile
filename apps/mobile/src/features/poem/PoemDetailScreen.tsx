@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -27,12 +27,18 @@ import {
   VersionPostLayoutCard
 } from "@linespace/ui";
 import { colors, radius, spacing } from "@linespace/tokens";
-import type { PoemComment, PoemCreditPerson, PoemSummary } from "@linespace/api-client";
+import type {
+  ApplyCommunitySparkResult,
+  PoemComment,
+  PoemCreditPerson,
+  PoemSummary
+} from "@linespace/api-client";
 import { lineSpaceApi } from "@/services/lineSpaceApi";
 import { useAuth } from "@/auth/AuthSessionProvider";
 import { getPoemLayoutPresentation } from "./poemPresentation";
 import { usePoemEngagement } from "./usePoemEngagement";
 import { useGuestAccess } from "@/auth/GuestAccessProvider";
+import { CommunitySparkCards } from "./CommunitySparkCards";
 
 declare const require: (path: string) => ImageSourcePropType;
 
@@ -57,6 +63,9 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
   const [commentBusy, setCommentBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [followingAuthorIds, setFollowingAuthorIds] = useState<Set<string>>(() => new Set());
+  const [focusedCommentId, setFocusedCommentId] = useState(commentId);
+  const scrollRef = useRef<ScrollView | null>(null);
+  const commentOffsets = useRef(new Map<string, number>());
   const engagement = usePoemEngagement();
   const followMutation = useMutation({
     mutationFn: (targetUserId: string) => lineSpaceApi.setUserFollow({ userId: currentUserId, targetUserId, isActive: true }),
@@ -81,8 +90,20 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
     return () => clearTimeout(timer);
   }, [notice]);
 
+  useEffect(() => {
+    setFocusedCommentId(commentId);
+  }, [commentId]);
+
   const updatePoemCache = (next: PoemSummary) => {
     queryClient.setQueryData(["poem", id, currentUserId], next);
+  };
+
+  const focusComment = (targetCommentId: string) => {
+    setFocusedCommentId(targetCommentId);
+    const offset = commentOffsets.current.get(targetCommentId);
+    if (offset !== undefined) {
+      scrollRef.current?.scrollTo({ y: Math.max(0, offset - 92), animated: true });
+    }
   };
 
   const submitComment = async () => {
@@ -164,6 +185,7 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
       />
 
       <ScrollView
+        ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -181,7 +203,8 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
           </View>
         ) : (
           <PoemDetailContent
-            commentId={commentId}
+            commentId={focusedCommentId}
+            currentUserId={currentUserId}
             onCommentPress={() => {
               if (!requireAccount("write a comment")) return;
               setReplyTarget(null);
@@ -194,8 +217,31 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
               setReplyTarget(comment);
               setCommentComposerOpen(true);
             }}
+            onSparkApplied={(result) => {
+              updatePoemCache(result.poem);
+              setNotice(
+                result.reply
+                  ? "Idea applied · reader credited"
+                  : "Idea applied to your lines"
+              );
+              void queryClient.invalidateQueries({ queryKey: ["feed"] });
+              void queryClient.invalidateQueries({
+                queryKey: ["user-profile-content", currentUserId]
+              });
+              void queryClient.invalidateQueries({ queryKey: ["inbox-summary"] });
+            }}
+            onSparkSourcePress={focusComment}
+            onCommentLayout={(targetCommentId, offset) => {
+              commentOffsets.current.set(targetCommentId, offset);
+              if (targetCommentId === focusedCommentId) {
+                scrollRef.current?.scrollTo({
+                  y: Math.max(0, offset - 92),
+                  animated: true
+                });
+              }
+            }}
             poem={poem}
-            targetKind={targetKind}
+            targetKind={focusedCommentId ? "comment" : targetKind}
           />
         )}
       </ScrollView>
@@ -276,23 +322,33 @@ function DetailHeader({ poem, followed, followPending, showFollow, onFollow }: {
 
 function PoemDetailContent({
   commentId,
+  currentUserId,
   poem,
   targetKind,
   onCommentPress,
   onReplyPress,
   onCommentLike,
-  onCommentSave
+  onCommentSave,
+  onCommentLayout,
+  onSparkApplied,
+  onSparkSourcePress
 }: {
   commentId?: string;
+  currentUserId: string;
   poem: PoemSummary;
   targetKind?: "post" | "comment";
   onCommentPress: () => void;
   onReplyPress: (comment: PoemComment) => void;
   onCommentLike: (comment: PoemComment) => void;
   onCommentSave: (comment: PoemComment) => void;
+  onCommentLayout: (commentId: string, offset: number) => void;
+  onSparkApplied: (result: ApplyCommunitySparkResult) => void;
+  onSparkSourcePress: (commentId: string) => void;
 }) {
   const layoutPresentation = getPoemLayoutPresentation(poem);
   const isVersionPost = Boolean(poem.versionLines?.length);
+  const [poemPanelOffset, setPoemPanelOffset] = useState(0);
+  const [commentListOffset, setCommentListOffset] = useState(0);
 
   return (
     <View>
@@ -331,6 +387,7 @@ function PoemDetailContent({
         <HeroArtwork poem={poem} />
       )}
       <View
+        onLayout={(event) => setPoemPanelOffset(event.nativeEvent.layout.y)}
         style={[
           styles.poemPanel,
           (layoutPresentation || isVersionPost) && styles.designedConversation,
@@ -377,6 +434,16 @@ function PoemDetailContent({
 
         <View style={styles.divider} />
 
+        {poem.author.id === currentUserId ? (
+          <CommunitySparkCards
+            label="Community Spark"
+            onApplied={onSparkApplied}
+            onSourcePress={onSparkSourcePress}
+            poem={poem}
+            userId={currentUserId}
+          />
+        ) : null}
+
         <View style={styles.commentSummary}>
           <Text style={styles.commentCount}>{poem.metrics.comments} comments</Text>
           <Text style={styles.commentSort}>newest</Text>
@@ -387,7 +454,10 @@ function PoemDetailContent({
           <Text style={styles.commentPlaceholder}>Add a thoughtful comment…</Text>
         </Pressable>
 
-        <View style={styles.commentList}>
+        <View
+          onLayout={(event) => setCommentListOffset(event.nativeEvent.layout.y)}
+          style={styles.commentList}
+        >
           {(poem.comments ?? []).map((comment) => (
             <CommentRow
               highlighted={targetKind === "comment" && comment.id === commentId}
@@ -395,6 +465,12 @@ function PoemDetailContent({
               comment={comment}
               onLike={() => onCommentLike(comment)}
               onLongPress={() => onCommentSave(comment)}
+              onLayout={(rowOffset) =>
+                onCommentLayout(
+                  comment.id,
+                  poemPanelOffset + commentListOffset + rowOffset
+                )
+              }
               onReply={() => onReplyPress(comment)}
             />
           ))}
@@ -430,18 +506,20 @@ function CommentRow({
   highlighted,
   onReply,
   onLike,
-  onLongPress
+  onLongPress,
+  onLayout
 }: {
   comment: PoemComment;
   highlighted?: boolean;
   onReply: () => void;
   onLike: () => void;
   onLongPress: () => void;
+  onLayout: (offset: number) => void;
 }) {
   const avatarColor = comment.author.handle === "lili" ? figmaAccent : comment.author.avatarColor;
 
   return (
-    <Pressable onLongPress={onLongPress} onPress={onReply} style={[styles.commentRow, highlighted && styles.targetHighlight, comment.parentCommentId && styles.replyRow]}>
+    <Pressable onLayout={(event) => onLayout(event.nativeEvent.layout.y)} onLongPress={onLongPress} onPress={onReply} style={[styles.commentRow, highlighted && styles.targetHighlight, comment.parentCommentId && styles.replyRow]}>
       <Pressable onPress={(event) => { event.stopPropagation(); router.push({ pathname: "/profile/[id]", params: { id: comment.author.id } } as never); }}>
         <Avatar
           color={avatarColor}

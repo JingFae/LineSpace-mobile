@@ -1,6 +1,6 @@
 import { router, type Href } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -19,6 +19,7 @@ import type { PoemDraft, PoemDraftMedia, PoemDraftSettings } from "@linespace/ap
 import { lineSpaceApi } from "@/services/lineSpaceApi";
 import { useAuth } from "@/auth/AuthSessionProvider";
 import { getMediaAspectRatio } from "@/features/poem/poemPresentation";
+import { CommunitySparkCards } from "@/features/poem/CommunitySparkCards";
 
 type ComposeScreenProps = {
   sessionKey: string;
@@ -37,6 +38,7 @@ const initialSettings: PoemDraftSettings = {
 };
 
 export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
+  const queryClient = useQueryClient();
   const { user: authUser } = useAuth();
   const currentUserId = authUser?.id ?? "";
   const resumeDraftId = getParam(params.draftId);
@@ -59,6 +61,7 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
   });
   const [settings, setSettings] = useState<PoemDraftSettings>(initialSettings);
   const [error, setError] = useState<string | null>(null);
+  const [editHydrated, setEditHydrated] = useState(false);
   const editInitialized = useRef(false);
   const draftInitialized = useRef(false);
   const createdDraft = useRef<PoemDraft | null>(null);
@@ -92,6 +95,7 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
       allowSharing: post.allowSharing ?? true,
       allowSave: true
     });
+    setEditHydrated(true);
   }, [currentUserId, editPostQuery.data]);
 
   const draftQuery = useQuery({
@@ -325,6 +329,43 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
           value={mention}
         />
       </View>
+
+      {editHydrated && editPostQuery.data?.author.id === currentUserId ? (
+        <View style={styles.creativeSparkWrap}>
+          <CommunitySparkCards
+            autoLoad
+            label="Creative Spark"
+            onApplied={(result) => {
+              setBody(result.poem.lines.join("\n"));
+              queryClient.setQueryData(
+                ["compose-edit-post", editPostId, currentUserId],
+                result.poem
+              );
+              queryClient.setQueryData(
+                ["poem", editPostId, currentUserId],
+                result.poem
+              );
+            }}
+            onSourcePress={(sourceCommentId) =>
+              router.push({
+                pathname: "/poem/[id]",
+                params: {
+                  id: editPostQuery.data!.id,
+                  commentId: sourceCommentId,
+                  targetKind: "comment"
+                }
+              } as Href)
+            }
+            poem={editPostQuery.data}
+            userId={currentUserId}
+            workingCopy={{
+              title,
+              lines: body.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
+              tags: parseTags(tag)
+            }}
+          />
+        </View>
+      ) : null}
 
       {error || draftQuery.isError || saveMutation.isError ? (
         <Text style={styles.error}>
@@ -682,6 +723,7 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     backgroundColor: colors.surface
   },
+  creativeSparkWrap: { marginHorizontal: 16 },
   titleInput: {
     height: 58,
     paddingHorizontal: spacing.lg,

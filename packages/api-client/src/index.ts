@@ -22,6 +22,8 @@ export {
   mockUsers
 } from "./mock-data";
 export type {
+  ApplyCommunitySparkInput,
+  ApplyCommunitySparkResult,
   AiAssistIntent,
   AiAssistRequest,
   AiAssistResponse,
@@ -30,6 +32,12 @@ export type {
   AuthSessionResult,
   AuthUser,
   ChangePasswordInput,
+  CommunitySparkKind,
+  CommunitySparkRequest,
+  CommunitySparkResponse,
+  CommunitySparkSource,
+  CommunitySparkSuggestion,
+  CommunitySparkWorkingCopy,
   ComposeMode,
   ContentSearchResult,
   DraftVisibility,

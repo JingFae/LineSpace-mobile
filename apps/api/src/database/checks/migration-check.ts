@@ -73,6 +73,14 @@ const stableThreadLinesMigration = await readFile(
   new URL("20260722000100_thread_continuation_stable_lines.sql", canonicalMigrationsUrl),
   "utf8"
 );
+const communitySparkMigration = await readFile(
+  new URL("20260723000100_community_spark.sql", canonicalMigrationsUrl),
+  "utf8"
+);
+const guestPublicContentMigration = await readFile(
+  new URL("20260723000200_guest_public_content_access.sql", canonicalMigrationsUrl),
+  "utf8"
+);
 const profileRepository = await readFile(
   new URL("../profile/supabase-profile.repository.ts", import.meta.url),
   "utf8"
@@ -104,6 +112,31 @@ for (const required of [
   assert(
     required.test(stableThreadLinesMigration),
     `Stable thread line migration is missing ${required}.`
+  );
+}
+for (const required of [
+  /revoke\s+execute\s+on\s+function\s+public\.current_linespace_user_id\(\)\s+from\s+public/i,
+  /grant\s+execute\s+on\s+function\s+public\.current_linespace_user_id\(\)\s+to\s+anon,\s*authenticated/i
+] as const) {
+  assert(
+    required.test(guestPublicContentMigration),
+    `Guest public-content migration is missing ${required}.`
+  );
+}
+for (const required of [
+  /create\s+table\s+if\s+not\s+exists\s+public\.post_comment_contributions/i,
+  /create\s+table\s+if\s+not\s+exists\s+public\.community_spark_applications/i,
+  /create\s+or\s+replace\s+function\s+public\.apply_community_spark/i,
+  /author_user_id\s*=\s*actor_id/i,
+  /md5\(array_to_string\(array\([\s\S]*post_row\.body[\s\S]*p_base_revision/i,
+  /this comment gives me inspiration/i,
+  /on\s+conflict\s*\(post_id,\s*comment_id\)\s+do\s+nothing/i,
+  /revoke\s+all\s+on\s+public\.community_spark_applications/i,
+  /grant\s+execute\s+on\s+function\s+public\.apply_community_spark[\s\S]*to\s+authenticated/i
+] as const) {
+  assert(
+    required.test(communitySparkMigration),
+    `Community Spark migration is missing ${required}.`
   );
 }
 for (const fileName of canonicalMigrationFiles) {

@@ -1,10 +1,13 @@
 import type {
+  ApplyCommunitySparkInput,
+  ApplyCommunitySparkResult,
   DeletePoemInput,
   DeletePoemResult,
   FeedQuery,
   InboxConversationMessage,
   PoemComment,
   PoemCommentEngagementResult,
+  PoemCreditPerson,
   PoemDraftMedia,
   PoemEngagementResult,
   PoemLayoutConfig,
@@ -72,6 +75,12 @@ type EngagementRow = {
   post_id?: string;
   comment_id?: string;
   kind?: "liked" | "saved";
+};
+
+type CommentContributionRow = {
+  post_id: string;
+  contributor_user_id: string;
+  created_at: string;
 };
 
 const postSelect =
@@ -197,6 +206,36 @@ export class PostRepository {
       .single();
     ensureDatabaseResult(result.error);
     return this.mapComment(result.data as CommentRow, actorId);
+  }
+
+  async applyCommunitySpark(
+    input: ApplyCommunitySparkInput
+  ): Promise<ApplyCommunitySparkResult> {
+    const actorId = await getCurrentLinespaceUserId(this.client);
+    if (!actorId || actorId !== input.userId) {
+      throw new Error("community spark actor mismatch");
+    }
+    const result = await this.client.rpc("apply_community_spark", {
+      p_post_id: input.poemId,
+      p_suggestion_id: input.suggestionId,
+      p_base_revision: input.baseRevision,
+      p_proposed_lines: input.proposedLines,
+      p_source_comment_id: input.sourceCommentId ?? null
+    });
+    ensureDatabaseResult(result.error);
+    const transaction = objectValue(result.data);
+    const poem = await this.getPoem(input.poemId);
+    if (!poem) throw new Error("post not found");
+    const replyCommentId =
+      typeof transaction.replyCommentId === "string"
+        ? transaction.replyCommentId
+        : null;
+    return {
+      poem,
+      reply: replyCommentId
+        ? poem.comments?.find((comment) => comment.id === replyCommentId) ?? null
+        : null
+    };
   }
 
   async setCommentCollection(
@@ -366,24 +405,66 @@ export class PostRepository {
     rows: PostRow[],
     actorId: string | null
   ): Promise<PoemSummary[]> {
+    const contributions = await this.loadCommentContributions(rows.map((row) => row.id));
     const profiles = await loadProfiles(
       this.client,
-      rows.flatMap((row) => [row.author_user_id, ...versionLineAuthorIds(row.version_lines)])
+      rows.flatMap((row) => [
+        row.author_user_id,
+        ...versionLineAuthorIds(row.version_lines),
+        ...contributions
+          .filter((contribution) => contribution.post_id === row.id)
+          .map((contribution) => contribution.contributor_user_id)
+      ])
     );
     const viewer = await this.loadPostViewer(rows.map((row) => row.id), actorId);
     return rows
       .map((row) => {
         const author = profiles.get(row.author_user_id);
         if (!author) return null;
+        const commentContributors = [
+          ...new Set(
+            contributions
+              .filter((contribution) => contribution.post_id === row.id)
+              .map((contribution) => contribution.contributor_user_id)
+          )
+        ].flatMap((userId) => {
+          const profile = profiles.get(userId);
+          return profile ? [toPostCreditPerson(profile)] : [];
+        });
+        const quoteContributors = [
+          ...new Set(
+            versionLineAuthorIds(row.version_lines).filter(
+              (userId) => userId !== row.author_user_id
+            )
+          )
+        ].flatMap((userId) => {
+          const profile = profiles.get(userId);
+          return profile ? [toPostCreditPerson(profile)] : [];
+        });
         return toPoemSummary(
           row,
           author,
           viewer.liked.has(row.id),
           viewer.saved.has(row.id),
-          toVersionLines(row.version_lines, profiles)
+          toVersionLines(row.version_lines, profiles),
+          commentContributors,
+          quoteContributors
         );
       })
       .filter((item): item is PoemSummary => Boolean(item));
+  }
+
+  private async loadCommentContributions(
+    postIds: string[]
+  ): Promise<CommentContributionRow[]> {
+    if (postIds.length === 0) return [];
+    const result = await this.client
+      .from("post_comment_contributions")
+      .select("post_id,contributor_user_id,created_at")
+      .in("post_id", [...new Set(postIds)])
+      .order("created_at", { ascending: true });
+    ensureDatabaseResult(result.error);
+    return (result.data as CommentContributionRow[] | null) ?? [];
   }
 
   private async mapComment(row: CommentRow, actorId: string | null): Promise<PoemComment> {
@@ -552,7 +633,9 @@ function toPoemSummary(
   author: ReturnType<typeof toUserProfile>,
   liked: boolean,
   saved: boolean,
-  versionLines?: PoemSummary["versionLines"]
+  versionLines?: PoemSummary["versionLines"],
+  commentContributors: PoemCreditPerson[] = [],
+  quoteContributors: PoemCreditPerson[] = []
 ): PoemSummary {
   const media = toMedia(row.media);
   const layout = toLayout(row.layout);
@@ -562,7 +645,11 @@ function toPoemSummary(
     title: row.title,
     lines: row.body.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
     author,
-    contributorsCount: 1,
+    contributorsCount: new Set([
+      author.handle,
+      ...commentContributors.map((person) => person.handle),
+      ...quoteContributors.map((person) => person.handle)
+    ]).size,
     tags: row.tags ?? [],
     mentions: row.mentions ?? [],
     visibility: row.visibility,
@@ -585,12 +672,28 @@ function toPoemSummary(
       saves: countValue(row.saves_count)
     },
     viewer: { liked, saved },
+    credits: {
+      startedBy: toPostCreditPerson(author),
+      commentContributors,
+      quoteContributors
+    },
     artworkTone:
       background === "midnight"
         ? "night"
         : background === "kraft-paper"
           ? "paper"
           : "water"
+  };
+}
+
+function toPostCreditPerson(
+  profile: ReturnType<typeof toUserProfile>
+): PoemCreditPerson {
+  return {
+    handle: profile.handle,
+    displayName: profile.displayName,
+    avatarColor: profile.avatarColor,
+    ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {})
   };
 }
 

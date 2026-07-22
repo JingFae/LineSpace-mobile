@@ -10,8 +10,12 @@ import {
   mockUserProfileDetails
 } from "./mock-data";
 import type {
+  ApplyCommunitySparkInput,
+  ApplyCommunitySparkResult,
   AiAssistRequest,
   AiAssistResponse,
+  CommunitySparkRequest,
+  CommunitySparkResponse,
   CreatePoemCommentInput,
   CreateInboxGroupInput,
   ContinuationDetail,
@@ -145,6 +149,8 @@ export interface LineSpaceApi {
   shareThread(input: ShareThreadInput): Promise<ThreadShareResult>;
   shareThreadToGroup(input: ShareThreadToGroupInput): Promise<InboxConversationMessage>;
   requestAiAssist(request: AiAssistRequest): Promise<AiAssistResponse>;
+  requestCommunitySpark(request: CommunitySparkRequest): Promise<CommunitySparkResponse>;
+  applyCommunitySpark(input: ApplyCommunitySparkInput): Promise<ApplyCommunitySparkResult>;
   createPoemComment(input: CreatePoemCommentInput): Promise<PoemComment>;
   setCommentCollection(input: UpdateCommentCollectionInput): Promise<PoemCommentEngagementResult>;
   searchUsers(query: string, viewerId: string, options?: UserSearchQuery): Promise<UserSearchPage>;
@@ -185,6 +191,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
   private readonly experienceEvents = new Set<string>();
   private readonly followingByUser = new Map<string, Set<string>>();
   private readonly inboxActivitySummaries = new Map<string, InboxActivitySummary>();
+  private readonly communitySparkApplications = new Map<string, string | null>();
   private draftSequence = 0;
   private continuationSequence = 0;
   private shareSequence = 0;
@@ -1817,6 +1824,124 @@ export class MockLineSpaceApi implements LineSpaceApi {
     };
   }
 
+  async requestCommunitySpark(
+    request: CommunitySparkRequest
+  ): Promise<CommunitySparkResponse> {
+    const poem = this.poems.find((item) => item.id === request.poemId);
+    if (!poem || poem.author.id !== request.userId) {
+      throw new Error("Only the author can open Community Spark");
+    }
+    const workingCopy = request.workingCopy ?? {
+      title: poem.title,
+      lines: [...poem.lines],
+      tags: [...poem.tags]
+    };
+    const source = (poem.comments ?? []).find(
+      (comment) => comment.author.id !== poem.author.id
+    );
+    const chinese = /[\u3400-\u9fff]/u.test(
+      `${workingCopy.title}\n${workingCopy.lines.join("\n")}`
+    );
+    const endings = chinese
+      ? ["让结尾的意象轻轻回应开头。", "可以试试收短一行，让停顿更有余韵。", "也许可以沿着当前意象再续写一句。"]
+      : [
+          "Let the closing image quietly echo the opening.",
+          "You could shorten one line and give the pause more room.",
+          "Perhaps follow the central image into one more line."
+        ];
+    const addedLines = chinese
+      ? ["让回声在留白里慢慢靠岸", "把未说完的光留给下一行", "而风仍记得最初的方向"]
+      : [
+          "The echo finds a shore inside the silence.",
+          "Leave the unfinished light for one more line.",
+          "And the wind remembers where it began."
+        ];
+    return {
+      id: `mock-spark-${Date.now()}`,
+      poemId: poem.id,
+      baseRevision: mockLinesRevision(poem.lines),
+      summary: chinese ? "这些想法会尽量保留你原有的声音。" : "These ideas stay close to your existing voice.",
+      suggestions: endings.map((suggestion, index) => ({
+        id: `mock-spark-${Date.now()}-${index + 1}`,
+        kind: index === 1 ? "revise" as const : "continue" as const,
+        suggestion,
+        preview: addedLines[index]!,
+        proposedLines:
+          index === 1 && workingCopy.lines.length > 1
+            ? workingCopy.lines.map((line, lineIndex) =>
+                lineIndex === 1 ? line.replace(/[,，;；]\s*$/u, "") : line
+              )
+            : [...workingCopy.lines, addedLines[index]!],
+        source:
+          index === 0 && source
+            ? {
+                commentId: source.id,
+                excerpt: source.body.slice(0, 160),
+                author: { ...source.author }
+              }
+            : null
+      }))
+    };
+  }
+
+  async applyCommunitySpark(
+    input: ApplyCommunitySparkInput
+  ): Promise<ApplyCommunitySparkResult> {
+    const poem = this.poems.find((item) => item.id === input.poemId);
+    if (!poem || poem.author.id !== input.userId) {
+      throw new Error("Only the author can apply Community Spark");
+    }
+    const existingReplyId = this.communitySparkApplications.get(input.suggestionId);
+    if (this.communitySparkApplications.has(input.suggestionId)) {
+      const reply = existingReplyId
+        ? poem.comments?.find((comment) => comment.id === existingReplyId) ?? null
+        : null;
+      return { poem: this.withViewer(poem, input.userId), reply: reply ? cloneComment(reply) : null };
+    }
+    if (mockLinesRevision(poem.lines) !== input.baseRevision) {
+      throw new Error("This suggestion is based on an older version of the post");
+    }
+    const lines = input.proposedLines.map((line) => line.trim()).filter(Boolean);
+    if (lines.length === 0) throw new Error("A poem needs at least one line");
+
+    poem.lines = lines;
+    poem.versionLines = undefined;
+    poem.editedAt = new Date().toISOString();
+    let reply: PoemComment | null = null;
+    const source = input.sourceCommentId
+      ? poem.comments?.find(
+          (comment) =>
+            comment.id === input.sourceCommentId && comment.author.id !== poem.author.id
+        )
+      : undefined;
+    if (input.sourceCommentId && !source) {
+      throw new Error("The source comment does not belong to this post");
+    }
+    if (source) {
+      reply = await this.createPoemComment({
+        poemId: poem.id,
+        userId: poem.author.id,
+        parentCommentId: source.id,
+        body: "this comment gives me inspiration"
+      });
+      const credits = poem.credits ?? {
+        startedBy: profileToCreditPerson(poem.author),
+        commentContributors: [],
+        quoteContributors: []
+      };
+      if (!credits.commentContributors.some((person) => person.handle === source.author.handle)) {
+        credits.commentContributors.push(profileToCreditPerson(source.author));
+      }
+      poem.credits = credits;
+      poem.contributorsCount = new Set([
+        poem.author.id,
+        ...credits.commentContributors.map((person) => person.handle)
+      ]).size;
+    }
+    this.communitySparkApplications.set(input.suggestionId, reply?.id ?? null);
+    return { poem: this.withViewer(poem, input.userId), reply };
+  }
+
   private getOrCreateCollections(userId: string): MutableUserCollections {
     const existing = this.collectionsByUser.get(userId);
     if (existing) {
@@ -2595,6 +2720,10 @@ function canViewContent(visibility: PoemSummary["visibility"], audienceUserIds: 
   if (viewerId === ownerId) return true;
   const selected = audienceUserIds ?? [];
   return visibility === "include" ? Boolean(viewerId && selected.includes(viewerId)) : Boolean(!viewerId || !selected.includes(viewerId));
+}
+
+function mockLinesRevision(lines: readonly string[]) {
+  return `mock-lines:${lines.join("\n")}`;
 }
 
 function normalizeDiscoveryText(value: string) {
