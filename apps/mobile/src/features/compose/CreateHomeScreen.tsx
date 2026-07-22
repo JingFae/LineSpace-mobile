@@ -21,7 +21,7 @@ export function CreateHomeScreen() {
         accent="#1F1C18"
         description="A finished poem, thought or image-led post with your own layout."
         icon="✦"
-        label="Post"
+        label="Post · My poem"
         onPress={() => router.push({ pathname: "/compose", params: { type: "post", session: `${Date.now()}` } } as unknown as Href)}
       />
       <CreateChoice
