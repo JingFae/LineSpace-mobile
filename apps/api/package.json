@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx --env-file-if-exists=.env src/server.ts",
-    "check": "tsx src/auth-check.ts && tsx src/smoke-check.ts && tsx src/database/migration-check.ts && tsx src/vercel-check.ts",
-    "check:db:local": "tsx src/database/local-security-check.ts",
+    "check": "tsx src/auth-check.ts && tsx src/smoke-check.ts && tsx src/database/checks/migration-check.ts && tsx src/vercel-check.ts",
+    "check:db:local": "tsx src/database/checks/local-security-check.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

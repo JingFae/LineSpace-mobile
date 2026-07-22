@@ -29,11 +29,8 @@ import {
   parseBearerToken,
   type AuthRequestContext
 } from "./auth/index.js";
-import {
-  createProfileRepositoryForRequest,
-  ProfileRepositoryError
-} from "./database/profile-repository.js";
-import { DomainRepositoryError } from "./database/repository-support.js";
+import { DomainRepositoryError } from "./database/core/errors.js";
+import { ProfileRepositoryError } from "./database/profile/profile.errors.js";
 import { requestThreadVersionRecommendation } from "./ai/thread-version-recommendation.js";
 
 let lineSpaceRepositoryPromise:
@@ -1116,10 +1113,7 @@ function profileRepositoryErrorResponse(error: unknown): ApiResponse {
 }
 
 function getProfileRepository(context: AuthRequestContext) {
-  return (
-    context.profileRepository ??
-    createProfileRepositoryForRequest(context.authorization)
-  );
+  return context.profileRepository ?? null;
 }
 
 async function authenticateRequest(

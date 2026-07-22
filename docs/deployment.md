@@ -135,7 +135,7 @@ The first backfills deterministic experience events from existing content and
 normalizes all levels to 1–10. The second removes direct client group writes in
 favor of JWT-derived transaction RPCs. The third restores unlike/unsave table
 permissions while the existing owner-only RLS remains authoritative. The SQL under
-`apps/api/src/database/deferred-migrations/` is historical reference material,
+`docs/archive/database/deferred-migrations/` is historical reference material,
 is not part of the cloud push, and must not be copied into the migration
 directory:
 

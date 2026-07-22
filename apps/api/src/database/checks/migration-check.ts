@@ -4,7 +4,7 @@ function assert(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-const canonicalMigrationsUrl = new URL("../../../../supabase/migrations/", import.meta.url);
+const canonicalMigrationsUrl = new URL("../../../../../supabase/migrations/", import.meta.url);
 const idempotentMigration = await readFile(
   new URL("20260716000400_auth_trigger_idempotent.sql", canonicalMigrationsUrl),
   "utf8"
@@ -70,11 +70,11 @@ const threadVersionParticipantPostsMigration = await readFile(
   "utf8"
 );
 const profileRepository = await readFile(
-  new URL("./profile-repository.ts", import.meta.url),
+  new URL("../profile/supabase-profile.repository.ts", import.meta.url),
   "utf8"
 );
 const threadRepository = await readFile(
-  new URL("./thread-repository.ts", import.meta.url),
+  new URL("../thread/thread.repository.ts", import.meta.url),
   "utf8"
 );
 const canonicalMigrationFiles = (await readdir(canonicalMigrationsUrl))

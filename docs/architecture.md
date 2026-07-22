@@ -218,16 +218,15 @@ Service Role 不得被移动端、`packages/api-client` 或 `packages/ui` 引用
 
 ```text
 database/
-├─ profile-repository.ts        # 用户资料、搜索、关系和最近联系人
-├─ post-repository.ts           # Post、Feed、互动和分享
-├─ comment-repository.ts        # 评论及评论互动
-├─ thread-repository.ts         # Thread、Continuation 和分享
-├─ draft-repository.ts          # Compose 草稿、发布和 Storage
-├─ inbox-repository.ts          # 私聊、群聊和消息映射
-├─ linespace-repository.ts      # request-scoped 聚合适配器
-├─ deferred-migrations/         # 历史设计参考，不是部署入口
-├─ migrations/                  # 按时间排序的正式迁移
-└─ migration-check.ts            # 静态迁移契约检查
+├─ core/                         # Client、认证上下文、错误和公共映射
+├─ profile/                      # 用户资料、搜索、关系和最近联系人
+├─ post/                         # Post、Feed、评论、互动和分享
+├─ thread/                       # Thread、Continuation 和分享
+├─ draft/                        # Compose 草稿、发布和 Storage
+├─ inbox/                        # 私聊、群聊和消息映射
+├─ discovery/                    # 内容搜索和个人主页聚合查询
+├─ checks/                       # 迁移契约和本地安全检查
+└─ linespace-api.facade.ts       # request-scoped 兼容门面
 ```
 
 Repository 通过 request-scoped Supabase Client 访问数据库：
@@ -452,19 +451,17 @@ three-record keyset Feed/Thread indexes, actor-derived draft creation, and
 Storage contracts. The content migrations
 does not change UI behavior; it supplies the RLS-protected persistence used by
 the API repositories. The files under
-`apps/api/src/database/deferred-migrations/` are historical design references
+`docs/archive/database/deferred-migrations/` are historical design references
 only and must not be applied in addition to the canonical chain.
 
 The API repository boundaries are:
 
 ```text
 Auth routes       -> SupabaseAuthService
-Profile routes    -> ProfileRepository
-Thread routes     -> ThreadRepository
-Post routes       -> PostRepository
-Comment routes    -> CommentRepository
-Compose routes    -> DraftRepository
-Inbox routes      -> InboxRepository
+API routes        -> LineSpaceApi Facade
+Facade            -> Profile/Post/Thread/Draft/Inbox modules
+Search/Profile UI -> Discovery query services
+Comment methods   -> Post module
 Media uploads     -> DraftRepository -> Supabase Storage
 AI routes         -> AI service
 ```

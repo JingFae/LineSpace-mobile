@@ -13,7 +13,7 @@ import type {
   UpdateUserFollowInput,
   UserFollowResult
 } from "@linespace/api-client";
-import type { ProfileRepository as ApiProfileRepository } from "./database/profile-repository.js";
+import type { ProfileRepository as ApiProfileRepository } from "./database/profile/profile.repository.js";
 import { handleApiRequest } from "./routes.js";
 
 const baseUrl = "http://linespace.local";

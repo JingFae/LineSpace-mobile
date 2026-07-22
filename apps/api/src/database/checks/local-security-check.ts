@@ -20,10 +20,10 @@ function assert(condition: unknown, message: string): asserts condition {
 
 function localCredentials(): LocalCredentials {
   const cli = fileURLToPath(
-    new URL("../../../../node_modules/supabase/dist/supabase.js", import.meta.url)
+    new URL("../../../../../node_modules/supabase/dist/supabase.js", import.meta.url)
   );
   const result = spawnSync(process.execPath, [cli, "status", "-o", "env"], {
-    cwd: new URL("../../../../", import.meta.url),
+    cwd: new URL("../../../../../", import.meta.url),
     encoding: "utf8",
     shell: false
   });

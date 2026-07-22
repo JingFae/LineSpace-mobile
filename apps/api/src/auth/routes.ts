@@ -1,7 +1,7 @@
 import type { AuthService } from "./service.js";
 import { authErrorResponse } from "./errors.js";
 import { getServerAuthService } from "./supabase-auth-service.js";
-import type { ProfileRepository } from "../database/profile-repository.js";
+import type { ProfileRepository } from "../database/profile/profile.repository.js";
 import {
   parseBearerToken,
   parseLogin,

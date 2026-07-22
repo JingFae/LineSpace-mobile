@@ -153,7 +153,7 @@ request-scoped；不会复用携带某个用户 JWT 的全局 Client，也不会
 
 The repository now uses `supabase/config.toml` and
 `supabase/migrations/` as the canonical database deployment entry point.
-`apps/api/src/database/deferred-migrations/` is intentionally excluded from
+`docs/archive/database/deferred-migrations/` is intentionally excluded from
 the current cloud push because it contains historical design references.
 Post, Thread, Compose, Inbox, and discovery persistence are deployed only
 from the ordered canonical migration chain above.

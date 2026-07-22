@@ -50,7 +50,7 @@ The canonical chain contains:
 - author-only, idempotent Thread Version publication into a durable Post
 - RLS, grants, triggers, and JWT-scoped RPC functions for these domains
 
-The files under `apps/api/src/database/deferred-migrations/` remain historical
+The files under `docs/archive/database/deferred-migrations/` remain historical
 design references only. They are not read by Supabase CLI and must not be
 applied in addition to the canonical chain.
 
