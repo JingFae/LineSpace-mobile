@@ -21,6 +21,7 @@ import {
   EmptyState,
   MenuIcon,
   ProfileBadgeArtwork,
+  ProfileBadgeDetailArtwork,
   SearchIcon,
   SettingsIcon
 } from "@linespace/ui";
@@ -54,6 +55,34 @@ const contentTabs: Array<{ value: UserProfileContentSection; label: string }> = 
   { value: "saves", label: "Saves" },
   { value: "comments", label: "Comments" }
 ];
+
+type BadgeVariant = "creator" | "reviewer";
+const badgeUnlockXp = 20;
+const badgeDetails: Record<BadgeVariant, {
+  certification: string;
+  title: string;
+  chineseTitle: string;
+  description: string;
+  emotionalNote: string;
+  requirement: string;
+}> = {
+  creator: {
+    certification: "CREATOR CERTIFICATION",
+    title: "Ink Weaver",
+    chineseTitle: "织墨者",
+    description: "把一行心绪织成一片可被看见的诗意。每一次创作，都是你留给世界的一缕墨色。",
+    emotionalNote: "你的文字值得被读见，也可能刚好陪伴另一个正在寻找共鸣的人。",
+    requirement: "创作经验值达到 20 XP"
+  },
+  reviewer: {
+    certification: "REVIEWER CERTIFICATION",
+    title: "Soul Echo",
+    chineseTitle: "共鸣者",
+    description: "认真回应一首诗，也是在告诉创作者：你的情绪被听见了，你的表达并不孤单。",
+    emotionalNote: "一句真诚的评论，可能就是他人继续写下去的温柔理由。",
+    requirement: "评论经验值达到 20 XP"
+  }
+};
 
 export function ProfileScreen({ userId }: ProfileScreenProps) {
   const { logout, user: authUser } = useAuth();
@@ -502,15 +531,86 @@ function BadgeGallery({
   badges: UserProfileDetails["badges"];
   experience: UserExperience;
 }) {
-  const creatorUnlocked = badges.some((badge) => badge.category === "creator" || badge.id === "badge-ink-weaver");
-  const reviewerUnlocked = badges.some((badge) => badge.category === "reviewer" || badge.id === "badge-soul-echo");
+  const [selectedBadge, setSelectedBadge] = useState<BadgeVariant | null>(null);
+  const detailEnter = useRef(new Animated.Value(0)).current;
+  const detailScale = useRef(new Animated.Value(0)).current;
+  const creatorUnlocked = experience.creator >= badgeUnlockXp || badges.some((badge) => badge.category === "creator" || badge.id === "badge-ink-weaver");
+  const reviewerUnlocked = experience.reviewer >= badgeUnlockXp || badges.some((badge) => badge.category === "reviewer" || badge.id === "badge-soul-echo");
+
+  useEffect(() => {
+    if (!selectedBadge) return;
+    detailEnter.setValue(0);
+    detailScale.setValue(0);
+    Animated.parallel([
+      Animated.timing(detailEnter, {
+        toValue: 1,
+        duration: 280,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true
+      }),
+      Animated.spring(detailScale, {
+        toValue: 1,
+        damping: 12,
+        stiffness: 150,
+        useNativeDriver: true
+      })
+    ]).start();
+  }, [detailEnter, detailScale, selectedBadge]);
+
+  const toggleBadge = (variant: BadgeVariant) => {
+    if (selectedBadge !== variant) {
+      detailEnter.stopAnimation();
+      detailScale.stopAnimation();
+      setSelectedBadge(variant);
+      return;
+    }
+    Animated.parallel([
+      Animated.timing(detailEnter, {
+        toValue: 0,
+        duration: 150,
+        useNativeDriver: true
+      }),
+      Animated.timing(detailScale, {
+        toValue: 0,
+        duration: 150,
+        useNativeDriver: true
+      })
+    ]).start(({ finished }) => {
+      if (finished) {
+        setSelectedBadge((current) => current === variant ? null : current);
+      }
+    });
+  };
+
+  const selectedXp = selectedBadge === "creator" ? experience.creator : experience.reviewer;
+  const selectedUnlocked = selectedBadge === "creator" ? creatorUnlocked : reviewerUnlocked;
+
   return (
     <View style={styles.badgeGallery}>
-      <Text style={styles.badgeSectionLabel}>EARNED MARKS</Text>
+      <View style={styles.badgeSectionHeader}>
+        <Text style={styles.badgeSectionLabel}>EARNED MARKS</Text>
+        <Text style={styles.badgeSectionHint}>tap a badge to explore</Text>
+      </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.badgeRail}>
-        <BadgeCard label="Ink Weaver" subtitle="织墨者 · creator" unlocked={creatorUnlocked} remaining={Math.max(0, 20 - experience.creator)} variant="creator" />
-        <BadgeCard label="Soul Echo" subtitle="共鸣者 · reviewer" unlocked={reviewerUnlocked} remaining={Math.max(0, 20 - experience.reviewer)} variant="reviewer" />
+        <BadgeCard label="Ink Weaver" onPress={() => toggleBadge("creator")} selected={selectedBadge === "creator"} subtitle="织墨者 · creator" unlocked={creatorUnlocked} remaining={Math.max(0, badgeUnlockXp - experience.creator)} variant="creator" />
+        <BadgeCard label="Soul Echo" onPress={() => toggleBadge("reviewer")} selected={selectedBadge === "reviewer"} subtitle="共鸣者 · reviewer" unlocked={reviewerUnlocked} remaining={Math.max(0, badgeUnlockXp - experience.reviewer)} variant="reviewer" />
       </ScrollView>
+      {selectedBadge ? (
+        <Animated.View
+          style={[
+            styles.badgeDetailMotion,
+            {
+              opacity: detailEnter,
+              transform: [
+                { translateY: detailEnter.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) },
+                { scale: detailScale.interpolate({ inputRange: [0, 1], outputRange: [0.98, 1] }) }
+              ]
+            }
+          ]}
+        >
+          <BadgeDetail experience={selectedXp} onClose={() => toggleBadge(selectedBadge)} unlocked={selectedUnlocked} variant={selectedBadge} />
+        </Animated.View>
+      ) : null}
     </View>
   );
 }
@@ -520,21 +620,83 @@ function BadgeCard({
   subtitle,
   unlocked,
   remaining,
-  variant
+  variant,
+  selected,
+  onPress
 }: {
   label: string;
   subtitle: string;
   unlocked: boolean;
   remaining: number;
-  variant: "creator" | "reviewer";
+  variant: BadgeVariant;
+  selected: boolean;
+  onPress: () => void;
 }) {
   return (
-    <View style={[styles.badgeCard, !unlocked && styles.badgeCardLocked]}>
+    <Pressable
+      accessibilityHint="Shows badge details and unlock progress"
+      accessibilityRole="button"
+      accessibilityState={{ expanded: selected, selected }}
+      onPress={onPress}
+      style={({ pressed }) => [styles.badgeCard, selected && styles.badgeCardSelected, !unlocked && styles.badgeCardLocked, pressed && styles.badgeCardPressed]}
+    >
       <ProfileBadgeArtwork muted={!unlocked} size={52} variant={variant} />
       <View style={styles.badgeCardCopy}>
         <Text style={styles.badgeCardTitle}>{label}</Text>
         <Text style={styles.badgeCardSubtitle}>{unlocked ? subtitle : `${remaining} XP to unlock`}</Text>
       </View>
+      <Text style={[styles.badgeExploreGlyph, selected && styles.badgeExploreGlyphSelected]}>⌄</Text>
+    </Pressable>
+  );
+}
+
+function BadgeDetail({
+  variant,
+  experience,
+  unlocked,
+  onClose
+}: {
+  variant: BadgeVariant;
+  experience: number;
+  unlocked: boolean;
+  onClose: () => void;
+}) {
+  const detail = badgeDetails[variant];
+  const progress = Math.min(1, Math.max(0, experience / badgeUnlockXp));
+  const remaining = Math.max(0, badgeUnlockXp - experience);
+
+  return (
+    <View style={[styles.badgeDetail, variant === "creator" ? styles.badgeDetailCreator : styles.badgeDetailReviewer]}>
+      <Pressable accessibilityLabel="Close badge details" hitSlop={10} onPress={onClose} style={styles.badgeDetailClose}>
+        <Text style={styles.badgeDetailCloseText}>×</Text>
+      </Pressable>
+      <View style={styles.badgeDetailArtwork}>
+        <ProfileBadgeDetailArtwork variant={variant} width={144} />
+      </View>
+      <Text style={styles.badgeDetailEyebrow}>{detail.certification}</Text>
+      <Text style={styles.badgeDetailTitle}>{detail.title}</Text>
+      <Text style={styles.badgeDetailChinese}>{detail.chineseTitle}</Text>
+      <Text style={styles.badgeDetailDescription}>{detail.description}</Text>
+      <View style={styles.badgeEmotionNote}>
+        <Text style={styles.badgeEmotionMark}>{variant === "creator" ? "✦" : "♡"}</Text>
+        <Text style={styles.badgeEmotionText}>{detail.emotionalNote}</Text>
+      </View>
+      <View style={styles.badgeProgressCard}>
+        <View style={styles.badgeProgressHeader}>
+          <View style={styles.badgeProgressCopy}>
+            <Text style={styles.badgeProgressLabel}>HOW TO EARN</Text>
+            <Text style={styles.badgeProgressRequirement}>{detail.requirement}</Text>
+          </View>
+          <Text style={styles.badgeProgressValue}>{Math.min(experience, badgeUnlockXp)}/{badgeUnlockXp} XP</Text>
+        </View>
+        <View style={styles.badgeProgressTrack}>
+          <View style={[styles.badgeProgressFill, variant === "reviewer" && styles.badgeProgressFillReviewer, { width: `${Math.round(progress * 100)}%` }]} />
+        </View>
+        <Text style={styles.badgeProgressStatus}>
+          {unlocked ? "Award earned — this mark now belongs to your profile." : `${remaining} XP more, and this mark will light up for you.`}
+        </Text>
+      </View>
+      <Text style={styles.badgeTogetherNote}>Ink Weaver 与 Soul Echo 独立累计，也可以同时获得。</Text>
     </View>
   );
 }
@@ -1090,13 +1252,44 @@ const styles = StyleSheet.create({
   experienceTrack: { backgroundColor: "rgba(21,21,21,0.1)", borderRadius: 4, height: 7, marginTop: 9, overflow: "hidden" },
   experienceFill: { backgroundColor: colors.ink, borderRadius: 4, height: "100%" },
   badgeGallery: { marginTop: 17 },
-  badgeSectionLabel: { color: colors.profileMuted, fontSize: 10, fontWeight: "700", letterSpacing: 1.5, marginHorizontal: spacing.lg },
+  badgeSectionHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", paddingHorizontal: spacing.lg },
+  badgeSectionLabel: { color: colors.profileMuted, fontSize: 10, fontWeight: "700", letterSpacing: 1.5 },
+  badgeSectionHint: { color: colors.profileMuted, fontSize: 9, fontStyle: "italic", opacity: 0.8 },
   badgeRail: { gap: 10, paddingHorizontal: spacing.lg, paddingTop: 8 },
   badgeCard: { alignItems: "center", backgroundColor: "rgba(255,255,255,0.72)", borderColor: "rgba(21,21,21,0.08)", borderRadius: 15, borderWidth: 1, flexDirection: "row", minHeight: 72, paddingHorizontal: 8, width: 190 },
+  badgeCardSelected: { backgroundColor: "rgba(255,255,255,0.94)", borderColor: "rgba(184,134,11,0.34)", shadowColor: colors.black, shadowOffset: { height: 4, width: 0 }, shadowOpacity: 0.08, shadowRadius: 10 },
+  badgeCardPressed: { transform: [{ scale: 0.985 }] },
   badgeCardLocked: { opacity: 0.62 },
   badgeCardCopy: { flex: 1, marginLeft: 3 },
   badgeCardTitle: { color: colors.ink, fontSize: 13, fontWeight: "700" },
   badgeCardSubtitle: { color: colors.profileMuted, fontSize: 10, lineHeight: 15, marginTop: 3 },
+  badgeExploreGlyph: { color: colors.profileMuted, fontSize: 17, marginLeft: 3, transform: [{ rotate: "0deg" }] },
+  badgeExploreGlyphSelected: { color: colors.ink, transform: [{ rotate: "180deg" }] },
+  badgeDetailMotion: { marginHorizontal: spacing.lg, marginTop: 10 },
+  badgeDetail: { alignItems: "center", borderColor: "rgba(21,21,21,0.08)", borderRadius: 22, borderWidth: 1, overflow: "hidden", paddingBottom: 18, paddingHorizontal: 17, paddingTop: 12, position: "relative" },
+  badgeDetailCreator: { backgroundColor: "#FFF9E9" },
+  badgeDetailReviewer: { backgroundColor: "#F3F4F8" },
+  badgeDetailClose: { alignItems: "center", backgroundColor: "rgba(255,255,255,0.72)", borderRadius: 16, height: 32, justifyContent: "center", position: "absolute", right: 10, top: 10, width: 32, zIndex: 2 },
+  badgeDetailCloseText: { color: colors.ink, fontSize: 22, fontWeight: "300", lineHeight: 25 },
+  badgeDetailArtwork: { alignItems: "center", height: 175, justifyContent: "center", overflow: "hidden" },
+  badgeDetailEyebrow: { color: colors.profileMuted, fontSize: 9, fontWeight: "800", letterSpacing: 1.7, marginTop: 1 },
+  badgeDetailTitle: { color: colors.ink, fontFamily: "Georgia", fontSize: 25, fontWeight: "700", lineHeight: 31, marginTop: 6 },
+  badgeDetailChinese: { color: colors.profileMuted, fontSize: 13, fontWeight: "700", letterSpacing: 1.2, marginTop: 2 },
+  badgeDetailDescription: { color: colors.inkSoft, fontSize: 13, lineHeight: 21, marginTop: 13, textAlign: "center" },
+  badgeEmotionNote: { alignItems: "flex-start", backgroundColor: "rgba(255,255,255,0.62)", borderRadius: 14, flexDirection: "row", gap: 9, marginTop: 13, paddingHorizontal: 13, paddingVertical: 11, width: "100%" },
+  badgeEmotionMark: { color: "#B8860B", fontSize: 16, lineHeight: 20 },
+  badgeEmotionText: { color: colors.ink, flex: 1, fontFamily: "Georgia", fontSize: 12, fontStyle: "italic", lineHeight: 19 },
+  badgeProgressCard: { backgroundColor: "rgba(255,255,255,0.76)", borderColor: "rgba(21,21,21,0.07)", borderRadius: 15, borderWidth: 1, marginTop: 11, padding: 12, width: "100%" },
+  badgeProgressHeader: { alignItems: "flex-start", flexDirection: "row", justifyContent: "space-between" },
+  badgeProgressCopy: { flex: 1, minWidth: 0, paddingRight: 10 },
+  badgeProgressLabel: { color: colors.profileMuted, fontSize: 8, fontWeight: "800", letterSpacing: 1.25 },
+  badgeProgressRequirement: { color: colors.ink, fontSize: 12, fontWeight: "700", marginTop: 4 },
+  badgeProgressValue: { color: colors.ink, fontSize: 11, fontWeight: "800" },
+  badgeProgressTrack: { backgroundColor: "rgba(21,21,21,0.1)", borderRadius: 4, height: 6, marginTop: 11, overflow: "hidden" },
+  badgeProgressFill: { backgroundColor: "#D9A928", borderRadius: 4, height: "100%" },
+  badgeProgressFillReviewer: { backgroundColor: "#65758A" },
+  badgeProgressStatus: { color: colors.profileMuted, fontSize: 10, lineHeight: 15, marginTop: 7 },
+  badgeTogetherNote: { color: colors.profileMuted, fontSize: 10, lineHeight: 16, marginTop: 12, textAlign: "center" },
   statsRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", marginTop: 9, paddingHorizontal: spacing.lg },
   stat: { alignItems: "center", borderRadius: 14, justifyContent: "center", minHeight: 39, width: "31%" },
   statPressed: { backgroundColor: "rgba(255,255,255,0.62)" },

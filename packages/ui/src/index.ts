@@ -4,6 +4,7 @@ export {
   ProfileBadgeArtwork,
   type ProfileBadgeVariant
 } from "./components/ProfileBadgeArtwork";
+export { ProfileBadgeDetailArtwork } from "./components/ProfileBadgeDetailArtwork";
 export { BottomNavigation, type BottomNavItem } from "./components/BottomNavigation";
 export { CreateFlowSheet } from "./components/CreateFlowSheet";
 export { EmptyState } from "./components/EmptyState";
