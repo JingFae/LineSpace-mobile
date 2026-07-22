@@ -19,12 +19,17 @@ export default function ComposeRoute() {
     lockedVersionContent?: string;
     draftId?: string;
     editPostId?: string;
+    editThreadId?: string;
   }>();
   if (params.type === "post") {
     return <ComposeScreen params={params} sessionKey={params.session ?? "default"} />;
   }
   if (params.type === "thread") {
-    return <ThreadComposeScreen draftId={params.draftId} sessionKey={params.session ?? "default"} />;
+    return <ThreadComposeScreen
+      draftId={params.draftId}
+      editThreadId={params.editThreadId}
+      sessionKey={params.session ?? "default"}
+    />;
   }
   return <CreateHomeScreen />;
 }

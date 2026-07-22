@@ -1,5 +1,7 @@
 import type {
   ContinuationDetail,
+  DeleteThreadInput,
+  DeleteThreadResult,
   InboxConversationMessage,
   PoetryThread,
   ShareThreadInput,
@@ -9,6 +11,7 @@ import type {
   ThreadShareResult,
   UpdateContinuationLikeInput,
   UpdateThreadCollectionInput,
+  UpdateThreadInput,
   UpdateThreadLikeInput
 } from "@linespace/api-client";
 import { getCurrentLinespaceUserId } from "../core/auth-context.js";
@@ -98,6 +101,34 @@ export class ThreadRepository {
       ),
       allContinuations
     };
+  }
+
+  async updateThread(input: UpdateThreadInput): Promise<PoetryThread> {
+    const actorId = await getCurrentLinespaceUserId(this.client);
+    if (!actorId || actorId !== input.userId) throw new Error("thread actor mismatch");
+    const result = await this.client.rpc("update_my_thread", {
+      p_thread_id: input.threadId,
+      p_title: input.title,
+      p_starting_content: input.startingContent,
+      p_rules: input.rules,
+      p_tags: input.tags,
+      p_mentions: input.mentions,
+      p_visibility: input.visibility
+    });
+    ensureDatabaseResult(result.error);
+    if (result.data !== true) throw new Error("thread not found or forbidden");
+    const detail = await this.getThread(input.threadId);
+    if (!detail) throw new Error("updated thread not found");
+    return detail.thread;
+  }
+
+  async deleteThread(input: DeleteThreadInput): Promise<DeleteThreadResult> {
+    const actorId = await getCurrentLinespaceUserId(this.client);
+    if (!actorId || actorId !== input.userId) throw new Error("thread actor mismatch");
+    const result = await this.client.rpc("delete_my_thread", { p_thread_id: input.threadId });
+    ensureDatabaseResult(result.error);
+    if (result.data !== true) throw new Error("thread not found or forbidden");
+    return { threadId: input.threadId, deleted: true };
   }
 
   async listThreadsByIds(ids: string[]): Promise<PoetryThread[]> {

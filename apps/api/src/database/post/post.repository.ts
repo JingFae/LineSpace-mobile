@@ -40,6 +40,7 @@ type PostRow = {
   artwork_url: string | null;
   media: unknown;
   layout: unknown;
+  version_lines: unknown;
   visibility: "public" | "include" | "exclude";
   audience_user_ids: string[] | null;
   status: "draft" | "published";
@@ -74,7 +75,7 @@ type EngagementRow = {
 };
 
 const postSelect =
-  "id,author_user_id,title,body,tags,mentions,artwork_url,media,layout,visibility,audience_user_ids,status,declare_original,allow_comments,allow_sharing,allow_save,started_at,edited_at,comments_count,likes_count,shares_count,saves_count";
+  "id,author_user_id,title,body,tags,mentions,artwork_url,media,layout,version_lines,visibility,audience_user_ids,status,declare_original,allow_comments,allow_sharing,allow_save,started_at,edited_at,comments_count,likes_count,shares_count,saves_count";
 
 export class PostRepository {
   constructor(private readonly client: DatabaseClient) {}
@@ -367,14 +368,20 @@ export class PostRepository {
   ): Promise<PoemSummary[]> {
     const profiles = await loadProfiles(
       this.client,
-      rows.map((row) => row.author_user_id)
+      rows.flatMap((row) => [row.author_user_id, ...versionLineAuthorIds(row.version_lines)])
     );
     const viewer = await this.loadPostViewer(rows.map((row) => row.id), actorId);
     return rows
       .map((row) => {
         const author = profiles.get(row.author_user_id);
         if (!author) return null;
-        return toPoemSummary(row, author, viewer.liked.has(row.id), viewer.saved.has(row.id));
+        return toPoemSummary(
+          row,
+          author,
+          viewer.liked.has(row.id),
+          viewer.saved.has(row.id),
+          toVersionLines(row.version_lines, profiles)
+        );
       })
       .filter((item): item is PoemSummary => Boolean(item));
   }
@@ -544,7 +551,8 @@ function toPoemSummary(
   row: PostRow,
   author: ReturnType<typeof toUserProfile>,
   liked: boolean,
-  saved: boolean
+  saved: boolean,
+  versionLines?: PoemSummary["versionLines"]
 ): PoemSummary {
   const media = toMedia(row.media);
   const layout = toLayout(row.layout);
@@ -568,6 +576,7 @@ function toPoemSummary(
     ...(row.artwork_url ? { artworkUrl: row.artwork_url } : {}),
     ...(media ? { media } : {}),
     ...(layout ? { layout } : {}),
+    ...(versionLines?.length ? { versionLines } : {}),
     metrics: {
       comments: countValue(row.comments_count),
       likes: countValue(row.likes_count),
@@ -583,6 +592,36 @@ function toPoemSummary(
           ? "paper"
           : "water"
   };
+}
+
+function versionLineAuthorIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const authorId = objectValue(entry).authorId;
+    return typeof authorId === "string" && authorId ? [authorId] : [];
+  });
+}
+
+function toVersionLines(
+  value: unknown,
+  profiles: Map<string, ReturnType<typeof toUserProfile>>
+): PoemSummary["versionLines"] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const lines = value.flatMap((entry) => {
+    const row = objectValue(entry);
+    const authorId = row.authorId;
+    const author = typeof authorId === "string" ? profiles.get(authorId) : undefined;
+    if (typeof row.lineNumber !== "number" || typeof row.text !== "string" || !author) {
+      return [];
+    }
+    return [{
+      lineNumber: row.lineNumber,
+      text: row.text,
+      author,
+      ...(typeof row.likes === "number" ? { likes: row.likes } : {})
+    }];
+  });
+  return lines.length ? lines : undefined;
 }
 
 function toMedia(value: unknown): PoemDraftMedia | undefined {

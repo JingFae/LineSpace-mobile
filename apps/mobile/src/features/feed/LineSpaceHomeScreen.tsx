@@ -108,7 +108,6 @@ export function LineSpaceHomeScreen() {
         renderItem={({ item: poem }) => (
           <FeedCardReveal>
             <PoemCard
-              interactionsDisabled={engagement.isPending}
               poem={poem}
               onAuthorPress={(userId) => router.push({ pathname: "/profile/[id]", params: { id: userId } } as unknown as Href)}
               onCommentPress={(id) =>
@@ -221,7 +220,11 @@ export function mapPoemToCard(poem: PoemSummary): PoemCardModel {
       : poem.artworkTone === "water"
         ? waterArtwork
         : undefined,
-    layout: getPoemLayoutPresentation(poem)
+    layout: getPoemLayoutPresentation(poem),
+    versionLines: poem.versionLines?.map((line) => ({
+      ...line,
+      author: { ...line.author }
+    }))
   };
 }
 

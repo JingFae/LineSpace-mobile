@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useRef } from "react";
+import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import { colors, radius } from "@linespace/tokens";
 import { CommentIcon, LikeIcon, SaveIcon, ShareIcon } from "../icon";
 
@@ -85,6 +86,33 @@ function MetricButton({
   kind: MetricKind;
   onPress?: () => void;
 }) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const mounted = useRef(false);
+
+  useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true;
+      return;
+    }
+    if (kind !== "like" && kind !== "save") return;
+
+    scale.stopAnimation();
+    Animated.sequence([
+      Animated.timing(scale, {
+        toValue: active ? 1.22 : 0.88,
+        duration: 90,
+        useNativeDriver: true
+      }),
+      Animated.spring(scale, {
+        toValue: 1,
+        damping: 7,
+        mass: 0.55,
+        stiffness: 240,
+        useNativeDriver: true
+      })
+    ]).start();
+  }, [active, kind, scale]);
+
   return (
     <Pressable
       accessibilityLabel={accessibilityLabel}
@@ -95,7 +123,9 @@ function MetricButton({
       onPress={onPress}
       style={({ pressed }) => [styles.metric, pressed && styles.metricPressed]}
     >
-      <View style={styles.iconSlot}>{renderMetricIcon(kind, active)}</View>
+      <Animated.View style={[styles.iconSlot, { transform: [{ scale }] }]}>
+        {renderMetricIcon(kind, active)}
+      </Animated.View>
       <Text style={styles.metricValue}>{count}</Text>
     </Pressable>
   );

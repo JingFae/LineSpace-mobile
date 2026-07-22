@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { AppScreen } from "@linespace/ui";
 import { colors, radius, spacing } from "@linespace/tokens";
-import type { PoemDraftSettings } from "@linespace/api-client";
+import type { PoemDraft, PoemDraftSettings, PoetryThread } from "@linespace/api-client";
 import { lineSpaceApi } from "@/services/lineSpaceApi";
 import { useAuth } from "@/auth/AuthSessionProvider";
 import { tabRoutes } from "@/navigation/tabs";
@@ -24,9 +24,14 @@ const initialSettings: PoemDraftSettings = {
 type ThreadComposeScreenProps = {
   sessionKey: string;
   draftId?: string;
+  editThreadId?: string;
 };
 
-export function ThreadComposeScreen({ sessionKey, draftId: resumeDraftId }: ThreadComposeScreenProps) {
+export function ThreadComposeScreen({
+  sessionKey,
+  draftId: resumeDraftId,
+  editThreadId
+}: ThreadComposeScreenProps) {
   const queryClient = useQueryClient();
   const { user: authUser } = useAuth();
   const currentUserId = authUser?.id ?? "";
@@ -40,6 +45,13 @@ export function ThreadComposeScreen({ sessionKey, draftId: resumeDraftId }: Thre
   const [audienceOpen, setAudienceOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const draftInitialized = useRef(false);
+  const editInitialized = useRef(false);
+
+  const editThreadQuery = useQuery({
+    queryKey: ["compose-edit-thread", editThreadId, currentUserId],
+    queryFn: () => lineSpaceApi.getThread(editThreadId!, currentUserId),
+    enabled: Boolean(editThreadId) && currentUserId.length > 0
+  });
 
   const draftQueryKey = [
     "compose-draft-session",
@@ -60,7 +72,7 @@ export function ThreadComposeScreen({ sessionKey, draftId: resumeDraftId }: Thre
       }
       return draft;
     },
-    enabled: currentUserId.length > 0,
+    enabled: !editThreadId && currentUserId.length > 0,
     staleTime: Infinity
   });
 
@@ -81,8 +93,41 @@ export function ThreadComposeScreen({ sessionKey, draftId: resumeDraftId }: Thre
     });
   }, [draftQuery.data, resumeDraftId]);
 
-  const updateMutation = useMutation({
+  useEffect(() => {
+    const detail = editThreadQuery.data;
+    if (!editThreadId || !detail || editInitialized.current) return;
+    if (detail.thread.author.id !== currentUserId) {
+      setError("Only the starter can edit this thread.");
+      return;
+    }
+    editInitialized.current = true;
+    setTitle(detail.thread.title ?? "");
+    setFirstLine(detail.thread.startingContent ?? detail.thread.content);
+    setRules(detail.thread.rules ?? detail.thread.content);
+    setTag((detail.thread.tags ?? []).map((value) => `#${value}`).join(" "));
+    setMention((detail.thread.mentions ?? []).map((value) => `@${value.replace(/^@/, "")}`).join(" "));
+    setSettings((current) => ({
+      ...current,
+      visibility: detail.thread.visibility ?? "public",
+      isPublic: (detail.thread.visibility ?? "public") === "public",
+      audienceUserIds: [...(detail.thread.audienceUserIds ?? [])]
+    }));
+  }, [currentUserId, editThreadId, editThreadQuery.data]);
+
+  const updateMutation = useMutation<PoemDraft | PoetryThread, Error, void>({
     mutationFn: () => {
+      if (editThreadId) {
+        return lineSpaceApi.updateThread({
+          threadId: editThreadId,
+          userId: currentUserId,
+          title: title.trim(),
+          startingContent: firstLine.trim(),
+          rules: rules.trim(),
+          tags: parse(tag),
+          mentions: parse(mention),
+          visibility: settings.visibility
+        });
+      }
       const draftId = draftQuery.data?.id;
       if (!draftId) throw new Error("Draft is not ready");
       return lineSpaceApi.updatePoemDraft({
@@ -102,6 +147,7 @@ export function ThreadComposeScreen({ sessionKey, draftId: resumeDraftId }: Thre
   const publishMutation = useMutation({
     mutationFn: async () => {
       await updateMutation.mutateAsync();
+      if (editThreadId) return null;
       return lineSpaceApi.publishThreadDraft({
         draftId: draftQuery.data!.id,
         userId: currentUserId
@@ -114,7 +160,12 @@ export function ThreadComposeScreen({ sessionKey, draftId: resumeDraftId }: Thre
       void queryClient.invalidateQueries({ queryKey: ["user-profile-content", currentUserId] });
       void queryClient.invalidateQueries({ queryKey: ["user-drafts", currentUserId] });
       void queryClient.invalidateQueries({ queryKey: ["content-search"] });
-      router.replace(tabRoutes.thread);
+      if (editThreadId) {
+        void queryClient.invalidateQueries({ queryKey: ["thread-detail", editThreadId] });
+        router.replace({ pathname: "/thread/[id]", params: { id: editThreadId } } as never);
+      } else {
+        router.replace(tabRoutes.thread);
+      }
     }
   });
 
@@ -142,11 +193,13 @@ export function ThreadComposeScreen({ sessionKey, draftId: resumeDraftId }: Thre
       return;
     }
     setError(null);
-    updateMutation.mutate(undefined, { onSuccess: () => setStep(2) });
+    if (editThreadId) setStep(2);
+    else updateMutation.mutate(undefined, { onSuccess: () => setStep(2) });
   };
 
   const busy =
     draftQuery.isLoading ||
+    editThreadQuery.isLoading ||
     updateMutation.isPending ||
     publishMutation.isPending ||
     saveMutation.isPending;
@@ -163,7 +216,7 @@ export function ThreadComposeScreen({ sessionKey, draftId: resumeDraftId }: Thre
           <Text style={styles.close}>×</Text>
         </Pressable>
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>new poem relay</Text>
+          <Text style={styles.headerTitle}>{editThreadId ? "edit poem relay" : "new poem relay"}</Text>
           <Text style={styles.headerSubtitle}>{step === 1 ? "setup" : "audience"}</Text>
         </View>
         {step === 1 ? (
@@ -275,18 +328,26 @@ export function ThreadComposeScreen({ sessionKey, draftId: resumeDraftId }: Thre
             ) : null}
           </View>
           <View style={styles.actions}>
-            <Text style={styles.actionHint}>You can edit the audience later from your draft.</Text>
+            <Text style={styles.actionHint}>
+              {editThreadId
+                ? "Changes keep every existing continuation in place."
+                : "You can edit the audience later from your draft."}
+            </Text>
             <Pressable disabled={busy} onPress={() => publishMutation.mutate()} style={styles.publish}>
-              <Text style={styles.publishText}>{publishMutation.isPending ? "Publishing…" : "Publish relay"}</Text>
+              <Text style={styles.publishText}>
+                {publishMutation.isPending ? "Saving…" : editThreadId ? "Save changes" : "Publish relay"}
+              </Text>
             </Pressable>
-            <Pressable disabled={busy} onPress={() => saveMutation.mutate()} style={styles.save}>
-              <Text style={styles.saveText}>{saveMutation.isPending ? "Saving…" : "Save to draft"}</Text>
-            </Pressable>
+            {!editThreadId ? (
+              <Pressable disabled={busy} onPress={() => saveMutation.mutate()} style={styles.save}>
+                <Text style={styles.saveText}>{saveMutation.isPending ? "Saving…" : "Save to draft"}</Text>
+              </Pressable>
+            ) : null}
           </View>
         </>
       )}
 
-      {error || draftQuery.isError || updateMutation.isError || publishMutation.isError || saveMutation.isError ? (
+      {error || draftQuery.isError || editThreadQuery.isError || updateMutation.isError || publishMutation.isError || saveMutation.isError ? (
         <Text style={styles.error}>
           {error ?? "The relay draft could not be saved. Please try again."}
         </Text>

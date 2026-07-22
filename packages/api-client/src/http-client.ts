@@ -11,6 +11,8 @@ import type {
   ContentSearchResult,
   DraftInvitation,
   DraftOperationInput,
+  DeleteThreadInput,
+  DeleteThreadResult,
   DeletePoemInput,
   DeletePoemResult,
   FeedQuery,
@@ -47,6 +49,7 @@ import type {
   ShareThreadInput,
   ShareThreadToGroupInput,
   UpdateThreadCollectionInput,
+  UpdateThreadInput,
   UpdatePoemDraftInput,
   UpdateInboxGroupInput,
   UpdatePoemCollectionInput,
@@ -448,6 +451,17 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     const suffix = params.size > 0 ? `?${params.toString()}` : "";
     return this.getJson<ThreadDetail | null>(
       `/v1/threads/${encodeURIComponent(threadId)}${suffix}`
+    );
+  }
+
+  async updateThread(input: UpdateThreadInput): Promise<PoetryThread> {
+    const { threadId, ...request } = input;
+    return this.putJson<PoetryThread>(`/v1/threads/${encodeURIComponent(threadId)}`, request);
+  }
+
+  async deleteThread(input: DeleteThreadInput): Promise<DeleteThreadResult> {
+    return this.deleteJson<DeleteThreadResult>(
+      `/v1/threads/${encodeURIComponent(input.threadId)}`
     );
   }
 

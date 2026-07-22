@@ -9,6 +9,8 @@ import type {
   CreateThreadContinuationInput,
   ContentSearchResult,
   DraftOperationInput,
+  DeleteThreadInput,
+  DeleteThreadResult,
   DeletePoemInput,
   DeletePoemResult,
   FeedQuery,
@@ -47,6 +49,7 @@ import type {
   UpdatePoemCollectionInput,
   UpdatePoemDraftInput,
   UpdateThreadCollectionInput,
+  UpdateThreadInput,
   UpdateThreadLikeInput,
   UpdateUserFollowInput,
   UpdateUserProfileInput,
@@ -239,6 +242,14 @@ export class SupabaseLineSpaceApi implements LineSpaceApi {
 
   getThread(threadId: string, _viewerId?: string): Promise<ThreadDetail | null> {
     return this.threads.getThread(threadId);
+  }
+
+  updateThread(input: UpdateThreadInput) {
+    return this.threads.updateThread(input);
+  }
+
+  deleteThread(input: DeleteThreadInput): Promise<DeleteThreadResult> {
+    return this.threads.deleteThread(input);
   }
 
   getContinuationDetail(continuationId: string, _viewerId?: string) {

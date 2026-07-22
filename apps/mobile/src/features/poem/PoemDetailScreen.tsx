@@ -23,7 +23,8 @@ import {
   EmptyState,
   PoemEngagementBar,
   PoemLayoutCard,
-  SearchIcon
+  SearchIcon,
+  VersionPostLayoutCard
 } from "@linespace/ui";
 import { colors, radius, spacing } from "@linespace/tokens";
 import type { PoemComment, PoemCreditPerson, PoemSummary } from "@linespace/api-client";
@@ -95,6 +96,28 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
 
   const updateCommentCollection = async (comment: PoemComment, collection: "liked" | "saved", isActive: boolean) => {
     if (!id) return;
+    const previous = poemQuery.data;
+    if (previous) {
+      updatePoemCache({
+        ...previous,
+        comments: previous.comments?.map((item) => {
+          if (item.id !== comment.id) return item;
+          const wasActive = collection === "liked"
+            ? item.viewer?.liked ?? false
+            : item.viewer?.saved ?? false;
+          return {
+            ...item,
+            ...(collection === "liked" && wasActive !== isActive
+              ? { likes: Math.max(0, (item.likes ?? 0) + (isActive ? 1 : -1)) }
+              : {}),
+            viewer: {
+              liked: collection === "liked" ? isActive : item.viewer?.liked ?? false,
+              saved: collection === "saved" ? isActive : item.viewer?.saved ?? false
+            }
+          };
+        })
+      });
+    }
     try {
       const result = await lineSpaceApi.setCommentCollection({ poemId: id, commentId: comment.id, userId: currentUserId, collection, isActive });
       updatePoemCache(result.poem);
@@ -104,6 +127,7 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
       void queryClient.invalidateQueries({ queryKey: ["inbox-summary"] });
       if (collection === "saved" && isActive) setNotice("Comment saved to your profile");
     } catch {
+      if (previous) updatePoemCache(previous);
       setNotice("Could not update comment");
     }
   };
@@ -161,7 +185,6 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
             onSavePress={(isSaved) =>
               engagement.setCollection(poem.id, "saved", isSaved)
             }
-            disabled={engagement.isPending}
             onSharePress={() => router.push({ pathname: "/poem/share/[id]", params: { id: poem.id } } as never)}
             poem={poem}
           />
@@ -190,23 +213,29 @@ function DetailHeader({ poem }: { poem?: PoemSummary }) {
         <Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.backButton}>
           <ChevronLeftIcon />
         </Pressable>
-        <Pressable disabled={!poem} onPress={() => poem && router.push({ pathname: "/profile/[id]", params: { id: poem.author.id } } as never)}>
-          <Avatar
-            color={avatarColor ?? colors.accent}
-            imageSource={poem?.author.avatarUrl ? { uri: poem.author.avatarUrl } : undefined}
-            label={poem?.author.displayName ?? "LineSpace"}
-            size={34}
-          />
-        </Pressable>
-        <Text style={styles.headerName}>{poem?.author.displayName.toLowerCase() ?? "line"}</Text>
+        {poem ? (
+          <>
+            <Pressable onPress={() => router.push({ pathname: "/profile/[id]", params: { id: poem.author.id } } as never)}>
+              <Avatar
+                color={avatarColor ?? colors.accent}
+                imageSource={poem.author.avatarUrl ? { uri: poem.author.avatarUrl } : undefined}
+                label={poem.author.displayName}
+                size={34}
+              />
+            </Pressable>
+            <Text style={styles.headerName}>{poem.author.displayName.toLowerCase()}</Text>
+          </>
+        ) : null}
       </View>
 
-      <View style={styles.headerRight}>
-        <Pressable accessibilityRole="button" style={styles.followButton}>
-          <Text style={styles.followText}>+ follow</Text>
-        </Pressable>
-        <SearchButton />
-      </View>
+      {poem ? (
+        <View style={styles.headerRight}>
+          <Pressable accessibilityRole="button" style={styles.followButton}>
+            <Text style={styles.followText}>+ follow</Text>
+          </Pressable>
+          <SearchButton />
+        </View>
+      ) : <View style={styles.headerRightPlaceholder} />}
     </View>
   );
 }
@@ -229,10 +258,22 @@ function PoemDetailContent({
   onCommentSave: (comment: PoemComment) => void;
 }) {
   const layoutPresentation = getPoemLayoutPresentation(poem);
+  const isVersionPost = Boolean(poem.versionLines?.length);
 
   return (
     <View>
-      {layoutPresentation ? (
+      {isVersionPost ? (
+        <VersionPostLayoutCard
+          backgroundRole={layoutPresentation?.backgroundRole}
+          lines={poem.versionLines ?? []}
+          mediaSource={layoutPresentation?.mediaSource}
+          onTagPress={(tag) => router.push({ pathname: "/tags/[tag]", params: { tag, section: "posts" } } as never)}
+          publishedBy={poem.author.displayName}
+          style={[styles.detailLayoutCard, targetKind === "post" && styles.targetLayoutHighlight]}
+          tags={poem.tags}
+          title={poem.title}
+        />
+      ) : layoutPresentation ? (
         <PoemLayoutCard
           backgroundRole={layoutPresentation.backgroundRole}
           mediaAspectRatio={layoutPresentation.mediaAspectRatio}
@@ -258,11 +299,11 @@ function PoemDetailContent({
       <View
         style={[
           styles.poemPanel,
-          layoutPresentation && styles.designedConversation,
+          (layoutPresentation || isVersionPost) && styles.designedConversation,
           targetKind === "post" && styles.targetHighlight
         ]}
       >
-        {!layoutPresentation ? (
+        {!layoutPresentation && !isVersionPost ? (
           <>
             <View style={styles.titleRow}>
               <Text style={styles.titleMark}>✦</Text>
@@ -471,13 +512,13 @@ function CreditPerson({
 
 function MetricDock({
   poem,
-  disabled,
+  disabled = false,
   onLikePress,
   onSavePress,
   onSharePress
 }: {
   poem: PoemSummary;
-  disabled: boolean;
+  disabled?: boolean;
   onLikePress: (isLiked: boolean) => void;
   onSavePress: (isSaved: boolean) => void;
   onSharePress: () => void;
@@ -605,6 +646,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8
   },
+  headerRightPlaceholder: { width: 40 },
   backButton: {
     width: 40,
     height: 44,

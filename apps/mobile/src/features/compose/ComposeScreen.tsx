@@ -61,6 +61,7 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
   const [error, setError] = useState<string | null>(null);
   const editInitialized = useRef(false);
   const draftInitialized = useRef(false);
+  const createdDraft = useRef<PoemDraft | null>(null);
 
   const editPostQuery = useQuery({
     queryKey: ["compose-edit-post", editPostId, currentUserId],
@@ -102,16 +103,14 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
       resumeDraftId ?? editPostId ?? sourceVersionId ?? "new"
     ],
     queryFn: async () => {
-      if (!resumeDraftId) {
-        return lineSpaceApi.createPoemDraft({ ownerId: currentUserId, mode: "draft" });
-      }
+      if (!resumeDraftId) throw new Error("A saved draft id is required");
       const draft = await lineSpaceApi.getPoemDraft(resumeDraftId);
       if (!draft || draft.ownerId !== currentUserId || draft.mode !== "draft") {
         throw new Error("Draft was not found");
       }
       return draft;
     },
-    enabled: currentUserId.length > 0,
+    enabled: Boolean(resumeDraftId) && currentUserId.length > 0,
     retry: 1,
     staleTime: Infinity
   });
@@ -133,16 +132,19 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const draftId = draftQuery.data?.id;
-      if (!draftId) throw new Error("Draft is not ready");
+      let draft = draftQuery.data ?? createdDraft.current;
+      if (!draft) {
+        draft = await lineSpaceApi.createPoemDraft({ ownerId: currentUserId, mode: "draft" });
+        createdDraft.current = draft;
+      }
       return lineSpaceApi.updatePoemDraft({
-        draftId,
+        draftId: draft.id,
         userId: currentUserId,
         title: title.trim(),
         body: (lockedVersionContent ? sourceVersionBody : body).trim(),
         byline: contributorHandles.length
           ? [...contributorHandles].sort((left, right) => left.localeCompare(right)).join(", ")
-          : draftQuery.data?.collaborators[0]?.user.displayName ?? "",
+          : draft.collaborators[0]?.user.displayName ?? "",
         tags: parseTags(tag),
         mentions: parseMentions(mention),
         media,
@@ -198,12 +200,16 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
       setError("Write at least one line before opening layout.");
       return;
     }
-    if (!draftQuery.data) {
+    if (resumeDraftId && !draftQuery.data) {
       setError(
         draftQuery.isError
           ? "The draft service is unavailable. Pull back and try again after the database migration is applied."
           : "Preparing your draft. Please try again in a moment."
       );
+      return;
+    }
+    if (editPostId && !editPostQuery.data) {
+      setError(editPostQuery.isError ? "This post could not be loaded for editing." : "Loading your post. Please try again in a moment.");
       return;
     }
     setError(null);
@@ -220,8 +226,8 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
       contentContainerStyle={styles.screen}
     >
       <ComposeHeader
-        isBusy={draftQuery.isLoading || saveMutation.isPending}
-        isDisabled={!draftQuery.data || currentUserId.length === 0}
+        isBusy={(Boolean(resumeDraftId) && draftQuery.isLoading) || editPostQuery.isLoading || saveMutation.isPending}
+        isDisabled={currentUserId.length === 0 || (Boolean(editPostId) && !editPostQuery.data)}
         onAction={goToPreview}
         title={editPostId ? "edit post" : "new post"}
       />

@@ -22,6 +22,8 @@ import type {
   ContentSearchResult,
   DraftInvitation,
   DraftOperationInput,
+  DeleteThreadInput,
+  DeleteThreadResult,
   DeletePoemInput,
   DeletePoemResult,
   FeedQuery,
@@ -61,6 +63,7 @@ import type {
   ShareThreadInput,
   ShareThreadToGroupInput,
   UpdateThreadCollectionInput,
+  UpdateThreadInput,
   UpdatePoemDraftInput,
   UpdateInboxGroupInput,
   UpdatePoemCollectionInput,
@@ -127,6 +130,8 @@ export interface LineSpaceApi {
   ): Promise<UserConnectionPage>;
   listThreads(query?: ThreadFeedQuery): Promise<PoetryThread[]>;
   getThread(threadId: string, viewerId?: string): Promise<ThreadDetail | null>;
+  updateThread(input: UpdateThreadInput): Promise<PoetryThread>;
+  deleteThread(input: DeleteThreadInput): Promise<DeleteThreadResult>;
   getContinuationDetail(
     continuationId: string,
     viewerId?: string
@@ -369,6 +374,10 @@ export class MockLineSpaceApi implements LineSpaceApi {
       artworkTone: draft.layout.backgroundId === "midnight" ? "night" : "paper",
       media: draft.media ? { ...draft.media } : undefined,
       layout: cloneLayout(draft.layout),
+      versionLines: draft.versionLines?.map((line) => ({
+        ...line,
+        author: { ...line.author }
+      })),
       comments: replaced?.comments?.map(cloneComment),
       credits: {
         startedBy: profileToUser(owner),
@@ -522,6 +531,19 @@ export class MockLineSpaceApi implements LineSpaceApi {
       declareOriginal: false,
       allowComments: true,
       allowSharing: true,
+      versionLines: [
+        {
+          lineNumber: 1,
+          text: thread.startingContent ?? thread.content,
+          author: { ...thread.author }
+        },
+        ...continuationLines.map((item, index) => ({
+          lineNumber: item.lineNumber ?? index + 2,
+          text: item.content,
+          author: { ...item.author },
+          likes: item.metrics.likes
+        }))
+      ],
       status: "final",
       startedAt: now,
       editedAt: now,
@@ -560,7 +582,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
       .filter(
         (draft) =>
           draft.ownerId === userId &&
-          draft.status !== "published" &&
+          draft.status === "ready" &&
           draft.collaborators.some((collaborator) => collaborator.user.id === userId)
       )
       .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
@@ -1446,6 +1468,39 @@ export class MockLineSpaceApi implements LineSpaceApi {
       continuations: allContinuations.filter((item) => !item.parentContinuationId),
       allContinuations
     };
+  }
+
+  async updateThread(input: UpdateThreadInput): Promise<PoetryThread> {
+    const thread = this.threads.find((item) => item.id === input.threadId);
+    if (!thread || thread.author.id !== input.userId) throw new Error("Thread access denied");
+    thread.title = input.title.trim() || "poem relay";
+    thread.content = input.rules.trim();
+    thread.rules = input.rules.trim();
+    thread.startingContent = input.startingContent.trim();
+    thread.tags = [...input.tags];
+    thread.mentions = [...input.mentions];
+    thread.visibility = input.visibility;
+    return cloneThread(thread);
+  }
+
+  async deleteThread(input: DeleteThreadInput): Promise<DeleteThreadResult> {
+    const index = this.threads.findIndex((item) => item.id === input.threadId);
+    if (index < 0 || this.threads[index]?.author.id !== input.userId) {
+      throw new Error("Thread access denied");
+    }
+    this.threads.splice(index, 1);
+    for (let continuationIndex = this.continuations.length - 1; continuationIndex >= 0; continuationIndex -= 1) {
+      if (this.continuations[continuationIndex]?.threadId === input.threadId) {
+        this.continuations.splice(continuationIndex, 1);
+      }
+    }
+    const content = mockUserProfileContent[input.userId];
+    if (content) {
+      content.threads = content.threads.filter((item) => item.threadId !== input.threadId);
+    }
+    const profile = this.profiles.find((item) => item.id === input.userId);
+    if (profile) profile.contentCounts.threads = Math.max(0, profile.contentCounts.threads - 1);
+    return { threadId: input.threadId, deleted: true };
   }
 
   async getContinuationDetail(
@@ -2400,6 +2455,10 @@ function clonePoem(poem: PoemSummary): PoemSummary {
     audienceUserIds: poem.audienceUserIds ? [...poem.audienceUserIds] : undefined,
     media: poem.media ? { ...poem.media } : undefined,
     layout: poem.layout ? cloneLayout(poem.layout) : undefined,
+    versionLines: poem.versionLines?.map((line) => ({
+      ...line,
+      author: { ...line.author }
+    })),
     metrics: { ...poem.metrics },
     viewer: { ...poem.viewer },
     credits: poem.credits

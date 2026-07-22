@@ -395,7 +395,7 @@ export class DraftRepository {
       .from("poem_drafts")
       .select(draftSelect)
       .eq("owner_user_id", userId)
-      .in("status", ["editing", "ready"])
+      .eq("status", "ready")
       .order("updated_at", { ascending: false })
       .limit(100);
     ensureDatabaseResult(result.error);

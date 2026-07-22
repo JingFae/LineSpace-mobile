@@ -518,6 +518,7 @@ export type PoemSummary = {
   artworkUrl?: string;
   media?: PoemDraftMedia;
   layout?: PoemLayoutConfig;
+  versionLines?: PoemDraft["versionLines"];
   metrics: PoemMetrics;
   viewer: PoemViewerEngagement;
   artworkTone: "water" | "paper" | "night";
@@ -744,6 +745,27 @@ export type PoetryThread = {
   media?: PoemDraftMedia;
   metrics: ThreadMetrics;
   viewer: ThreadViewerState;
+};
+
+export type UpdateThreadInput = {
+  threadId: string;
+  userId: string;
+  title: string;
+  startingContent: string;
+  rules: string;
+  tags: string[];
+  mentions: string[];
+  visibility: DraftVisibility;
+};
+
+export type DeleteThreadInput = {
+  threadId: string;
+  userId: string;
+};
+
+export type DeleteThreadResult = {
+  threadId: string;
+  deleted: boolean;
 };
 
 export type ThreadContinuation = {

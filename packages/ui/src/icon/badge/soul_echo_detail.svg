@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 240" width="200" height="240">
+  <defs>
+    <!-- 引入优雅的古典衬线字体 -->
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;1,400&amp;display=swap');
+      .badge-title-echo { font-family: 'Playfair Display', serif; font-weight: 600; font-size: 20px; fill: #1E3A8A; text-anchor: middle; letter-spacing: 0.5px; }
+      .badge-subtitle-echo { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 10px; fill: #9CA3AF; text-anchor: middle; letter-spacing: 2px; text-transform: uppercase; font-weight: 500;}
+    </style>
+    
+    <!-- 暮色蓝渐变底色 -->
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E293B"/>
+      <stop offset="100%" stop-color="#0F172A"/>
+    </linearGradient>
+    
+    <!-- 提灯光晕 -->
+    <radialGradient id="lanternGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FEF08A" stop-opacity="0.8"/>
+      <stop offset="40%" stop-color="#FDE047" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#FDE047" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 阴影滤镜 -->
+    <filter id="echoShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#0F172A" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- 外层深邃圆环 -->
+  <circle cx="100" cy="90" r="70" fill="url(#blueGrad)" stroke="#94A3B8" stroke-width="3" filter="url(#echoShadow)"/>
+  
+  <!-- 共鸣波纹 (Echo Rings) -->
+  <circle cx="100" cy="90" r="50" fill="none" stroke="#FDE047" stroke-width="1.5" opacity="0.15"/>
+  <circle cx="100" cy="90" r="35" fill="none" stroke="#FDE047" stroke-width="1.5" opacity="0.3"/>
+
+  <!-- 光晕背景 -->
+  <circle cx="100" cy="90" r="40" fill="url(#lanternGlow)"/>
+
+  <!-- 提灯矢量图形 -->
+  <g transform="translate(0, -10)">
+    <!-- 提手 -->
+    <path d="M100 50 C80 50 75 65 85 80" fill="none" stroke="#94A3B8" stroke-width="3" stroke-linecap="round"/>
+    <path d="M100 50 C120 50 125 65 115 80" fill="none" stroke="#94A3B8" stroke-width="3" stroke-linecap="round"/>
+    
+    <!-- 顶部灯帽 -->
+    <path d="M85 70 L115 70 L110 60 L90 60 Z" fill="#475569"/>
+    <rect x="95" y="55" width="10" height="5" fill="#94A3B8" rx="2"/>
+    
+    <!-- 玻璃灯罩边缘 -->
+    <path d="M85 70 L115 70 L120 115 L80 115 Z" fill="none" stroke="#64748B" stroke-width="3"/>
+    
+    <!-- 中心火焰 -->
+    <path d="M100 85 C95 95 90 100 90 105 C90 110 95 112 100 112 C105 112 110 110 110 105 C110 100 105 95 100 85 Z" fill="#F59E0B"/>
+    <path d="M100 92 C98 98 96 102 96 105 C96 108 98 109 100 109 C102 109 104 108 104 105 C104 102 102 98 100 92 Z" fill="#FEF3C7"/>
+
+    <!-- 底部灯座 -->
+    <path d="M75 115 L125 115 L120 130 L80 130 Z" fill="#475569"/>
+    <rect x="85" y="118" width="30" height="4" fill="#334155" rx="2"/>
+  </g>
+
+  <!-- 艺术排版 -->
+  <text x="100" y="200" class="badge-title-echo">Soul Echo</text>
+  <text x="100" y="222" class="badge-subtitle-echo">Poetry Reviewer</text>
+</svg>

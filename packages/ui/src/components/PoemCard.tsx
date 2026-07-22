@@ -11,6 +11,7 @@ import { PoemArtwork, type ArtworkTone } from "./PoemArtwork";
 import { PoemEngagementBar } from "./PoemEngagementBar";
 import { PoemLayoutCard } from "./PoemLayoutCard";
 import { ContentTagRow } from "./ContentTag";
+import { VersionPostLayoutCard, type VersionPostLineModel } from "./VersionPostLayoutCard";
 
 export type PoemCardModel = {
   id: string;
@@ -48,6 +49,7 @@ export type PoemCardModel = {
     mediaSource?: ImageSourcePropType;
     mediaAspectRatio?: number;
   };
+  versionLines?: VersionPostLineModel[];
 };
 
 type PoemCardProps = {
@@ -109,7 +111,18 @@ export function PoemCard({
           </Text>
         </View>
 
-        {poem.layout ? (
+        {poem.versionLines?.length ? (
+          <VersionPostLayoutCard
+            backgroundRole={poem.layout?.backgroundRole}
+            lines={poem.versionLines}
+            mediaSource={poem.layout?.mediaSource}
+            onTagPress={onTagPress}
+            publishedBy={poem.author.displayName}
+            style={styles.layoutCard}
+            tags={poem.tags}
+            title={poem.title}
+          />
+        ) : poem.layout ? (
           <PoemLayoutCard
             backgroundRole={poem.layout.backgroundRole}
             mediaAspectRatio={poem.layout.mediaAspectRatio}

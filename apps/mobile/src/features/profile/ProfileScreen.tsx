@@ -68,6 +68,7 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
   const [showExperience, setShowExperience] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [managedPost, setManagedPost] = useState<UserProfileContentItem | null>(null);
+  const [managedThread, setManagedThread] = useState<UserProfileContentItem | null>(null);
   const queryClient = useQueryClient();
 
   const profileQuery = useQuery({
@@ -112,6 +113,16 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
       void queryClient.invalidateQueries({ queryKey: ["user-profile-content", currentUserId] });
     }
   });
+  const deleteThread = useMutation({
+    mutationFn: (threadId: string) => lineSpaceApi.deleteThread({ threadId, userId: currentUserId }),
+    onSuccess: (result) => {
+      setManagedThread(null);
+      queryClient.removeQueries({ queryKey: ["thread-detail", result.threadId] });
+      void queryClient.invalidateQueries({ queryKey: ["threads"] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", currentUserId] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile-content", currentUserId] });
+    }
+  });
 
   return (
     <AppScreen
@@ -150,6 +161,10 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
             onManagePost={(item) => {
               deletePost.reset();
               setManagedPost(item);
+            }}
+            onManageThread={(item) => {
+              deleteThread.reset();
+              setManagedThread(item);
             }}
             onSettingsPress={() => setShowSettings(true)}
             onSectionChange={setSection}
@@ -216,6 +231,23 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
         }}
         pending={deletePost.isPending}
       />
+      <ManageThreadSheet
+        error={deleteThread.isError}
+        item={managedThread}
+        onClose={() => {
+          deleteThread.reset();
+          setManagedThread(null);
+        }}
+        onDelete={(threadId) => deleteThread.mutate(threadId)}
+        onEdit={(threadId) => {
+          setManagedThread(null);
+          router.push({
+            pathname: "/(tabs)/compose",
+            params: { type: "thread", session: `edit-thread-${threadId}-${Date.now()}`, editThreadId: threadId }
+          } as unknown as Href);
+        }}
+        pending={deleteThread.isPending}
+      />
     </AppScreen>
   );
 }
@@ -232,6 +264,7 @@ function ProfileLoaded({
   onExperiencePress,
   onLikesAndSavesPress,
   onManagePost,
+  onManageThread,
   onSettingsPress,
   onSectionChange,
   onThreadRelationChange,
@@ -249,6 +282,7 @@ function ProfileLoaded({
   onExperiencePress: () => void;
   onLikesAndSavesPress: () => void;
   onManagePost: (item: UserProfileContentItem) => void;
+  onManageThread: (item: UserProfileContentItem) => void;
   onSettingsPress: () => void;
   onSectionChange: (section: UserProfileContentSection) => void;
   onThreadRelationChange: (relation: UserThreadRelation) => void;
@@ -349,7 +383,16 @@ function ProfileLoaded({
               <ProfileContentCard
                 item={item}
                 key={item.id}
-                onManage={isOwner && itemSection === "posts" && item.kind === "post" ? onManagePost : undefined}
+                onManage={
+                  isOwner && itemSection === "posts" && item.kind === "post"
+                    ? onManagePost
+                    : isOwner &&
+                        itemSection === "threads" &&
+                        item.kind === "thread" &&
+                        item.threadRelation === "started"
+                      ? onManageThread
+                      : undefined
+                }
               />
             ))}
           </View>
@@ -544,7 +587,12 @@ function SubTabs<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.subTabs}>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.subTabs}
+      style={styles.subTabsScroll}
+    >
       {labels.map((label) => (
         <Pressable
           key={label}
@@ -601,6 +649,19 @@ function ProfileContentCard({
   if (item.kind === "thread") {
     return (
       <Pressable onPress={open} style={({ pressed }) => [styles.threadCard, pressed && styles.cardPressed]}>
+        {onManage ? (
+          <Pressable
+            accessibilityLabel={`Manage ${item.title}`}
+            accessibilityRole="button"
+            onPress={(event) => {
+              event.stopPropagation();
+              onManage(item);
+            }}
+            style={styles.postManageButton}
+          >
+            <Text style={styles.postManageGlyph}>•••</Text>
+          </Pressable>
+        ) : null}
         <View style={styles.threadCardHeader}>
           <Text style={styles.eyebrow}>{item.threadRelation === "started" ? "STARTED" : "JOINED"} · THREAD</Text>
           <Text style={styles.dateText}>{formatProfileDate(item.finishedAt)}</Text>
@@ -713,6 +774,68 @@ function ManagePostSheet({
               <Pressable disabled={!poemId} onPress={() => setConfirmingDelete(true)} style={[styles.manageActionButton, styles.manageDangerAction]}>
                 <Text style={styles.manageDangerTitle}>Delete post</Text>
                 <Text style={styles.manageActionHint}>A confirmation is required</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function ManageThreadSheet({
+  item,
+  pending,
+  error,
+  onClose,
+  onEdit,
+  onDelete
+}: {
+  item: UserProfileContentItem | null;
+  pending: boolean;
+  error: boolean;
+  onClose: () => void;
+  onEdit: (threadId: string) => void;
+  onDelete: (threadId: string) => void;
+}) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  useEffect(() => {
+    if (!item) setConfirmingDelete(false);
+  }, [item]);
+  const threadId = item?.threadId;
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible={Boolean(item)}>
+      <View style={styles.modalRoot}>
+        <Pressable accessibilityLabel="Close thread actions" onPress={onClose} style={styles.modalBackdrop} />
+        <View style={styles.managePostSheet}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.managePostEyebrow}>YOUR STARTED THREAD</Text>
+          <Text numberOfLines={2} style={styles.managePostTitle}>{item?.title}</Text>
+          {confirmingDelete ? (
+            <View style={styles.manageConfirmBox}>
+              <Text style={styles.manageConfirmTitle}>Delete this thread?</Text>
+              <Text style={styles.manageConfirmCopy}>
+                Its continuation tree, versions, likes and saves will be permanently removed.
+              </Text>
+              {error ? <Text style={styles.manageError}>The thread could not be deleted. Please try again.</Text> : null}
+              <View style={styles.manageActionsRow}>
+                <Pressable disabled={pending} onPress={() => setConfirmingDelete(false)} style={styles.manageSecondaryButton}>
+                  <Text style={styles.manageSecondaryText}>Cancel</Text>
+                </Pressable>
+                <Pressable disabled={pending || !threadId} onPress={() => threadId && onDelete(threadId)} style={styles.manageDeleteButton}>
+                  <Text style={styles.manageDeleteText}>{pending ? "Deleting…" : "Delete"}</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <>
+              <Pressable disabled={!threadId} onPress={() => threadId && onEdit(threadId)} style={styles.manageActionButton}>
+                <Text style={styles.manageActionTitle}>Edit thread setup</Text>
+                <Text style={styles.manageActionHint}>Update title, first line, rules, tags and visibility</Text>
+              </Pressable>
+              <Pressable disabled={!threadId} onPress={() => setConfirmingDelete(true)} style={[styles.manageActionButton, styles.manageDangerAction]}>
+                <Text style={styles.manageDangerTitle}>Delete thread</Text>
+                <Text style={styles.manageActionHint}>Only threads you started can be deleted</Text>
               </Pressable>
             </>
           )}
@@ -974,19 +1097,20 @@ const styles = StyleSheet.create({
   badgeCardCopy: { flex: 1, marginLeft: 3 },
   badgeCardTitle: { color: colors.ink, fontSize: 13, fontWeight: "700" },
   badgeCardSubtitle: { color: colors.profileMuted, fontSize: 10, lineHeight: 15, marginTop: 3 },
-  statsRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", marginTop: 12, paddingHorizontal: spacing.lg },
-  stat: { alignItems: "center", borderRadius: 14, justifyContent: "center", minHeight: 44, width: "31%" },
+  statsRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", marginTop: 9, paddingHorizontal: spacing.lg },
+  stat: { alignItems: "center", borderRadius: 14, justifyContent: "center", minHeight: 39, width: "31%" },
   statPressed: { backgroundColor: "rgba(255,255,255,0.62)" },
   statValue: { color: colors.ink, fontSize: 20, fontWeight: "700", lineHeight: 24 },
   statLabel: { color: colors.profileMuted, fontSize: 11, lineHeight: 14, marginTop: 1 },
   contentPanel: { backgroundColor: colors.profileCanvas, borderTopLeftRadius: 26, borderTopRightRadius: 26, marginTop: -1, minHeight: 580, paddingBottom: 24 },
-  tabs: { alignItems: "center", borderBottomColor: "rgba(21,21,21,0.08)", borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: "row", height: 54, paddingHorizontal: 12, paddingTop: 5 },
-  tab: { alignItems: "center", flex: 1, height: 48, justifyContent: "center", position: "relative" },
+  tabs: { alignItems: "center", borderBottomColor: "rgba(21,21,21,0.08)", borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: "row", height: 48, paddingHorizontal: 12, paddingTop: 2 },
+  tab: { alignItems: "center", flex: 1, height: 45, justifyContent: "center", position: "relative" },
   tabLabel: { color: colors.tabMuted, fontSize: 13, fontWeight: "600" },
   tabLabelActive: { color: colors.ink, fontWeight: "800" },
   tabIndicator: { backgroundColor: colors.ink, borderRadius: 2, bottom: 0, height: 3, position: "absolute", width: 22 },
-  subTabs: { alignItems: "center", gap: 7, paddingHorizontal: spacing.lg, paddingVertical: 7 },
-  subTab: { backgroundColor: "rgba(255,255,255,0.7)", borderRadius: radius.pill, paddingHorizontal: 13, paddingVertical: 6 },
+  subTabsScroll: { flexGrow: 0, height: 43 },
+  subTabs: { alignItems: "center", gap: 7, paddingHorizontal: spacing.lg, paddingVertical: 5 },
+  subTab: { backgroundColor: "rgba(255,255,255,0.7)", borderRadius: radius.pill, paddingHorizontal: 13, paddingVertical: 5 },
   subTabActive: { backgroundColor: colors.ink },
   subTabText: { color: colors.tabMuted, fontSize: 11, fontWeight: "600" },
   subTabTextActive: { color: colors.white },
@@ -997,7 +1121,7 @@ const styles = StyleSheet.create({
   draftTitle: { color: colors.ink, fontSize: 17, fontWeight: "700" },
   draftSubtitle: { color: colors.profileMuted, fontSize: 11, marginTop: 4 },
   chevron: { color: colors.ink, fontSize: 27, fontWeight: "300" },
-  itemStack: { gap: 14, paddingHorizontal: spacing.lg },
+  itemStack: { gap: 12, paddingHorizontal: spacing.lg, paddingTop: 5 },
   postCard: { backgroundColor: colors.white, borderRadius: 19, overflow: "hidden" },
   postManageButton: { alignItems: "center", backgroundColor: "rgba(255,255,255,0.92)", borderRadius: 17, height: 34, justifyContent: "center", position: "absolute", right: 10, top: 10, width: 42, zIndex: 3 },
   postManageGlyph: { color: colors.ink, fontSize: 15, fontWeight: "800", letterSpacing: 1 },
@@ -1013,8 +1137,8 @@ const styles = StyleSheet.create({
   postExcerpt: { color: colors.inkSoft, fontSize: 14, lineHeight: 20, marginTop: 7 },
   postFooter: { borderTopColor: colors.line, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: "row", justifyContent: "space-between", marginTop: 13, paddingTop: 9 },
   postMeta: { color: colors.profileMuted, fontSize: 11 },
-  threadCard: { backgroundColor: colors.white, borderRadius: 19, padding: 17 },
-  threadCardHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  threadCard: { backgroundColor: colors.white, borderRadius: 19, padding: 17, position: "relative" },
+  threadCardHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", paddingRight: 48 },
   eyebrow: { color: colors.profileMuted, fontSize: 10, fontWeight: "700", letterSpacing: 1.1 },
   dateText: { color: colors.profileMuted, fontSize: 11 },
   threadTitle: { color: colors.ink, fontSize: 19, fontWeight: "700", marginTop: 12 },

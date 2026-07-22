@@ -6,6 +6,7 @@ import {
   type CreatePoemCommentInput,
   type CreateThreadContinuationInput,
   type DraftOperationInput,
+  type UpdateThreadInput,
   type FeedFilter,
   type FeedSection,
   type InviteDraftCollaboratorInput,
@@ -163,6 +164,36 @@ export async function handleApiRequest(
           200,
           await api.getThread(threadRoute.threadId, searchParams.get("viewerId") ?? undefined)
         );
+      }
+
+      if (threadRoute.resource === "thread" && method === "PUT") {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        const request = body as Omit<UpdateThreadInput, "threadId" | "userId">;
+        if (
+          typeof request?.title !== "string" ||
+          typeof request.startingContent !== "string" ||
+          typeof request.rules !== "string" ||
+          !Array.isArray(request.tags) ||
+          !Array.isArray(request.mentions) ||
+          !["public", "include", "exclude"].includes(request.visibility)
+        ) {
+          return json(400, { code: "INVALID_THREAD_UPDATE" });
+        }
+        return json(200, await api.updateThread({
+          ...request,
+          threadId: threadRoute.threadId,
+          userId: actor.user.id
+        }));
+      }
+
+      if (threadRoute.resource === "thread" && method === "DELETE") {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        return json(200, await api.deleteThread({
+          threadId: threadRoute.threadId,
+          userId: actor.user.id
+        }));
       }
 
       if (threadRoute.resource === "continuations" && method === "POST") {

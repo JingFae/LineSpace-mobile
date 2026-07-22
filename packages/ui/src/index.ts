@@ -9,6 +9,10 @@ export { CreateFlowSheet } from "./components/CreateFlowSheet";
 export { EmptyState } from "./components/EmptyState";
 export { PoemArtwork, type ArtworkTone } from "./components/PoemArtwork";
 export { PoemCard, type PoemCardModel } from "./components/PoemCard";
+export {
+  VersionPostLayoutCard,
+  type VersionPostLineModel
+} from "./components/VersionPostLayoutCard";
 export { PoemLayoutCard, type PoemLayoutCardModel } from "./components/PoemLayoutCard";
 export { ContentTag, ContentTagRow } from "./components/ContentTag";
 export {

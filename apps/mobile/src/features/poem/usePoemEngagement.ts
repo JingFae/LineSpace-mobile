@@ -1,4 +1,9 @@
-import { useMutation, useQueryClient, type QueryKey } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueryClient,
+  type InfiniteData,
+  type QueryKey
+} from "@tanstack/react-query";
 import type {
   PoemCollectionKind,
   PoemEngagementResult,
@@ -81,9 +86,24 @@ function updatePoemCaches(
   poemId: string,
   update: (poem: PoemSummary) => PoemSummary
 ) {
-  queryClient.setQueriesData<PoemSummary[]>({ queryKey: ["feed"] }, (poems) =>
-    poems?.map((poem) => (poem.id === poemId ? update(poem) : poem))
-  );
+  queryClient.setQueriesData<
+    InfiniteData<PoemSummary[], string | undefined> | PoemSummary[]
+  >({ queryKey: ["feed"] }, (feed) => {
+    if (!feed) return feed;
+
+    // The current feed is an infinite query. Keeping support for a plain array
+    // also makes this updater safe for older/smaller feed consumers.
+    if (Array.isArray(feed)) {
+      return feed.map((poem) => (poem.id === poemId ? update(poem) : poem));
+    }
+
+    return {
+      ...feed,
+      pages: feed.pages.map((page) =>
+        page.map((poem) => (poem.id === poemId ? update(poem) : poem))
+      )
+    };
+  });
   queryClient.setQueriesData<PoemSummary | null>(
     { queryKey: ["poem", poemId] },
     (poem) => (poem ? update(poem) : poem)
