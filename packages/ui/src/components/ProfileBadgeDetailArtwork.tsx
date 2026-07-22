@@ -1,4 +1,4 @@
-import { Image, StyleSheet, View, type ImageSourcePropType } from "react-native";
+import { Image, Platform, StyleSheet, View, type ImageSourcePropType } from "react-native";
 import { SvgUri } from "react-native-svg";
 
 declare const require: (path: string) => ImageSourcePropType;
@@ -15,12 +15,31 @@ export function ProfileBadgeDetailArtwork({
   variant: "creator" | "reviewer";
   width?: number;
 }) {
-  const source = Image.resolveAssetSource(detailArtwork[variant]);
+  const source = detailArtwork[variant];
   const height = Math.round(width * 1.2);
+
+  // react-native-web intentionally does not implement Image.resolveAssetSource.
+  // Let its Image component resolve the Metro asset module directly instead.
+  if (Platform.OS === "web") {
+    return (
+      <View style={[styles.frame, { height, width }]}>
+        <Image resizeMode="contain" source={source} style={{ height, width }} />
+      </View>
+    );
+  }
+
+  const resolved = Image.resolveAssetSource(source);
+  if (!resolved?.uri) {
+    return (
+      <View style={[styles.frame, { height, width }]}>
+        <Image resizeMode="contain" source={source} style={{ height, width }} />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.frame, { height, width }]}>
-      <SvgUri height={height} uri={source.uri} width={width} />
+      <SvgUri height={height} uri={resolved.uri} width={width} />
     </View>
   );
 }
