@@ -162,7 +162,9 @@ type MutableUserCollections = Record<PoemCollectionKind, Set<string>>;
 export class MockLineSpaceApi implements LineSpaceApi {
   private readonly poems = mockPoems.map(clonePoem);
   private readonly threads = mockThreads.map(cloneThread);
-  private readonly continuations = mockThreadContinuations.map(cloneContinuation);
+  private readonly continuations = assignStableContinuationLineNumbers(
+    mockThreadContinuations
+  );
   private readonly profiles = mockUserProfileDetails.map(cloneUserProfile);
   private readonly drafts = new Map<string, PoemDraft>();
   private readonly invitations: DraftInvitation[] = [];
@@ -2100,13 +2102,13 @@ export class MockLineSpaceApi implements LineSpaceApi {
       ? this.continuations.find((item) => item.id === input.parentContinuationId)
       : undefined;
     const lineNumber = parent
-      ? parent.lineNumber ?? this.getContinuationPath(parent).length + 2
-      : 1;
+      ? (parent.lineNumber ?? this.getContinuationPath(parent).length + 2) + 1
+      : 2;
     const continuation: ThreadContinuation = {
       id: `continue-new-${++this.continuationSequence}`,
       threadId: input.threadId,
       parentContinuationId: input.parentContinuationId,
-      lineNumber: lineNumber + 1,
+      lineNumber,
       author: { ...input.author },
       content: input.content,
       createdAt: new Date().toISOString(),
@@ -2295,6 +2297,34 @@ function cloneContinuation(continuation: ThreadContinuation): ThreadContinuation
     metrics: { ...continuation.metrics },
     viewer: { ...continuation.viewer }
   };
+}
+
+function assignStableContinuationLineNumbers(
+  continuations: readonly ThreadContinuation[]
+): ThreadContinuation[] {
+  const cloned = continuations.map(cloneContinuation);
+  const byId = new Map(cloned.map((continuation) => [continuation.id, continuation]));
+  const resolving = new Set<string>();
+
+  const resolve = (continuation: ThreadContinuation): number => {
+    if (continuation.lineNumber && continuation.lineNumber >= 2) {
+      return continuation.lineNumber;
+    }
+    if (resolving.has(continuation.id)) {
+      throw new Error(`Cyclic continuation hierarchy at ${continuation.id}`);
+    }
+    resolving.add(continuation.id);
+    const parent = continuation.parentContinuationId
+      ? byId.get(continuation.parentContinuationId)
+      : undefined;
+    const lineNumber = parent ? resolve(parent) + 1 : 2;
+    continuation.lineNumber = lineNumber;
+    resolving.delete(continuation.id);
+    return lineNumber;
+  };
+
+  cloned.forEach(resolve);
+  return cloned;
 }
 
 function cloneComment(comment: PoemComment): PoemComment {

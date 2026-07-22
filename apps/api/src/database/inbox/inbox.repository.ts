@@ -39,6 +39,11 @@ type GroupRow = {
   updated_at: string;
 };
 
+type GroupWithRelationsRow = GroupRow & {
+  inbox_group_members: MemberRow[];
+  inbox_group_messages: GroupMessageRow[];
+};
+
 type ActivityRow = {
   id: string;
   recipient_user_id: string;
@@ -67,6 +72,35 @@ type MemberRow = {
 
 const messageSelect =
   "id,sender_user_id,recipient_user_id,kind,text_body,post_id,thread_id,continuation_id,excerpt,line_number,created_at";
+const groupWithRelationsSelect = `
+  id,
+  name,
+  owner_user_id,
+  created_at,
+  updated_at,
+  inbox_group_members (
+    group_id,
+    user_id,
+    role,
+    status,
+    invited_by_user_id,
+    invited_at,
+    joined_at
+  ),
+  inbox_group_messages (
+    id,
+    group_id,
+    sender_user_id,
+    kind,
+    text_body,
+    post_id,
+    thread_id,
+    continuation_id,
+    excerpt,
+    line_number,
+    created_at
+  )
+`;
 const activityKinds = ["comments", "likes", "thread", "social"] as const;
 
 export class InboxRepository {
@@ -239,12 +273,21 @@ export class InboxRepository {
     await this.assertActor(userId);
     const result = await this.client
       .from("inbox_groups")
-      .select("id,name,owner_user_id,created_at,updated_at")
+      .select(groupWithRelationsSelect)
       .order("updated_at", { ascending: false })
+      .order("invited_at", {
+        referencedTable: "inbox_group_members",
+        ascending: true
+      })
+      .order("created_at", {
+        referencedTable: "inbox_group_messages",
+        ascending: false
+      })
+      .limit(1, { referencedTable: "inbox_group_messages" })
       .limit(100);
     ensureDatabaseResult(result.error);
-    const groups = (result.data as GroupRow[] | null) ?? [];
-    return Promise.all(groups.map((group) => this.mapGroup(group)));
+    const groups = (result.data as GroupWithRelationsRow[] | null) ?? [];
+    return this.mapGroups(groups);
   }
 
   async listInboxGroupInvites(userId: string): Promise<InboxGroup[]> {
@@ -261,12 +304,21 @@ export class InboxRepository {
     if (ids.length === 0) return [];
     const result = await this.client
       .from("inbox_groups")
-      .select("id,name,owner_user_id,created_at,updated_at")
+      .select(groupWithRelationsSelect)
       .in("id", ids)
-      .order("updated_at", { ascending: false });
+      .order("updated_at", { ascending: false })
+      .order("invited_at", {
+        referencedTable: "inbox_group_members",
+        ascending: true
+      })
+      .order("created_at", {
+        referencedTable: "inbox_group_messages",
+        ascending: false
+      })
+      .limit(1, { referencedTable: "inbox_group_messages" });
     ensureDatabaseResult(result.error);
-    return Promise.all(
-      ((result.data as GroupRow[] | null) ?? []).map((group) => this.mapGroup(group))
+    return this.mapGroups(
+      (result.data as GroupWithRelationsRow[] | null) ?? []
     );
   }
 
@@ -274,11 +326,24 @@ export class InboxRepository {
     await this.assertActor(userId);
     const result = await this.client
       .from("inbox_groups")
-      .select("id,name,owner_user_id,created_at,updated_at")
+      .select(groupWithRelationsSelect)
       .eq("id", groupId)
+      .order("invited_at", {
+        referencedTable: "inbox_group_members",
+        ascending: true
+      })
+      .order("created_at", {
+        referencedTable: "inbox_group_messages",
+        ascending: false
+      })
+      .limit(1, { referencedTable: "inbox_group_messages" })
       .maybeSingle();
     ensureDatabaseResult(result.error);
-    return result.data ? this.mapGroup(result.data as GroupRow) : null;
+    if (!result.data) return null;
+    const groups = await this.mapGroups([
+      result.data as GroupWithRelationsRow
+    ]);
+    return groups[0] ?? null;
   }
 
   async createInboxGroup(input: CreateInboxGroupInput): Promise<InboxGroup> {
@@ -566,53 +631,86 @@ export class InboxRepository {
   }
 
   private async mapGroup(group: GroupRow): Promise<InboxGroup> {
-    const membersResult = await this.client
-      .from("inbox_group_members")
-      .select(
-        "group_id,user_id,role,status,invited_by_user_id,invited_at,joined_at"
-      )
-      .eq("group_id", group.id)
-      .order("invited_at", { ascending: true });
-    ensureDatabaseResult(membersResult.error);
-    const members = (membersResult.data as MemberRow[] | null) ?? [];
-    const profiles = await loadProfiles(this.client, [
-      ...members.map((item) => item.user_id),
-      ...members
-        .map((item) => item.invited_by_user_id)
-        .filter((id): id is string => Boolean(id))
+    const result = await this.client
+      .from("inbox_groups")
+      .select(groupWithRelationsSelect)
+      .eq("id", group.id)
+      .order("invited_at", {
+        referencedTable: "inbox_group_members",
+        ascending: true
+      })
+      .order("created_at", {
+        referencedTable: "inbox_group_messages",
+        ascending: false
+      })
+      .limit(1, { referencedTable: "inbox_group_messages" })
+      .maybeSingle();
+    ensureDatabaseResult(result.error);
+    if (!result.data) throw new Error("group not found");
+    const groups = await this.mapGroups([
+      result.data as GroupWithRelationsRow
     ]);
-    const lastMessageResult = await this.client
-      .from("inbox_group_messages")
-      .select("id,group_id,sender_user_id,kind,text_body,post_id,thread_id,continuation_id,excerpt,line_number,created_at")
-      .eq("group_id", group.id)
-      .order("created_at", { ascending: false })
-      .limit(1);
-    ensureDatabaseResult(lastMessageResult.error);
-    const last = ((lastMessageResult.data as GroupMessageRow[] | null) ?? [])[0];
-    return {
-      id: group.id,
-      name: group.name,
-      ownerId: group.owner_user_id,
-      members: members.flatMap((member) => {
-        const user = profiles.get(member.user_id);
-        if (!user) return [];
-        return [
-          {
-            user,
-            role: member.role,
-            status: member.status,
-            ...(member.invited_by_user_id && profiles.get(member.invited_by_user_id)
-              ? { invitedBy: profiles.get(member.invited_by_user_id) }
-              : {}),
-            invitedAt: member.invited_at,
-            ...(member.joined_at ? { joinedAt: member.joined_at } : {})
-          }
-        ];
-      }),
-      createdAt: group.created_at,
-      updatedAt: group.updated_at,
-      ...(last ? { lastMessage: await this.mapGroupMessage(last) } : {})
-    };
+    const mapped = groups[0];
+    if (!mapped) throw new Error("group not found");
+    return mapped;
+  }
+
+  private async mapGroups(
+    groups: GroupWithRelationsRow[]
+  ): Promise<InboxGroup[]> {
+    if (groups.length === 0) return [];
+    const members = groups.flatMap(
+      (group) => group.inbox_group_members ?? []
+    );
+    const lastMessageRows = groups.flatMap(
+      (group) => group.inbox_group_messages?.slice(0, 1) ?? []
+    );
+    const [profiles, lastMessages] = await Promise.all([
+      loadProfiles(this.client, [
+        ...members.map((item) => item.user_id),
+        ...members
+          .map((item) => item.invited_by_user_id)
+          .filter((id): id is string => Boolean(id))
+      ]),
+      this.mapGroupMessages(lastMessageRows)
+    ]);
+    const lastMessageByGroup = new Map<string, InboxConversationMessage>();
+    for (const [index, message] of lastMessages.entries()) {
+      const groupId = lastMessageRows[index]?.group_id;
+      if (groupId) lastMessageByGroup.set(groupId, message);
+    }
+
+    return groups.map((group) => {
+      const groupMembers = [...(group.inbox_group_members ?? [])].sort(
+        (left, right) => left.invited_at.localeCompare(right.invited_at)
+      );
+      const lastMessage = lastMessageByGroup.get(group.id);
+      return {
+        id: group.id,
+        name: group.name,
+        ownerId: group.owner_user_id,
+        members: groupMembers.flatMap((member) => {
+          const user = profiles.get(member.user_id);
+          if (!user) return [];
+          return [
+            {
+              user,
+              role: member.role,
+              status: member.status,
+              ...(member.invited_by_user_id &&
+              profiles.get(member.invited_by_user_id)
+                ? { invitedBy: profiles.get(member.invited_by_user_id) }
+                : {}),
+              invitedAt: member.invited_at,
+              ...(member.joined_at ? { joinedAt: member.joined_at } : {})
+            }
+          ];
+        }),
+        createdAt: group.created_at,
+        updatedAt: group.updated_at,
+        ...(lastMessage ? { lastMessage } : {})
+      };
+    });
   }
 
   private async assertActor(userId: string): Promise<void> {

@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { InboxRepository } from "../inbox/inbox.repository.js";
 
 type LocalCredentials = {
   apiUrl: string;
@@ -392,6 +393,17 @@ async function run() {
       .select("kind,post_id,thread_id,continuation_id,line_number")
       .eq("group_id", groupId);
     assert(!memberRead.error && memberRead.data?.length === 4, "Group messages and shares were not persisted.");
+
+    const inboxGroups = await new InboxRepository(userA.client).listInboxGroups(
+      userA.userId
+    );
+    const mappedGroup = inboxGroups.find((group) => group.id === groupId);
+    assert(
+      mappedGroup?.members.length === 2 &&
+        mappedGroup.lastMessage?.kind === "shared-continuation" &&
+        mappedGroup.lastMessage.sharedThread?.continuationId === continuationId,
+      "Batched Inbox group mapping did not preserve members or the latest message."
+    );
 
     const experienceBefore = await userA.client
       .from("user_experience")

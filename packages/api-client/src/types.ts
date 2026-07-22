@@ -768,6 +768,7 @@ export type ThreadFeedQuery = {
 
 export type ThreadDetail = {
   thread: PoetryThread;
+  /** First continuations (line 2); descendants are loaded from ContinuationDetail. */
   continuations: ThreadContinuation[];
 };
 

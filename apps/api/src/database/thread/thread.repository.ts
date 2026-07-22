@@ -105,9 +105,12 @@ export class ThreadRepository {
     const thread = threads[0];
     if (!thread) return null;
     const continuationRows = await this.loadContinuations(threadId);
+    const continuations = await this.mapContinuations(continuationRows, actorId);
     return {
       thread,
-      continuations: await this.mapContinuations(continuationRows, actorId)
+      continuations: continuations.filter(
+        (continuation) => !continuation.parentContinuationId
+      )
     };
   }
 
@@ -144,7 +147,12 @@ export class ThreadRepository {
     const currentRow = currentResult.data as ContinuationRow;
     const detail = await this.getThread(currentRow.thread_id);
     if (!detail) return null;
-    const byId = new Map(detail.continuations.map((item) => [item.id, item]));
+    const actorId = await getCurrentLinespaceUserId(this.client);
+    const allContinuations = await this.mapContinuations(
+      await this.loadContinuations(currentRow.thread_id),
+      actorId
+    );
+    const byId = new Map(allContinuations.map((item) => [item.id, item]));
     const path: ThreadContinuation[] = [];
     let cursor = currentRow.parent_continuation_id;
     while (cursor) {
@@ -153,7 +161,7 @@ export class ThreadRepository {
       path.unshift(item);
       cursor = item.parentContinuationId ?? null;
     }
-    const children = detail.continuations.filter(
+    const children = allContinuations.filter(
       (item) => item.parentContinuationId === currentRow.id
     );
     const current = byId.get(currentRow.id);
@@ -559,6 +567,11 @@ export class ThreadRepository {
         (row) => row.continuation_id
       )
     );
+    const continuationCounts = countBy(
+      rows.flatMap((row) =>
+        row.parent_continuation_id ? [row.parent_continuation_id] : []
+      )
+    );
     return rows.flatMap((row) => {
       const author = profiles.get(row.author_user_id);
       if (!author) return [];
@@ -575,7 +588,7 @@ export class ThreadRepository {
           createdAt: row.created_at,
           metrics: {
             likes: counts.get(row.id) ?? 0,
-            continuations: 0,
+            continuations: continuationCounts.get(row.id) ?? 0,
             shares: countValue(row.shares_count),
             saves: 0
           },

@@ -606,8 +606,8 @@ export const mockThreads: PoetryThread[] = ([
   {
     id: "thread-rain-without-rain",
     author: threadUsers.jinghe,
-    content:
-      "Write a rain poem without naming rain. Start with the sound a window remembers.",
+    content: "Write a rain poem without naming rain.",
+    startingContent: "Start with the sound a window remembers.",
     createdAt: "2026-07-14T08:10:00.000Z",
     community: "Poetry Threads",
     topic: "prompt",

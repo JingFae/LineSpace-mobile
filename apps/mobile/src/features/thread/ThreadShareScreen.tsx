@@ -193,7 +193,9 @@ function ThreadPreview({
   const isContinuation = kind === "continuation" && "current" in target;
   const thread = target.thread;
   const excerpt = isContinuation ? target.current.content : thread.content;
-  const lineNumber = isContinuation ? target.path.length + 2 : 1;
+  const lineNumber = isContinuation
+    ? target.current.lineNumber ?? target.path.length + 2
+    : 1;
   return (
     <View style={styles.preview}>
       <View style={styles.previewArtwork}>

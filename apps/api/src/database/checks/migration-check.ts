@@ -69,12 +69,20 @@ const threadVersionParticipantPostsMigration = await readFile(
   new URL("20260721000200_thread_version_participant_posts.sql", canonicalMigrationsUrl),
   "utf8"
 );
+const stableThreadLinesMigration = await readFile(
+  new URL("20260722000100_thread_continuation_stable_lines.sql", canonicalMigrationsUrl),
+  "utf8"
+);
 const profileRepository = await readFile(
   new URL("../profile/supabase-profile.repository.ts", import.meta.url),
   "utf8"
 );
 const threadRepository = await readFile(
   new URL("../thread/thread.repository.ts", import.meta.url),
+  "utf8"
+);
+const inboxRepository = await readFile(
+  new URL("../inbox/inbox.repository.ts", import.meta.url),
   "utf8"
 );
 const canonicalMigrationFiles = (await readdir(canonicalMigrationsUrl))
@@ -85,6 +93,19 @@ assert(
   canonicalMigrationFiles.length === new Set(canonicalMigrationFiles).size,
   "Canonical Supabase migration names must be unique."
 );
+
+for (const required of [
+  /with\s+recursive\s+continuation_lines/i,
+  /new\.line_number\s*:=\s*parent_line_number\s*\+\s*1/i,
+  /continuation thread, parent, and line number are immutable/i,
+  /create\s+trigger\s+thread_continuations_validate_parent/i,
+  /revoke\s+execute\s+on\s+function\s+public\.validate_thread_continuation_parent/i
+] as const) {
+  assert(
+    required.test(stableThreadLinesMigration),
+    `Stable thread line migration is missing ${required}.`
+  );
+}
 for (const fileName of canonicalMigrationFiles) {
   assert(
     /^\d{14}_[a-z0-9_]+\.sql$/.test(fileName),
@@ -404,6 +425,19 @@ assert(
     /isMissingThreadSavesCount/.test(threadRepository) &&
     /normalizeThreadRows/.test(threadRepository),
   "Thread reads must remain available while the saves_count migration rolls out."
+);
+assert(
+  /groupWithRelationsSelect/.test(inboxRepository) &&
+    /referencedTable:\s*"inbox_group_messages"/.test(inboxRepository) &&
+    /\.limit\(1,\s*\{\s*referencedTable:\s*"inbox_group_messages"\s*\}\)/.test(
+      inboxRepository
+    ),
+  "Inbox group reads must batch members and the latest message through embedded relations."
+);
+assert(
+  /return\s+this\.mapGroups\(groups\)/.test(inboxRepository) &&
+    !/groups\.map\(\s*\(group\)\s*=>\s*this\.mapGroup\(group\)\s*\)/.test(inboxRepository),
+  "Inbox group lists must use the batch mapper rather than issuing queries per group."
 );
 for (const required of [
   /add\s+column\s+if\s+not\s+exists\s+relay_first_line/i,

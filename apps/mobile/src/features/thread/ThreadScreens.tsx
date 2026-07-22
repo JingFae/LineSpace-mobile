@@ -91,6 +91,11 @@ type ContinuationVisibleGroup = {
   descendantRows: ContinuationVisibleRow[];
 };
 
+type ContinuationVisibleTreeNode = {
+  row: ContinuationVisibleRow;
+  children: ContinuationVisibleTreeNode[];
+};
+
 type ActionOrder = "continue-first" | "like-first";
 
 const sortTabs: Array<{ value: ThreadSort; label: string }> = [
@@ -108,6 +113,7 @@ const level1AvatarSize = 32;
 const continuationContentGap = 10;
 const level1ContentGap = 9;
 const level1IndentOffset = level0AvatarSize + continuationContentGap;
+const treeBranchIndent = 30;
 const showContinuationAvatarSize = 28;
 const showContinuationRowHeight = 34;
 const connectorWidth = StyleSheet.hairlineWidth;
@@ -126,6 +132,7 @@ const pathRootAvatarSize = 44;
 const pathContinuationAvatarSize = 40;
 const pathAvatarCenterX = pathHorizontalPadding + pathAvatarColumnWidth / 2;
 const pathBodyGap = 10;
+const pathBranchIndent = 34;
 
 type ContinuationPathRenderNode = {
   id: string;
@@ -136,6 +143,7 @@ type ContinuationPathRenderNode = {
   liked: boolean;
   lineNumber?: number;
   avatarSize: number;
+  nested?: boolean;
   meta?: string;
   onOpen?: () => void;
   onContinue: () => void;
@@ -341,7 +349,12 @@ export function ThreadDetailScreen({
   });
   const allContinuations = versionTreeQuery.data ?? detail?.continuations ?? [];
   const sortedContinuations = useMemo(() => {
-    return sortContinuationItems(detail?.continuations ?? [], continuationOrder);
+    return sortContinuationItems(
+      (detail?.continuations ?? []).filter(
+        (continuation) => !continuation.parentContinuationId
+      ),
+      continuationOrder
+    );
   }, [continuationOrder, detail?.continuations]);
   const visibleContinuationGroups = useMemo(
     () =>
@@ -585,10 +598,6 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
   const queryClient = useQueryClient();
   const [composerTarget, setComposerTarget] = useState<ComposerTarget | null>(null);
   const [shareNotice, setShareNotice] = useState<ShareNotice | null>(null);
-  const [continuationOrder, setContinuationOrder] = useState<ContinuationOrder>("top");
-  const [expandedRootIds, setExpandedRootIds] = useState<Set<string>>(() => new Set());
-  const [expandedDescendants, setExpandedDescendants] = useState<Record<string, FlattenedDescendantRow[]>>({});
-  const [loadingRootIds, setLoadingRootIds] = useState<Set<string>>(() => new Set());
   const detailQuery = useQuery({
     queryKey: ["continuation-detail", continuationId, currentUserId],
     enabled: Boolean(continuationId),
@@ -598,67 +607,8 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
   const continuationLikeMutation = useContinuationLikeMutation();
   const detail = detailQuery.data ?? undefined;
   const sortedChildren = useMemo(() => {
-    return sortContinuationItems(detail?.children ?? [], continuationOrder);
-  }, [continuationOrder, detail?.children]);
-  const visibleContinuationGroups = useMemo(
-    () =>
-      buildVisibleContinuationGroups(
-        sortedChildren,
-        expandedDescendants,
-        expandedRootIds,
-        loadingRootIds
-      ),
-    [expandedDescendants, expandedRootIds, loadingRootIds, sortedChildren]
-  );
-  const resetExpandedContinuations = useCallback(() => {
-    setExpandedRootIds(new Set());
-    setExpandedDescendants({});
-    setLoadingRootIds(new Set());
-  }, []);
-  const handleContinuationOrderChange = useCallback(
-    (value: ContinuationOrder) => {
-      setContinuationOrder(value);
-      resetExpandedContinuations();
-    },
-    [resetExpandedContinuations]
-  );
-  const handleShowContinuations = useCallback(
-    (continuation: ThreadContinuation) => {
-      const rootId = continuation.id;
-      if (expandedRootIds.has(rootId)) return;
-      setExpandedRootIds((current) => new Set(current).add(rootId));
-      if (expandedDescendants[rootId]) return;
-      setLoadingRootIds((current) => new Set(current).add(rootId));
-      void getDescendantsDepthFirst(continuation, continuationOrder, currentUserId)
-        .then((descendants) => {
-          setExpandedDescendants((current) => ({
-            ...current,
-            [rootId]: descendants
-          }));
-        })
-        .catch(() => {
-          setExpandedDescendants((current) => ({
-            ...current,
-            [rootId]: []
-          }));
-        })
-        .finally(() => {
-          setLoadingRootIds((current) => {
-            const next = new Set(current);
-            next.delete(rootId);
-            return next;
-          });
-        });
-    },
-    [continuationOrder, expandedDescendants, expandedRootIds]
-  );
-
-  useFocusEffect(
-    useCallback(() => {
-      resetExpandedContinuations();
-      return resetExpandedContinuations;
-    }, [continuationId, resetExpandedContinuations])
-  );
+    return sortContinuationItems(detail?.children ?? [], "recent");
+  }, [detail?.children]);
 
   return (
     <AppScreen scroll={false} padded={false} style={styles.safeArea} contentContainerStyle={styles.screen}>
@@ -684,6 +634,7 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
         ) : (
           <>
             <ContinuationPath
+              children={sortedChildren}
               detail={detail}
               onContinuationContinue={(target) => setComposerTarget({ kind: "continuation", continuation: target })}
               onContinuationLike={(target) =>
@@ -714,39 +665,9 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
                 } as unknown as Href)
               }
             />
-            <ContinuationHeader order={continuationOrder} onChange={handleContinuationOrderChange} />
             {sortedChildren.length === 0 ? (
               <LightContinuationEmptyState />
-            ) : (
-              visibleContinuationGroups.map((group) => (
-                <ExpandedContinuationGroup
-                  key={group.rootRow.rootGroupId}
-                  group={group}
-                  order={continuationOrder}
-                  onContinue={(target) => setComposerTarget({ kind: "continuation", continuation: target })}
-                  onLike={(target) =>
-                    continuationLikeMutation.mutate({
-                      continuationId: target.id,
-                      userId: currentUserId,
-                      isActive: !target.viewer.liked
-                    })
-                  }
-                  onOpen={(target) =>
-                    router.push({
-                      pathname: "/thread/continue/[id]",
-                      params: { id: target.id }
-                    } as unknown as Href)
-                  }
-                  onShare={(target) =>
-                    router.push({
-                      pathname: "/thread/share/[id]",
-                      params: { id: target.id, kind: "continuation" }
-                    } as unknown as Href)
-                  }
-                  onShowContinuations={handleShowContinuations}
-                />
-              ))
-            )}
+            ) : null}
           </>
         )}
       </ScrollView>
@@ -764,9 +685,10 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
           updateThreadListCaches(queryClient, continuation);
           updateContinuationDetailCache(queryClient, continuationId, continuation, submittedTarget);
           updateThreadVersionTreeCache(queryClient, continuation.threadId, continuation);
-          if (submittedTarget.kind === "continuation") {
-            setExpandedDescendants((current) => appendExpandedDescendant(current, submittedTarget.continuation.id, continuation));
-          }
+          router.replace({
+            pathname: "/thread/continue/[id]",
+            params: { id: continuation.id }
+          } as unknown as Href);
         }}
         target={composerTarget}
       />
@@ -1022,13 +944,13 @@ function ContinuationHeader({
   order,
   onChange
 }: {
-  order: ContinuationOrder;
-  onChange: (value: ContinuationOrder) => void;
+  order?: ContinuationOrder;
+  onChange?: (value: ContinuationOrder) => void;
 }) {
   return (
     <View style={styles.continuationHeader}>
       <Text style={styles.continuationHeaderTitle}>Continuation</Text>
-      <View style={styles.continuationOrder}>
+      {order && onChange ? <View style={styles.continuationOrder}>
         {(["top", "recent"] as const).map((value) => (
           <Pressable key={value} accessibilityRole="button" onPress={() => onChange(value)} style={styles.orderButton}>
             <Text style={[styles.orderText, order === value && styles.orderTextActive]}>
@@ -1036,7 +958,7 @@ function ContinuationHeader({
             </Text>
           </Pressable>
         ))}
-      </View>
+      </View> : null}
     </View>
   );
 }
@@ -1064,144 +986,140 @@ function ExpandedContinuationGroup({
   selectedByLine?: Record<number, string>;
   onSelect?: (continuation: ThreadContinuation, lineNumber: number) => void;
 }) {
-  const [parentRowHeight, setParentRowHeight] = useState(0);
-  const [firstChildCenterY, setFirstChildCenterY] = useState<number | null>(null);
-  const hasChildren = group.descendantRows.length > 0;
-  const parentAvatarBottom = continuationRowPaddingVertical + level0AvatarSize;
-  const childConnectorY =
-    hasChildren && firstChildCenterY !== null ? parentRowHeight + firstChildCenterY : null;
+  const tree = useMemo(() => buildContinuationVisibleTree(group), [group]);
 
   return (
     <View style={styles.expandedContinuationGroup}>
-      {childConnectorY !== null ? (
-        <>
-          <View
-            pointerEvents="none"
-            style={[
-              styles.parentChildConnectorVertical,
-              {
-                top: parentAvatarBottom,
-                height: Math.max(0, childConnectorY - parentAvatarBottom)
-              }
-            ]}
-          />
-          <View
-            pointerEvents="none"
-            style={[
-              styles.parentChildConnectorHorizontal,
-              {
-                top: childConnectorY
-              }
-            ]}
-          />
-        </>
+      <ContinuationTreeNodeView
+        node={tree}
+        onContinue={onContinue}
+        onLike={onLike}
+        onOpen={onOpen}
+        onSelect={onSelect}
+        onShare={onShare}
+        onShowContinuations={onShowContinuations}
+        order={order}
+        selectedByLine={selectedByLine}
+        selectionMode={selectionMode}
+      />
+    </View>
+  );
+}
+
+function ContinuationTreeNodeView({
+  node,
+  order,
+  onOpen,
+  onLike,
+  onContinue,
+  onShare,
+  onShowContinuations,
+  selectionMode = false,
+  selectedByLine = {},
+  onSelect
+}: {
+  node: ContinuationVisibleTreeNode;
+  order: ContinuationOrder;
+  onOpen: (continuation: ThreadContinuation) => void;
+  onLike: (continuation: ThreadContinuation) => void;
+  onContinue: (continuation: ThreadContinuation) => void;
+  onShare: (continuation: ThreadContinuation) => void;
+  onShowContinuations?: (continuation: ThreadContinuation) => void;
+  selectionMode?: boolean;
+  selectedByLine?: Record<number, string>;
+  onSelect?: (continuation: ThreadContinuation, lineNumber: number) => void;
+}) {
+  const [rowHeight, setRowHeight] = useState(0);
+  const [childLayouts, setChildLayouts] = useState<Record<string, { y: number; height: number }>>({});
+  const nested = node.row.actualDepth > 0;
+  const avatarSize = nested ? level1AvatarSize : level0AvatarSize;
+  const rowPadding = nested ? level1RowPaddingVertical : continuationRowPaddingVertical;
+  const parentCenter = rowPadding + avatarSize / 2;
+  const childCenter = level1RowPaddingVertical + level1AvatarSize / 2;
+  const childConnectors = node.children.flatMap((child) => {
+    const layout = childLayouts[child.row.continuation.id];
+    return layout
+      ? [{ id: child.row.continuation.id, center: rowHeight + layout.y + childCenter }]
+      : [];
+  });
+  const lastChildCenter = childConnectors.at(-1)?.center;
+  const childAvatarCenterX = treeBranchIndent + continuationHorizontalPadding + level1AvatarSize / 2;
+  const parentAvatarCenterX = continuationHorizontalPadding + avatarSize / 2;
+
+  return (
+    <View style={styles.continuationTreeNode}>
+      {lastChildCenter !== undefined ? (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.treeConnectorVertical,
+            {
+              left: parentAvatarCenterX,
+              top: parentCenter,
+              height: Math.max(0, lastChildCenter - parentCenter)
+            }
+          ]}
+        />
       ) : null}
-      <View onLayout={(event) => setParentRowHeight(event.nativeEvent.layout.height)} style={styles.groupLayer}>
+      {childConnectors.map(({ id, center }) => (
+        <View
+          key={`${node.row.continuation.id}-connector-${id}`}
+          pointerEvents="none"
+          style={[
+            styles.treeConnectorHorizontal,
+            {
+              left: parentAvatarCenterX,
+              top: center,
+              width: Math.max(0, childAvatarCenterX - parentAvatarCenterX)
+            }
+          ]}
+        />
+      ))}
+      <View
+        onLayout={(event) => setRowHeight(event.nativeEvent.layout.height)}
+        style={styles.groupLayer}
+      >
         <ContinuationCard
           order={order}
-          row={group.rootRow}
+          row={node.row}
           onContinue={onContinue}
           onLike={onLike}
           onOpen={onOpen}
           onShare={onShare}
           onShowContinuations={onShowContinuations}
           selectionMode={selectionMode}
-          selected={selectedByLine[group.rootRow.lineNumber] === group.rootRow.continuation.id}
+          selected={selectedByLine[node.row.lineNumber] === node.row.continuation.id}
           onSelect={onSelect}
         />
       </View>
-      {hasChildren ? (
-        <ChildContinuationGroup
-          rows={group.descendantRows}
-          onFirstChildCenter={setFirstChildCenterY}
-          onContinue={onContinue}
-          onLike={onLike}
-          onOpen={onOpen}
-          onShare={onShare}
-          selectionMode={selectionMode}
-          selectedByLine={selectedByLine}
-          onSelect={onSelect}
-        />
-      ) : null}
-    </View>
-  );
-}
-
-function ChildContinuationGroup({
-  rows,
-  onFirstChildCenter,
-  onOpen,
-  onLike,
-  onContinue,
-  onShare,
-  selectionMode = false,
-  selectedByLine = {},
-  onSelect
-}: {
-  rows: ContinuationVisibleRow[];
-  onFirstChildCenter: (value: number | null) => void;
-  onOpen: (continuation: ThreadContinuation) => void;
-  onLike: (continuation: ThreadContinuation) => void;
-  onContinue: (continuation: ThreadContinuation) => void;
-  onShare: (continuation: ThreadContinuation) => void;
-  selectionMode?: boolean;
-  selectedByLine?: Record<number, string>;
-  onSelect?: (continuation: ThreadContinuation, lineNumber: number) => void;
-}) {
-  const [rowLayouts, setRowLayouts] = useState<Record<string, { y: number; height: number }>>({});
-  const firstRow = rows[0];
-  const lastRow = rows[rows.length - 1];
-  const firstLayout = firstRow ? rowLayouts[firstRow.continuation.id] : undefined;
-  const lastLayout = lastRow ? rowLayouts[lastRow.continuation.id] : undefined;
-  const firstCenter = firstLayout
-    ? firstLayout.y + level1RowPaddingVertical + level1AvatarSize / 2
-    : null;
-  const lastCenter = lastLayout
-    ? lastLayout.y + level1RowPaddingVertical + level1AvatarSize / 2
-    : null;
-
-  useEffect(() => {
-    onFirstChildCenter(firstCenter);
-  }, [firstCenter, onFirstChildCenter]);
-
-  return (
-    <View style={styles.childContinuationGroup}>
-      {firstCenter !== null && lastCenter !== null && lastCenter > firstCenter ? (
+      {node.children.length > 0 ? <View style={styles.continuationTreeChildren}>
+      {node.children.map((child) => (
         <View
-          pointerEvents="none"
-          style={[
-            styles.childVerticalSpine,
-            {
-              top: firstCenter,
-              height: lastCenter - firstCenter
-            }
-          ]}
-        />
-      ) : null}
-      {rows.map((row) => (
-        <View
-          key={row.continuation.id}
+          key={child.row.continuation.id}
           onLayout={(event) => {
             const { y, height } = event.nativeEvent.layout;
-            setRowLayouts((current) => ({
+            setChildLayouts((current) => ({
               ...current,
-              [row.continuation.id]: { y, height }
+              [child.row.continuation.id]: { y, height }
             }));
           }}
-          style={styles.groupLayer}
+          style={styles.continuationTreeChild}
         >
-          <ContinuationCard
-            row={row}
+          <ContinuationTreeNodeView
+            node={child}
+            order={order}
             onContinue={onContinue}
             onLike={onLike}
             onOpen={onOpen}
             onShare={onShare}
+            onShowContinuations={onShowContinuations}
             selectionMode={selectionMode}
-            selected={selectedByLine[row.lineNumber] === row.continuation.id}
+            selectedByLine={selectedByLine}
             onSelect={onSelect}
           />
         </View>
       ))}
+      </View> : null}
     </View>
   );
 }
@@ -1249,7 +1167,7 @@ function ContinuationCard({
           <View pointerEvents="none" style={styles.collapsedConnectorHorizontal} />
         </>
       ) : null}
-      <View style={[styles.continuationRow, row.isExpandedDescendant && styles.level1ContinuationRow]}>
+      <View style={styles.continuationRow}>
         <View style={[styles.continuationAvatarColumn, { width: avatarColumnWidth }]}>
           <Pressable
             accessibilityLabel={`Open ${continuation.author.handle}'s continuation`}
@@ -1368,6 +1286,7 @@ function ShowContinuationsRow({
 
 function ContinuationPath({
   detail,
+  children,
   onThreadContinue,
   onThreadLike,
   onThreadShare,
@@ -1376,6 +1295,7 @@ function ContinuationPath({
   onContinuationShare
 }: {
   detail: ContinuationDetail;
+  children: readonly ThreadContinuation[];
   onThreadContinue: () => void;
   onThreadLike: () => void;
   onThreadShare: () => void;
@@ -1384,7 +1304,10 @@ function ContinuationPath({
   onContinuationShare: (continuation: ThreadContinuation) => void;
 }) {
   const [nodeLayouts, setNodeLayouts] = useState<Record<string, { y: number; height: number }>>({});
-  const pathNodes = useMemo<ContinuationPathRenderNode[]>(() => {
+  const { mainPathNodes, childNodes } = useMemo<{
+    mainPathNodes: ContinuationPathRenderNode[];
+    childNodes: ContinuationPathRenderNode[];
+  }>(() => {
     const continuationNodes = [...detail.path, detail.current].map((continuation, index) => ({
       id: continuation.id,
       author: continuation.author,
@@ -1392,24 +1315,28 @@ function ContinuationPath({
       content: continuation.content,
       metrics: continuation.metrics,
       liked: continuation.viewer.liked,
-      lineNumber: index + 2,
+      lineNumber: continuation.lineNumber ?? index + 2,
       avatarSize: pathContinuationAvatarSize,
       onOpen: () =>
         router.push({
           pathname: "/thread/continue/[id]",
           params: { id: continuation.id }
         } as unknown as Href),
-      onContinue: () => onContinuationContinue({ ...continuation, lineNumber: index + 2 }),
+      onContinue: () =>
+        onContinuationContinue({
+          ...continuation,
+          lineNumber: continuation.lineNumber ?? index + 2
+        }),
       onLike: () => onContinuationLike(continuation),
       onShare: () => onContinuationShare(continuation)
     }));
 
-    return [
+    const mainNodes = [
       {
         id: detail.thread.id,
         author: detail.thread.author,
         createdAt: detail.thread.createdAt,
-        content: detail.thread.content,
+        content: detail.thread.startingContent ?? detail.thread.content,
         metrics: detail.thread.metrics,
         liked: detail.thread.viewer.liked,
         lineNumber: 1,
@@ -1425,7 +1352,30 @@ function ContinuationPath({
       },
       ...continuationNodes
     ];
+    const nextNodes = children.map((continuation) => ({
+      id: continuation.id,
+      author: continuation.author,
+      createdAt: continuation.createdAt,
+      content: continuation.content,
+      metrics: continuation.metrics,
+      liked: continuation.viewer.liked,
+      lineNumber:
+        continuation.lineNumber ??
+        (detail.current.lineNumber ?? detail.path.length + 2) + 1,
+      avatarSize: pathContinuationAvatarSize,
+      nested: true,
+      onOpen: () =>
+        router.push({
+          pathname: "/thread/continue/[id]",
+          params: { id: continuation.id }
+        } as unknown as Href),
+      onContinue: () => onContinuationContinue(continuation),
+      onLike: () => onContinuationLike(continuation),
+      onShare: () => onContinuationShare(continuation)
+    }));
+    return { mainPathNodes: mainNodes, childNodes: nextNodes };
   }, [
+    children,
     detail.current,
     detail.path,
     detail.thread,
@@ -1437,8 +1387,8 @@ function ContinuationPath({
     onThreadShare
   ]);
 
-  const firstNode = pathNodes[0];
-  const lastNode = pathNodes[pathNodes.length - 1];
+  const firstNode = mainPathNodes[0];
+  const lastNode = mainPathNodes[mainPathNodes.length - 1];
   const firstLayout = firstNode ? nodeLayouts[firstNode.id] : undefined;
   const lastLayout = lastNode ? nodeLayouts[lastNode.id] : undefined;
   const spineTop = firstLayout && firstNode
@@ -1448,13 +1398,39 @@ function ContinuationPath({
     ? lastLayout.y + pathNodePaddingVertical + lastNode.avatarSize / 2
     : 0;
   const spineHeight = Math.max(0, spineBottom - spineTop);
+  const childConnectors = childNodes.flatMap((node) => {
+    const layout = nodeLayouts[node.id];
+    return layout
+      ? [{ id: node.id, center: layout.y + pathNodePaddingVertical + node.avatarSize / 2 }]
+      : [];
+  });
+  const lastChildCenter = childConnectors.at(-1)?.center;
 
   return (
     <View style={styles.pathChain}>
-      {pathNodes.length > 1 && spineHeight > 0 ? (
+      {mainPathNodes.length > 1 && spineHeight > 0 ? (
         <View pointerEvents="none" style={[styles.pathVerticalSpine, { top: spineTop, height: spineHeight }]} />
       ) : null}
-      {pathNodes.map((node) => (
+      {lastChildCenter !== undefined ? (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.pathVerticalSpine,
+            { top: spineBottom, height: Math.max(0, lastChildCenter - spineBottom) }
+          ]}
+        />
+      ) : null}
+      {childConnectors.map(({ id, center }) => (
+        <View
+          key={`path-child-connector-${id}`}
+          pointerEvents="none"
+          style={[
+            styles.pathBranchHorizontal,
+            { top: center, width: pathBranchIndent }
+          ]}
+        />
+      ))}
+      {[...mainPathNodes, ...childNodes].map((node) => (
         <ContinuationPathNode
           key={node.id}
           node={node}
@@ -1489,7 +1465,7 @@ function ContinuationPathNode({
         const { y, height } = event.nativeEvent.layout;
         onLayout(y, height);
       }}
-      style={styles.pathNodeRow}
+      style={[styles.pathNodeRow, node.nested && styles.pathBranchNodeRow]}
     >
       <View style={styles.pathAvatarColumn}>
         <Pressable
@@ -2085,7 +2061,7 @@ function buildVisibleContinuationGroups(
     const descendants = isExpanded ? expandedDescendants[root.id] ?? [] : [];
     const rootRow: ContinuationVisibleRow = {
       continuation: root,
-      lineNumber: 2,
+      lineNumber: root.lineNumber ?? 2,
       rootGroupId: root.id,
       actualDepth: 0,
       isExpandedDescendant: false,
@@ -2099,7 +2075,7 @@ function buildVisibleContinuationGroups(
     };
     const descendantRows = descendants.map((item, index) => ({
       continuation: item.continuation,
-      lineNumber: item.actualDepth + 2,
+      lineNumber: item.continuation.lineNumber ?? item.actualDepth + 2,
       rootGroupId: root.id,
       actualDepth: item.actualDepth,
       isExpandedDescendant: true,
@@ -2114,6 +2090,30 @@ function buildVisibleContinuationGroups(
 
     return { rootRow, descendantRows };
   });
+}
+
+function buildContinuationVisibleTree(
+  group: ContinuationVisibleGroup
+): ContinuationVisibleTreeNode {
+  const rows = [group.rootRow, ...group.descendantRows];
+  const nodes = new Map<string, ContinuationVisibleTreeNode>(
+    rows.map((row) => [
+      row.continuation.id,
+      { row, children: [] }
+    ])
+  );
+  const root = nodes.get(group.rootRow.continuation.id);
+  if (!root) return { row: group.rootRow, children: [] };
+
+  for (const row of group.descendantRows) {
+    const node = nodes.get(row.continuation.id);
+    const parent = row.continuation.parentContinuationId
+      ? nodes.get(row.continuation.parentContinuationId)
+      : undefined;
+    if (!node) continue;
+    (parent ?? root).children.push(node);
+  }
+  return root;
 }
 
 function buildSelectionContinuationGroups(
@@ -2281,14 +2281,21 @@ function appendExpandedDescendant(
   parentId: string,
   continuation: ThreadContinuation
 ) {
-  if (!current[parentId]) return current;
-  return {
-    ...current,
-    [parentId]: [
-      { continuation, actualDepth: 1 },
-      ...current[parentId]
-    ]
-  };
+  for (const [rootId, rows] of Object.entries(current)) {
+    const parentIndex = rows.findIndex((row) => row.continuation.id === parentId);
+    if (rootId !== parentId && parentIndex < 0) continue;
+    const parentDepth = rootId === parentId ? 0 : rows[parentIndex]?.actualDepth ?? 0;
+    const insertionIndex = rootId === parentId ? 0 : parentIndex + 1;
+    return {
+      ...current,
+      [rootId]: [
+        ...rows.slice(0, insertionIndex),
+        { continuation, actualDepth: parentDepth + 1 },
+        ...rows.slice(insertionIndex)
+      ]
+    };
+  }
+  return current;
 }
 
 function createStandaloneContinuationRow(continuation: ThreadContinuation): ContinuationVisibleRow {
@@ -2576,6 +2583,31 @@ const styles = StyleSheet.create({
     overflow: "visible",
     backgroundColor: colors.surface
   },
+  continuationTreeNode: {
+    position: "relative",
+    overflow: "visible"
+  },
+  continuationTreeChildren: {
+    position: "relative",
+    marginLeft: treeBranchIndent,
+    overflow: "visible"
+  },
+  continuationTreeChild: {
+    position: "relative",
+    overflow: "visible"
+  },
+  treeConnectorVertical: {
+    position: "absolute",
+    width: connectorWidth,
+    backgroundColor: connectorColor,
+    zIndex: 0
+  },
+  treeConnectorHorizontal: {
+    position: "absolute",
+    height: connectorWidth,
+    backgroundColor: connectorColor,
+    zIndex: 0
+  },
   groupLayer: {
     position: "relative",
     zIndex: 2
@@ -2727,6 +2759,13 @@ const styles = StyleSheet.create({
     backgroundColor: connectorColor,
     zIndex: 0
   },
+  pathBranchHorizontal: {
+    position: "absolute",
+    left: pathAvatarCenterX,
+    height: connectorWidth,
+    backgroundColor: connectorColor,
+    zIndex: 0
+  },
   pathNodeRow: {
     position: "relative",
     zIndex: 1,
@@ -2735,6 +2774,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: pathHorizontalPadding,
     paddingVertical: pathNodePaddingVertical
   },
+  pathBranchNodeRow: { marginLeft: pathBranchIndent },
   pathAvatarColumn: {
     width: pathAvatarColumnWidth,
     alignItems: "center",

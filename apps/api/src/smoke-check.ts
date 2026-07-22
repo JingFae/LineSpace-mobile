@@ -334,6 +334,28 @@ async function main() {
         publishedRelay.thread.rules === "Continue with one image from the sky.",
       "Relay publication did not preserve the default title, first line, and rules."
     );
+    const relayLine2 = await httpApi.createThreadContinuation({
+      threadId: publishedRelay.thread.id,
+      userId: profile.id,
+      content: "The second cloud waits at the edge of the page."
+    });
+    const relayLine3 = await httpApi.createContinuation({
+      continuationId: relayLine2.id,
+      userId: profile.id,
+      content: "A third cloud answers without changing the weather."
+    });
+    const relayLine3Detail = await httpApi.getContinuationDetail(
+      relayLine3.id,
+      profile.id
+    );
+    assert(
+      relayLine2.lineNumber === 2 &&
+        relayLine3.lineNumber === 3 &&
+        relayLine3.parentContinuationId === relayLine2.id &&
+        relayLine3Detail?.path[0]?.id === relayLine2.id &&
+        relayLine3Detail.current.lineNumber === 3,
+      "Relay line numbers or parent path changed across the HTTP boundary."
+    );
 
     const feed = await httpApi.listFeed({
       section: "latest",
