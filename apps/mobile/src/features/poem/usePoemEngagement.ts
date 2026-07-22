@@ -12,12 +12,14 @@ import type {
 } from "@linespace/api-client";
 import { lineSpaceApi } from "@/services/lineSpaceApi";
 import { useAuth } from "@/auth/AuthSessionProvider";
+import { useGuestAccess } from "@/auth/GuestAccessProvider";
 
 type CacheSnapshot = Array<readonly [QueryKey, unknown]>;
 
 export function usePoemEngagement() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { requireAccount } = useGuestAccess();
   const currentUserId = user?.id ?? "";
   const mutation = useMutation<
     PoemEngagementResult,
@@ -75,6 +77,7 @@ export function usePoemEngagement() {
       collection: PoemCollectionKind,
       isActive: boolean
     ) => {
+      if (!requireAccount(collection === "liked" ? "like this post" : "save this post")) return;
       if (!currentUserId) return;
       mutation.mutate({ userId: currentUserId, poemId, collection, isActive });
     }

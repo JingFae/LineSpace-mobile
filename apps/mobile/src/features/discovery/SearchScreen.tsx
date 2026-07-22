@@ -14,6 +14,7 @@ import { AppScreen, EmptyState, SearchIcon } from "@linespace/ui";
 import { colors, spacing } from "@linespace/tokens";
 import { lineSpaceApi } from "@/services/lineSpaceApi";
 import { useAuth } from "@/auth/AuthSessionProvider";
+import { useGuestAccess } from "@/auth/GuestAccessProvider";
 import { DiscoveryPostCard, DiscoveryThreadCard, DiscoveryUserRow } from "./DiscoveryCards";
 
 type SearchCategory = "posts" | "threads" | "users";
@@ -22,6 +23,7 @@ export function SearchScreen() {
   const params = useLocalSearchParams<{ mode?: string }>();
   const userOnly = params.mode === "users";
   const { user: authUser } = useAuth();
+  const { requireAccount } = useGuestAccess();
   const currentUserId = authUser?.id ?? "";
   const queryClient = useQueryClient();
   const inputRef = useRef<TextInput>(null);
@@ -36,13 +38,13 @@ export function SearchScreen() {
 
   const search = useQuery({
     queryKey: ["content-search", query.toLocaleLowerCase(), currentUserId],
-    enabled: query.length > 0 && !userOnly && category !== "users" && currentUserId.length > 0,
+    enabled: query.length > 0 && !userOnly && category !== "users",
     queryFn: () => lineSpaceApi.searchContent(query, currentUserId)
   });
 
   const userSearch = useQuery({
     queryKey: ["user-search", currentUserId, query.toLocaleLowerCase()],
-    enabled: query.length > 0 && category === "users" && currentUserId.length > 0,
+    enabled: query.length > 0 && category === "users",
     queryFn: () => lineSpaceApi.searchUsers(query, currentUserId, { limit: 30 })
   });
   const followMutation = useMutation({
@@ -136,7 +138,9 @@ export function SearchScreen() {
               followPending={followMutation.isPending && followMutation.variables?.targetUserId === user.id}
               isFollowing={user.isFollowing}
               key={user.id}
-              onFollow={() => followMutation.mutate({ targetUserId: user.id, isActive: !user.isFollowing })}
+              onFollow={() => {
+                if (requireAccount("follow this writer")) followMutation.mutate({ targetUserId: user.id, isActive: !user.isFollowing });
+              }}
               showFollow
               user={user}
             />

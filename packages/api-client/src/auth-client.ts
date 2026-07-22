@@ -2,6 +2,7 @@ import type {
   AuthRegistrationResult,
   AuthSessionResult,
   AuthUser,
+  ChangePasswordInput,
   LoginAuthInput,
   RegisterAuthInput
 } from "./types";
@@ -64,6 +65,10 @@ export class HttpAuthClient {
 
   me(accessToken: string): Promise<AuthUser> {
     return this.request<AuthUser>("GET", "/v1/auth/me", undefined, accessToken);
+  }
+
+  async changePassword(accessToken: string, input: ChangePasswordInput): Promise<void> {
+    await this.request<void>("POST", "/v1/auth/password", input, accessToken, true);
   }
 
   private async request<T>(
@@ -133,9 +138,13 @@ function normalizeCode(value: string | undefined): AuthClientErrorCode {
 }
 
 function safeMessage(code: AuthClientErrorCode, path: string) {
-  if (path === "/v1/auth/login" || code === "INVALID_CREDENTIALS") {
+  if (path === "/v1/auth/login") {
     return "Invalid username or password.";
   }
+  if (path === "/v1/auth/password" && code === "INVALID_CREDENTIALS") {
+    return "Your current password is incorrect.";
+  }
+  if (code === "INVALID_CREDENTIALS") return "Invalid username or password.";
   if (code === "USERNAME_TAKEN") return "That username is unavailable.";
   if (code === "WEAK_PASSWORD") return "Choose a stronger password.";
   if (code === "INVALID_REFRESH_TOKEN" || code === "INVALID_TOKEN") {

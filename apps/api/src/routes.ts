@@ -75,7 +75,7 @@ export async function handleApiRequest(
   );
 
   if (method === "GET" && pathname === "/v1/search") {
-    const actor = await authenticateRequest(context);
+    const actor = await optionallyAuthenticateRequest(context);
     if (!actor.ok) return actor.response;
     const query = searchParams.get("query")?.trim() ?? "";
     if ([...query].length > 80) {
@@ -85,7 +85,7 @@ export async function handleApiRequest(
       });
     }
     try {
-      return json(200, await api.searchContent(query, actor.user.id));
+      return json(200, await api.searchContent(query, actor.user?.id ?? ""));
     } catch (error) {
       return profileRepositoryErrorResponse(error);
     }
@@ -93,20 +93,20 @@ export async function handleApiRequest(
 
   const tag = parseTagContentRoute(pathname);
   if (method === "GET" && tag !== null) {
-    const actor = await authenticateRequest(context);
+    const actor = await optionallyAuthenticateRequest(context);
     if (!actor.ok) return actor.response;
     if (!tag || [...tag].length > 64) {
       return json(400, { code: "INVALID_CONTENT_TAG" });
     }
     try {
-      return json(200, await api.listTagContent(tag, actor.user.id));
+      return json(200, await api.listTagContent(tag, actor.user?.id ?? ""));
     } catch (error) {
       return profileRepositoryErrorResponse(error);
     }
   }
 
   if (method === "GET" && pathname === "/v1/threads") {
-    const actor = await authenticateRequest(context);
+    const actor = await optionallyAuthenticateRequest(context);
     if (!actor.ok) return actor.response;
     const sort = searchParams.get("sort");
     try {
@@ -114,7 +114,7 @@ export async function handleApiRequest(
         200,
         await api.listThreads({
           sort: sort === "top" || sort === "latest" || sort === "following" ? sort : undefined,
-          viewerId: actor.user.id,
+          viewerId: actor.user?.id,
           cursor: searchParams.get("cursor") ?? undefined,
           limit: parsePageLimit(searchParams.get("limit"), 3)
         })
@@ -567,7 +567,7 @@ export async function handleApiRequest(
   }
 
   if (method === "GET" && pathname === "/v1/feed") {
-    const actor = await authenticateRequest(context);
+    const actor = await optionallyAuthenticateRequest(context);
     if (!actor.ok) return actor.response;
     const filter = searchParams.get("filter") ?? undefined;
     const section = searchParams.get("section") ?? undefined;
@@ -575,7 +575,7 @@ export async function handleApiRequest(
       const feed = await api.listFeed({
         filter: isFeedFilter(filter) ? filter : undefined,
         section: isFeedSection(section) ? section : undefined,
-        viewerId: actor.user.id,
+        viewerId: actor.user?.id,
         cursor: searchParams.get("cursor") ?? undefined,
         limit: parsePageLimit(searchParams.get("limit"), 3)
       });
@@ -586,7 +586,7 @@ export async function handleApiRequest(
   }
 
   if (method === "GET" && pathname === "/v1/users/search") {
-    const actor = await authenticateRequest(context);
+    const actor = await optionallyAuthenticateRequest(context);
     if (!actor.ok) return actor.response;
     const query = searchParams.get("query")?.trim() ?? "";
     if ([...query].length > 64) {
@@ -608,12 +608,12 @@ export async function handleApiRequest(
     const profileRepository = getProfileRepository(context);
     if (profileRepository) {
       try {
-        return json(200, await profileRepository.searchUsers(actor.user.id, query, options));
+        return json(200, await profileRepository.searchUsers(actor.user?.id ?? "", query, options));
       } catch (error) {
         return profileRepositoryErrorResponse(error);
       }
     }
-    return json(200, await api.searchUsers(query, actor.user.id, options));
+    return json(200, await api.searchUsers(query, actor.user?.id ?? "", options));
   }
 
   const poemRoute = parsePoemRoute(pathname);
@@ -982,12 +982,12 @@ export async function handleApiRequest(
   }
 
   if (profileRoute?.resource === "profile-content" && method === "GET") {
-    const actor = await authenticateRequest(context);
+    const actor = await optionallyAuthenticateRequest(context);
     if (!actor.ok) return actor.response;
     return json(
       200,
       await api.listUserProfileContent(profileRoute.userId, profileRoute.section, {
-        viewerId: actor.user.id,
+        viewerId: actor.user?.id,
         threadRelation: parseThreadRelation(searchParams.get("threadRelation")),
         collection: parseProfileCollection(searchParams.get("collection")),
         contentKind: parseProfileContentKind(searchParams.get("contentKind"))
@@ -998,7 +998,7 @@ export async function handleApiRequest(
   if (profileRoute?.resource === "connections" && method === "GET") {
     const profileRepository = getProfileRepository(context);
     if (profileRepository) {
-      const actor = await authenticateRequest(context);
+      const actor = await optionallyAuthenticateRequest(context);
       if (!actor.ok) return actor.response;
       const rawLimit = Number(searchParams.get("limit") ?? 20);
       const limit = Number.isInteger(rawLimit) ? Math.min(50, Math.max(1, rawLimit)) : 20;
@@ -1006,7 +1006,7 @@ export async function handleApiRequest(
         return json(
           200,
           await profileRepository.listConnections(
-            actor.user.id,
+            actor.user?.id ?? "",
             profileRoute.userId,
             profileRoute.kind,
             { cursor: searchParams.get("cursor") ?? undefined, limit }
@@ -1161,6 +1161,18 @@ async function authenticateRequest(
   } catch (error) {
     return { ok: false, response: authErrorResponse(error) };
   }
+}
+
+async function optionallyAuthenticateRequest(
+  context: AuthRequestContext
+): Promise<
+  | { ok: true; user: AuthUser | null; accessToken: string | null }
+  | { ok: false; response: ApiResponse }
+> {
+  if (!context.authorization?.trim()) {
+    return { ok: true, user: null, accessToken: null };
+  }
+  return authenticateRequest(context);
 }
 
 function isFeedFilter(value: string | undefined): value is FeedFilter {

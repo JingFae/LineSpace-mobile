@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -32,6 +32,7 @@ import { lineSpaceApi } from "@/services/lineSpaceApi";
 import { useAuth } from "@/auth/AuthSessionProvider";
 import { getPoemLayoutPresentation } from "./poemPresentation";
 import { usePoemEngagement } from "./usePoemEngagement";
+import { useGuestAccess } from "@/auth/GuestAccessProvider";
 
 declare const require: (path: string) => ImageSourcePropType;
 
@@ -47,6 +48,7 @@ type PoemDetailScreenProps = {
 export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreenProps) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { requireAccount } = useGuestAccess();
   const currentUserId = user?.id ?? "";
   const [creditsOpen, setCreditsOpen] = useState(false);
   const [commentComposerOpen, setCommentComposerOpen] = useState(false);
@@ -54,11 +56,21 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
   const [commentDraft, setCommentDraft] = useState("");
   const [commentBusy, setCommentBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [followingAuthorIds, setFollowingAuthorIds] = useState<Set<string>>(() => new Set());
   const engagement = usePoemEngagement();
+  const followMutation = useMutation({
+    mutationFn: (targetUserId: string) => lineSpaceApi.setUserFollow({ userId: currentUserId, targetUserId, isActive: true }),
+    onSuccess: (result) => {
+      setFollowingAuthorIds((current) => new Set(current).add(result.targetUserId));
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", result.targetUserId] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", currentUserId] });
+    },
+    onError: () => setNotice("Could not follow this writer")
+  });
   const poemQuery = useQuery({
     queryKey: ["poem", id, currentUserId],
-    enabled: Boolean(id) && currentUserId.length > 0,
-    queryFn: () => lineSpaceApi.getPoem(id!, currentUserId)
+    enabled: Boolean(id),
+    queryFn: () => lineSpaceApi.getPoem(id!, currentUserId || undefined)
   });
 
   const poem = poemQuery.data ?? undefined;
@@ -95,6 +107,7 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
   };
 
   const updateCommentCollection = async (comment: PoemComment, collection: "liked" | "saved", isActive: boolean) => {
+    if (!requireAccount(collection === "liked" ? "like this comment" : "save this comment")) return;
     if (!id) return;
     const previous = poemQuery.data;
     if (previous) {
@@ -139,7 +152,16 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
       style={styles.safeArea}
       contentContainerStyle={styles.screen}
     >
-      <DetailHeader poem={poem} />
+      <DetailHeader
+        followed={Boolean(poem && followingAuthorIds.has(poem.author.id))}
+        followPending={followMutation.isPending}
+        onFollow={() => {
+          if (!poem || poem.author.id === currentUserId || !requireAccount("follow this writer")) return;
+          followMutation.mutate(poem.author.id);
+        }}
+        poem={poem}
+        showFollow={Boolean(poem && poem.author.id !== currentUserId)}
+      />
 
       <ScrollView
         style={styles.scroll}
@@ -160,10 +182,18 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
         ) : (
           <PoemDetailContent
             commentId={commentId}
-            onCommentPress={() => { setReplyTarget(null); setCommentComposerOpen(true); }}
+            onCommentPress={() => {
+              if (!requireAccount("write a comment")) return;
+              setReplyTarget(null);
+              setCommentComposerOpen(true);
+            }}
             onCommentSave={(comment) => updateCommentCollection(comment, "saved", !(comment.viewer?.saved ?? false))}
             onCommentLike={(comment) => updateCommentCollection(comment, "liked", !(comment.viewer?.liked ?? false))}
-            onReplyPress={(comment) => { setReplyTarget(comment); setCommentComposerOpen(true); }}
+            onReplyPress={(comment) => {
+              if (!requireAccount("reply to this comment")) return;
+              setReplyTarget(comment);
+              setCommentComposerOpen(true);
+            }}
             poem={poem}
             targetKind={targetKind}
           />
@@ -185,7 +215,9 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
             onSavePress={(isSaved) =>
               engagement.setCollection(poem.id, "saved", isSaved)
             }
-            onSharePress={() => router.push({ pathname: "/poem/share/[id]", params: { id: poem.id } } as never)}
+            onSharePress={() => {
+              if (requireAccount("share this post")) router.push({ pathname: "/poem/share/[id]", params: { id: poem.id } } as never);
+            }}
             poem={poem}
           />
         </>
@@ -204,7 +236,7 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
   );
 }
 
-function DetailHeader({ poem }: { poem?: PoemSummary }) {
+function DetailHeader({ poem, followed, followPending, showFollow, onFollow }: { poem?: PoemSummary; followed: boolean; followPending: boolean; showFollow: boolean; onFollow: () => void }) {
   const avatarColor = poem?.author.handle === "lili" ? figmaAccent : poem?.author.avatarColor;
 
   return (
@@ -230,9 +262,11 @@ function DetailHeader({ poem }: { poem?: PoemSummary }) {
 
       {poem ? (
         <View style={styles.headerRight}>
-          <Pressable accessibilityRole="button" style={styles.followButton}>
-            <Text style={styles.followText}>+ follow</Text>
-          </Pressable>
+          {showFollow ? (
+            <Pressable accessibilityRole="button" disabled={followPending || followed} onPress={onFollow} style={styles.followButton}>
+              <Text style={styles.followText}>{followPending ? "…" : followed ? "following" : "+ follow"}</Text>
+            </Pressable>
+          ) : null}
           <SearchButton />
         </View>
       ) : <View style={styles.headerRightPlaceholder} />}

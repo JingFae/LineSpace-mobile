@@ -45,6 +45,9 @@ const smokeAuthService: AuthService = {
   },
   async logout() {
     throw new Error("Not used by the HTTP contract smoke check.");
+  },
+  async changePassword() {
+    throw new Error("Not used by the HTTP contract smoke check.");
   }
 };
 

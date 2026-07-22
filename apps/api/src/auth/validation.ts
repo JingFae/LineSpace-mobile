@@ -1,4 +1,5 @@
 import type {
+  ChangePasswordInput,
   LoginAuthInput,
   RefreshAuthInput,
   RegisterAuthInput
@@ -17,6 +18,11 @@ export type ValidatedRegistration = {
 export type ValidatedLogin = {
   username: string;
   password: string;
+};
+
+export type ValidatedPasswordChange = {
+  currentPassword: string;
+  newPassword: string;
 };
 
 export function normalizeUsername(value: string) {
@@ -68,6 +74,32 @@ export function parseLogin(body: unknown): ValidatedLogin {
   }
 
   return { username, password: source.password };
+}
+
+export function parsePasswordChange(body: unknown): ValidatedPasswordChange {
+  if (!body || typeof body !== "object") {
+    throw invalidInput("Password details are required.");
+  }
+
+  const source = body as Partial<Record<keyof ChangePasswordInput, unknown>>;
+  if (
+    typeof source.currentPassword !== "string" ||
+    typeof source.newPassword !== "string" ||
+    typeof source.confirmPassword !== "string"
+  ) {
+    throw invalidInput("currentPassword, newPassword, and confirmPassword are required.");
+  }
+  if (!source.currentPassword) {
+    throw invalidInput("Your current password is required.");
+  }
+  if (source.newPassword !== source.confirmPassword) {
+    throw invalidInput("Password confirmation does not match.");
+  }
+  if (source.currentPassword === source.newPassword) {
+    throw invalidInput("Choose a password different from your current password.");
+  }
+  validatePassword(source.newPassword);
+  return { currentPassword: source.currentPassword, newPassword: source.newPassword };
 }
 
 export function parseRefreshToken(body: unknown) {

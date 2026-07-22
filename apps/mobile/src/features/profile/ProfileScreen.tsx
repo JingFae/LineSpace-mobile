@@ -11,6 +11,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
   type ImageSourcePropType
 } from "react-native";
@@ -39,6 +40,7 @@ import type {
 import { mainTabs, tabRoutes } from "@/navigation/tabs";
 import { lineSpaceApi } from "@/services/lineSpaceApi";
 import { useAuth } from "@/auth/AuthSessionProvider";
+import { useGuestAccess } from "@/auth/GuestAccessProvider";
 import { getMediaAspectRatio } from "@/features/poem/poemPresentation";
 
 declare const require: (path: string) => ImageSourcePropType;
@@ -46,6 +48,21 @@ declare const require: (path: string) => ImageSourcePropType;
 const profileHeaderArtwork = require("../../../assets/profile/profile-header-water.png");
 const profileAvatarArtwork = require("../../../assets/profile/profile-avatar-water.png");
 const profilePostArtwork = require("../../../assets/profile/profile-post-mountain.png");
+
+const guestProfile: UserProfileDetails = {
+  id: "guest-profile",
+  linespaceId: "guest",
+  handle: "guest",
+  displayName: "Guest Reader",
+  avatarColor: "#F5324A",
+  bio: "Exploring public lines before creating a space of my own.",
+  level: 0,
+  experience: { creator: 0, reviewer: 0, total: 0, level: 0, levelProgress: 0, nextLevelAt: 20 },
+  badges: [],
+  stats: { followers: 0, following: 0, likesAndSaves: 0 },
+  contentCounts: { posts: 0, threads: 0, comments: 0, saves: 0 },
+  visibility: { posts: true, threads: true, comments: true, saves: true }
+};
 
 type ProfileScreenProps = { userId?: string };
 
@@ -59,36 +76,29 @@ const contentTabs: Array<{ value: UserProfileContentSection; label: string }> = 
 type BadgeVariant = "creator" | "reviewer";
 const badgeUnlockXp = 20;
 const badgeDetails: Record<BadgeVariant, {
-  certification: string;
-  title: string;
-  chineseTitle: string;
   description: string;
   emotionalNote: string;
   requirement: string;
 }> = {
   creator: {
-    certification: "CREATOR CERTIFICATION",
-    title: "Ink Weaver",
-    chineseTitle: "织墨者",
-    description: "把一行心绪织成一片可被看见的诗意。每一次创作，都是你留给世界的一缕墨色。",
-    emotionalNote: "你的文字值得被读见，也可能刚好陪伴另一个正在寻找共鸣的人。",
-    requirement: "创作经验值达到 20 XP"
+    description: "Weave a passing feeling into words that others can hold. Every poem leaves a little more of your voice in LineSpace.",
+    emotionalNote: "Your words deserve to be discovered—and may be exactly what another reader needs today.",
+    requirement: "Reach 20 Creator XP"
   },
   reviewer: {
-    certification: "REVIEWER CERTIFICATION",
-    title: "Soul Echo",
-    chineseTitle: "共鸣者",
-    description: "认真回应一首诗，也是在告诉创作者：你的情绪被听见了，你的表达并不孤单。",
-    emotionalNote: "一句真诚的评论，可能就是他人继续写下去的温柔理由。",
-    requirement: "评论经验值达到 20 XP"
+    description: "A thoughtful response tells a writer that their feelings were heard and their words did not disappear into silence.",
+    emotionalNote: "One sincere comment can become the gentle reason someone chooses to keep writing.",
+    requirement: "Reach 20 Reviewer XP"
   }
 };
 
 export function ProfileScreen({ userId }: ProfileScreenProps) {
-  const { logout, user: authUser } = useAuth();
+  const { changePassword, logout, user: authUser } = useAuth();
+  const { isGuest, requireAccount } = useGuestAccess();
   const currentUserId = authUser?.id ?? "";
-  const profileUserId = userId ?? currentUserId;
-  const isOwner = profileUserId === currentUserId;
+  const isGuestOwnProfile = isGuest && !userId;
+  const profileUserId = userId ?? (isGuestOwnProfile ? guestProfile.id : currentUserId);
+  const isOwner = isGuestOwnProfile || profileUserId === currentUserId;
   const [section, setSection] = useState<UserProfileContentSection>("posts");
   const [threadRelation, setThreadRelation] = useState<UserThreadRelation>("started");
   const [saveCollection, setSaveCollection] = useState<UserCollectionKind>("liked");
@@ -96,6 +106,7 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
   const [connectionKind, setConnectionKind] = useState<UserConnectionKind | null>(null);
   const [showExperience, setShowExperience] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [managedPost, setManagedPost] = useState<UserProfileContentItem | null>(null);
   const [managedThread, setManagedThread] = useState<UserProfileContentItem | null>(null);
   const queryClient = useQueryClient();
@@ -103,7 +114,7 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
   const profileQuery = useQuery({
     queryKey: ["user-profile", profileUserId],
     queryFn: () => lineSpaceApi.getUserProfile(profileUserId),
-    enabled: profileUserId.length > 0
+    enabled: profileUserId.length > 0 && !isGuestOwnProfile
   });
   const contentQuery = useQuery({
     queryKey: ["user-profile-content", profileUserId, section, threadRelation, saveCollection, saveKind],
@@ -114,11 +125,11 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
         collection: section === "saves" ? saveCollection : undefined,
         contentKind: section === "saves" ? saveKind : undefined
       }),
-    enabled: profileUserId.length > 0
+    enabled: profileUserId.length > 0 && !isGuestOwnProfile
   });
   const draftsQuery = useQuery({
     queryKey: ["user-drafts", profileUserId],
-    enabled: isOwner && profileUserId.length > 0,
+    enabled: isOwner && profileUserId.length > 0 && !isGuestOwnProfile,
     queryFn: () => lineSpaceApi.listUserDrafts(profileUserId)
   });
   const connectionsQuery = useQuery({
@@ -131,7 +142,11 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
       })
   });
 
-  const items = useMemo(() => contentQuery.data?.items ?? [], [contentQuery.data]);
+  const items = useMemo(() => isGuestOwnProfile ? [] : contentQuery.data?.items ?? [], [contentQuery.data, isGuestOwnProfile]);
+  const displayedProfile = isGuestOwnProfile ? guestProfile : profileQuery.data;
+  const displayedContentQuery = isGuestOwnProfile
+    ? { isLoading: false, isError: false, data: { visible: true } }
+    : contentQuery;
   const deletePost = useMutation({
     mutationFn: (poemId: string) => lineSpaceApi.deletePoem({ poemId, userId: currentUserId }),
     onSuccess: (result) => {
@@ -165,11 +180,11 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
         showsVerticalScrollIndicator={false}
         style={styles.scroll}
       >
-        {profileQuery.isLoading ? (
+        {!isGuestOwnProfile && profileQuery.isLoading ? (
           <View style={styles.loadingState}>
             <ActivityIndicator color={colors.accent} />
           </View>
-        ) : profileQuery.isError || !profileQuery.data ? (
+        ) : !displayedProfile || (!isGuestOwnProfile && profileQuery.isError) ? (
           <View style={styles.errorState}>
             <EmptyState
               body="The profile API did not return a user record."
@@ -178,13 +193,13 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
           </View>
         ) : (
           <ProfileLoaded
-            contentQuery={contentQuery}
+            contentQuery={displayedContentQuery}
             draftsCount={draftsQuery.data?.total ?? 0}
-            experience={profileQuery.data.experience}
+            experience={displayedProfile.experience}
             isOwner={isOwner}
             itemSection={section}
             items={items}
-            onConnectionsPress={setConnectionKind}
+            onConnectionsPress={isGuestOwnProfile ? () => undefined : setConnectionKind}
             onExperiencePress={() => setShowExperience(true)}
             onLikesAndSavesPress={() => setSection("saves")}
             onManagePost={(item) => {
@@ -200,28 +215,32 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
             onThreadRelationChange={setThreadRelation}
             onSaveCollectionChange={setSaveCollection}
             onSaveKindChange={setSaveKind}
-            profile={profileQuery.data}
+            profile={displayedProfile}
           />
         )}
       </ScrollView>
       <BottomNavigation
         items={mainTabs}
         profileAvatar={
-          profileQuery.data
+          displayedProfile
             ? {
-                color: profileQuery.data.avatarColor,
-                imageSource: profileQuery.data.avatarUrl
-                  ? { uri: profileQuery.data.avatarUrl }
+                color: displayedProfile.avatarColor,
+                imageSource: displayedProfile.avatarUrl
+                  ? { uri: displayedProfile.avatarUrl }
                   : undefined,
-                label: profileQuery.data.displayName
+                label: displayedProfile.displayName
               }
             : undefined
         }
-        onChange={(value) => router.push(tabRoutes[value])}
+        onChange={(value) => {
+          if (value === "compose" && !requireAccount("publish your own writing")) return;
+          if (value === "inbox" && !requireAccount("open your inbox")) return;
+          router.push(tabRoutes[value]);
+        }}
         value="profile"
       />
       <ExperienceSheet
-        experience={profileQuery.data?.experience}
+        experience={displayedProfile?.experience}
         onClose={() => setShowExperience(false)}
         visible={showExperience}
       />
@@ -235,13 +254,22 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
         onClose={() => setShowSettings(false)}
         onEditProfile={() => {
           setShowSettings(false);
-          router.push("/profile/edit" as Href);
+          if (requireAccount("edit your profile")) router.push("/profile/edit" as Href);
+        }}
+        onChangePassword={() => {
+          setShowSettings(false);
+          if (requireAccount("change your password")) setShowPasswordChange(true);
         }}
         onLogout={() => {
           setShowSettings(false);
           void logout();
         }}
         visible={showSettings}
+      />
+      <PasswordChangeSheet
+        onClose={() => setShowPasswordChange(false)}
+        onSubmit={changePassword}
+        visible={showPasswordChange}
       />
       <ManagePostSheet
         error={deletePost.isError}
@@ -592,8 +620,8 @@ function BadgeGallery({
         <Text style={styles.badgeSectionHint}>tap a badge to explore</Text>
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.badgeRail}>
-        <BadgeCard label="Ink Weaver" onPress={() => toggleBadge("creator")} selected={selectedBadge === "creator"} subtitle="织墨者 · creator" unlocked={creatorUnlocked} remaining={Math.max(0, badgeUnlockXp - experience.creator)} variant="creator" />
-        <BadgeCard label="Soul Echo" onPress={() => toggleBadge("reviewer")} selected={selectedBadge === "reviewer"} subtitle="共鸣者 · reviewer" unlocked={reviewerUnlocked} remaining={Math.max(0, badgeUnlockXp - experience.reviewer)} variant="reviewer" />
+        <BadgeCard label="Ink Weaver" onPress={() => toggleBadge("creator")} selected={selectedBadge === "creator"} subtitle="Creator certification" unlocked={creatorUnlocked} remaining={Math.max(0, badgeUnlockXp - experience.creator)} variant="creator" />
+        <BadgeCard label="Soul Echo" onPress={() => toggleBadge("reviewer")} selected={selectedBadge === "reviewer"} subtitle="Reviewer certification" unlocked={reviewerUnlocked} remaining={Math.max(0, badgeUnlockXp - experience.reviewer)} variant="reviewer" />
       </ScrollView>
       {selectedBadge ? (
         <Animated.View
@@ -645,7 +673,6 @@ function BadgeCard({
         <Text style={styles.badgeCardTitle}>{label}</Text>
         <Text style={styles.badgeCardSubtitle}>{unlocked ? subtitle : `${remaining} XP to unlock`}</Text>
       </View>
-      <Text style={[styles.badgeExploreGlyph, selected && styles.badgeExploreGlyphSelected]}>⌄</Text>
     </Pressable>
   );
 }
@@ -673,9 +700,6 @@ function BadgeDetail({
       <View style={styles.badgeDetailArtwork}>
         <ProfileBadgeDetailArtwork variant={variant} width={144} />
       </View>
-      <Text style={styles.badgeDetailEyebrow}>{detail.certification}</Text>
-      <Text style={styles.badgeDetailTitle}>{detail.title}</Text>
-      <Text style={styles.badgeDetailChinese}>{detail.chineseTitle}</Text>
       <Text style={styles.badgeDetailDescription}>{detail.description}</Text>
       <View style={styles.badgeEmotionNote}>
         <Text style={styles.badgeEmotionMark}>{variant === "creator" ? "✦" : "♡"}</Text>
@@ -696,7 +720,6 @@ function BadgeDetail({
           {unlocked ? "Award earned — this mark now belongs to your profile." : `${remaining} XP more, and this mark will light up for you.`}
         </Text>
       </View>
-      <Text style={styles.badgeTogetherNote}>Ink Weaver 与 Soul Echo 独立累计，也可以同时获得。</Text>
     </View>
   );
 }
@@ -1011,11 +1034,13 @@ function ProfileSettingsSheet({
   visible,
   onClose,
   onEditProfile,
+  onChangePassword,
   onLogout
 }: {
   visible: boolean;
   onClose: () => void;
   onEditProfile: () => void;
+  onChangePassword: () => void;
   onLogout: () => void;
 }) {
   const [confirmingLogout, setConfirmingLogout] = useState(false);
@@ -1086,6 +1111,20 @@ function ProfileSettingsSheet({
               </Pressable>
               <Pressable
                 accessibilityRole="button"
+                onPress={onChangePassword}
+                style={({ pressed }) => [styles.settingsRow, pressed && styles.cardPressed]}
+              >
+                <View style={[styles.settingsRowIcon, styles.passwordRowIcon]}>
+                  <Text style={styles.settingsRowGlyph}>◇</Text>
+                </View>
+                <View style={styles.settingsRowCopy}>
+                  <Text style={styles.settingsRowTitle}>Change password</Text>
+                  <Text style={styles.settingsRowSubtitle}>Keep your LineSpace account secure</Text>
+                </View>
+                <Text style={styles.settingsChevron}>›</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
                 onPress={() => setConfirmingLogout(true)}
                 style={({ pressed }) => [
                   styles.settingsRow,
@@ -1108,6 +1147,131 @@ function ProfileSettingsSheet({
         </View>
       </View>
     </Modal>
+  );
+}
+
+function PasswordChangeSheet({
+  visible,
+  onClose,
+  onSubmit
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSubmit: (input: { currentPassword: string; newPassword: string; confirmPassword: string }) => Promise<void>;
+}) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPasswords, setShowPasswords] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (visible) return;
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setShowPasswords(false);
+    setSubmitting(false);
+    setError(null);
+    setSaved(false);
+  }, [visible]);
+
+  const submit = async () => {
+    if (submitting) return;
+    if (newPassword !== confirmPassword) {
+      setError("New password and confirmation do not match.");
+      return;
+    }
+    if (currentPassword === newPassword) {
+      setError("Choose a password different from your current password.");
+      return;
+    }
+    if (newPassword.length < 8 || newPassword.length > 128 || !/[a-z]/.test(newPassword) || !/[A-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      setError("Use 8–128 characters with uppercase, lowercase, and a number.");
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      await onSubmit({ currentPassword, newPassword, confirmPassword });
+      setSaved(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Password could not be changed.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
+      <View style={styles.modalRoot}>
+        <Pressable accessibilityLabel="Close password settings" onPress={onClose} style={styles.modalBackdrop} />
+        <View style={styles.passwordSheet}>
+          <View style={styles.sheetHandle} />
+          {saved ? (
+            <View style={styles.passwordSuccess}>
+              <View style={styles.passwordSuccessMark}><Text style={styles.passwordSuccessGlyph}>✓</Text></View>
+              <Text style={styles.passwordSuccessTitle}>Password updated</Text>
+              <Text style={styles.passwordSuccessCopy}>Your new password is ready for the next time you sign in.</Text>
+              <Pressable accessibilityRole="button" onPress={onClose} style={styles.passwordPrimaryButton}>
+                <Text style={styles.passwordPrimaryText}>Done</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <>
+              <View style={styles.sheetHeader}>
+                <View>
+                  <Text style={styles.sheetEyebrow}>ACCOUNT SECURITY</Text>
+                  <Text style={styles.sheetTitle}>Change password</Text>
+                </View>
+                <Pressable accessibilityLabel="Close" disabled={submitting} hitSlop={10} onPress={onClose}>
+                  <Text style={styles.closeGlyph}>×</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.settingsIntro}>Confirm your current password, then choose a new one.</Text>
+              <PasswordInput label="Current password" onChangeText={setCurrentPassword} secure={!showPasswords} value={currentPassword} />
+              <PasswordInput label="New password" onChangeText={setNewPassword} secure={!showPasswords} value={newPassword} />
+              <PasswordInput label="Confirm new password" onChangeText={setConfirmPassword} secure={!showPasswords} value={confirmPassword} />
+              <Pressable accessibilityRole="button" onPress={() => setShowPasswords((value) => !value)} style={styles.passwordVisibilityButton}>
+                <Text style={styles.passwordVisibilityText}>{showPasswords ? "Hide passwords" : "Show passwords"}</Text>
+              </Pressable>
+              {error ? <Text style={styles.passwordError}>{error}</Text> : null}
+              <Text style={styles.passwordHint}>8–128 characters · uppercase · lowercase · number</Text>
+              <Pressable
+                accessibilityRole="button"
+                disabled={submitting || !currentPassword || !newPassword || !confirmPassword}
+                onPress={submit}
+                style={[styles.passwordPrimaryButton, (submitting || !currentPassword || !newPassword || !confirmPassword) && styles.passwordPrimaryDisabled]}
+              >
+                <Text style={styles.passwordPrimaryText}>{submitting ? "Updating…" : "Update password"}</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function PasswordInput({ label, value, secure, onChangeText }: { label: string; value: string; secure: boolean; onChangeText: (value: string) => void }) {
+  return (
+    <View style={styles.passwordField}>
+      <Text style={styles.passwordFieldLabel}>{label}</Text>
+      <TextInput
+        accessibilityLabel={label}
+        autoCapitalize="none"
+        autoCorrect={false}
+        onChangeText={onChangeText}
+        placeholder="••••••••"
+        placeholderTextColor={colors.profileMuted}
+        maxLength={128}
+        secureTextEntry={secure}
+        style={styles.passwordInput}
+        value={value}
+      />
+    </View>
   );
 }
 
@@ -1263,8 +1427,6 @@ const styles = StyleSheet.create({
   badgeCardCopy: { flex: 1, marginLeft: 3 },
   badgeCardTitle: { color: colors.ink, fontSize: 13, fontWeight: "700" },
   badgeCardSubtitle: { color: colors.profileMuted, fontSize: 10, lineHeight: 15, marginTop: 3 },
-  badgeExploreGlyph: { color: colors.profileMuted, fontSize: 17, marginLeft: 3, transform: [{ rotate: "0deg" }] },
-  badgeExploreGlyphSelected: { color: colors.ink, transform: [{ rotate: "180deg" }] },
   badgeDetailMotion: { marginHorizontal: spacing.lg, marginTop: 10 },
   badgeDetail: { alignItems: "center", borderColor: "rgba(21,21,21,0.08)", borderRadius: 22, borderWidth: 1, overflow: "hidden", paddingBottom: 18, paddingHorizontal: 17, paddingTop: 12, position: "relative" },
   badgeDetailCreator: { backgroundColor: "#FFF9E9" },
@@ -1272,10 +1434,7 @@ const styles = StyleSheet.create({
   badgeDetailClose: { alignItems: "center", backgroundColor: "rgba(255,255,255,0.72)", borderRadius: 16, height: 32, justifyContent: "center", position: "absolute", right: 10, top: 10, width: 32, zIndex: 2 },
   badgeDetailCloseText: { color: colors.ink, fontSize: 22, fontWeight: "300", lineHeight: 25 },
   badgeDetailArtwork: { alignItems: "center", height: 175, justifyContent: "center", overflow: "hidden" },
-  badgeDetailEyebrow: { color: colors.profileMuted, fontSize: 9, fontWeight: "800", letterSpacing: 1.7, marginTop: 1 },
-  badgeDetailTitle: { color: colors.ink, fontFamily: "Georgia", fontSize: 25, fontWeight: "700", lineHeight: 31, marginTop: 6 },
-  badgeDetailChinese: { color: colors.profileMuted, fontSize: 13, fontWeight: "700", letterSpacing: 1.2, marginTop: 2 },
-  badgeDetailDescription: { color: colors.inkSoft, fontSize: 13, lineHeight: 21, marginTop: 13, textAlign: "center" },
+  badgeDetailDescription: { color: colors.inkSoft, fontSize: 13, lineHeight: 21, marginTop: 5, textAlign: "center" },
   badgeEmotionNote: { alignItems: "flex-start", backgroundColor: "rgba(255,255,255,0.62)", borderRadius: 14, flexDirection: "row", gap: 9, marginTop: 13, paddingHorizontal: 13, paddingVertical: 11, width: "100%" },
   badgeEmotionMark: { color: "#B8860B", fontSize: 16, lineHeight: 20 },
   badgeEmotionText: { color: colors.ink, flex: 1, fontFamily: "Georgia", fontSize: 12, fontStyle: "italic", lineHeight: 19 },
@@ -1289,7 +1448,6 @@ const styles = StyleSheet.create({
   badgeProgressFill: { backgroundColor: "#D9A928", borderRadius: 4, height: "100%" },
   badgeProgressFillReviewer: { backgroundColor: "#65758A" },
   badgeProgressStatus: { color: colors.profileMuted, fontSize: 10, lineHeight: 15, marginTop: 7 },
-  badgeTogetherNote: { color: colors.profileMuted, fontSize: 10, lineHeight: 16, marginTop: 12, textAlign: "center" },
   statsRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", marginTop: 9, paddingHorizontal: spacing.lg },
   stat: { alignItems: "center", borderRadius: 14, justifyContent: "center", minHeight: 39, width: "31%" },
   statPressed: { backgroundColor: "rgba(255,255,255,0.62)" },
@@ -1371,6 +1529,7 @@ const styles = StyleSheet.create({
     paddingBottom: 28,
     paddingHorizontal: spacing.lg
   },
+  passwordSheet: { backgroundColor: colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: 28, paddingHorizontal: spacing.lg },
   sheetHandle: { alignSelf: "center", backgroundColor: colors.faint, borderRadius: radius.pill, height: 4, marginTop: 9, width: 42 },
   sheetHeader: { alignItems: "center", borderBottomColor: colors.line, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: "row", justifyContent: "space-between", minHeight: 76 },
   sheetEyebrow: { color: colors.profileMuted, fontSize: 10, fontWeight: "700", letterSpacing: 1.4 },
@@ -1398,6 +1557,7 @@ const styles = StyleSheet.create({
     width: 42
   },
   settingsDangerIcon: { backgroundColor: "#FFE6E1" },
+  passwordRowIcon: { backgroundColor: "#E9EEF7" },
   settingsRowGlyph: { color: colors.ink, fontSize: 21, fontWeight: "500" },
   settingsDangerGlyph: { color: colors.accent, transform: [{ rotate: "90deg" }] },
   settingsRowCopy: { flex: 1, marginLeft: 12 },
@@ -1448,6 +1608,21 @@ const styles = StyleSheet.create({
   },
   logoutConfirmButtonText: { color: colors.white, fontSize: 13, fontWeight: "800" },
   settingsVersion: { color: colors.profileMuted, fontSize: 10, letterSpacing: 0.3, marginTop: 22, textAlign: "center" },
+  passwordField: { marginTop: 14 },
+  passwordFieldLabel: { color: colors.ink, fontSize: 11, fontWeight: "800", letterSpacing: 0.3, marginBottom: 7 },
+  passwordInput: { backgroundColor: colors.white, borderColor: colors.line, borderRadius: 15, borderWidth: 1, color: colors.ink, fontSize: 16, height: 52, paddingHorizontal: 14 },
+  passwordVisibilityButton: { alignSelf: "flex-start", justifyContent: "center", minHeight: 36 },
+  passwordVisibilityText: { color: colors.accent, fontSize: 11, fontWeight: "800" },
+  passwordError: { backgroundColor: "#FFF0EE", borderRadius: 11, color: "#B3263B", fontSize: 11, lineHeight: 16, paddingHorizontal: 11, paddingVertical: 9 },
+  passwordHint: { color: colors.profileMuted, fontSize: 10, lineHeight: 15, marginTop: 7 },
+  passwordPrimaryButton: { alignItems: "center", backgroundColor: colors.ink, borderRadius: 15, justifyContent: "center", marginTop: 16, minHeight: 52, width: "100%" },
+  passwordPrimaryDisabled: { opacity: 0.42 },
+  passwordPrimaryText: { color: colors.white, fontSize: 14, fontWeight: "800" },
+  passwordSuccess: { alignItems: "center", paddingBottom: 4, paddingTop: 22 },
+  passwordSuccessMark: { alignItems: "center", backgroundColor: "#E7F5EA", borderRadius: 28, height: 56, justifyContent: "center", width: 56 },
+  passwordSuccessGlyph: { color: "#2F7B45", fontSize: 25, fontWeight: "800" },
+  passwordSuccessTitle: { color: colors.ink, fontFamily: "Georgia", fontSize: 24, marginTop: 15 },
+  passwordSuccessCopy: { color: colors.profileMuted, fontSize: 12, lineHeight: 18, marginTop: 7, textAlign: "center" },
   experienceTotalCard: { alignItems: "center", backgroundColor: colors.surfaceWarm, borderRadius: 18, flexDirection: "row", marginTop: 17, padding: 14 },
   experienceTotalCopy: { flex: 1, marginLeft: 13 },
   experienceLevel: { color: colors.ink, fontSize: 16, fontWeight: "800" },

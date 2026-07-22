@@ -76,6 +76,10 @@ class FakeAuthService implements AuthService {
     }
     return lili;
   }
+
+  async changePassword(accessToken: string): Promise<void> {
+    await this.authenticate(accessToken);
+  }
 }
 
 function sessionResult(user: AuthUser): AuthSessionResult {

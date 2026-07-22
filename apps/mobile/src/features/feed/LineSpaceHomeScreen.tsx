@@ -25,6 +25,7 @@ import { mainTabs, tabRoutes } from "@/navigation/tabs";
 import { usePoemEngagement } from "@/features/poem/usePoemEngagement";
 import { getPoemLayoutPresentation } from "@/features/poem/poemPresentation";
 import { FeedTopChrome } from "@/components/FeedTopChrome";
+import { useGuestAccess } from "@/auth/GuestAccessProvider";
 
 declare const require: (path: string) => ImageSourcePropType;
 
@@ -38,13 +39,14 @@ const feedPageSize = 3;
 
 export function LineSpaceHomeScreen() {
   const { user: authUser } = useAuth();
+  const { requireAccount } = useGuestAccess();
   const currentUserId = authUser?.id ?? "";
   const [section, setSection] = useState<FeedSection>("latest");
   const engagement = usePoemEngagement();
   const profileQuery = useQuery({
     queryKey: ["user-profile", currentUserId],
     queryFn: () => lineSpaceApi.getUserProfile(currentUserId),
-    enabled: currentUserId.length > 0
+    enabled: true
   });
 
   const feedQuery = useInfiniteQuery({
@@ -83,7 +85,11 @@ export function LineSpaceHomeScreen() {
       <FeedTopChrome
         activeValue={section}
         onSearch={() => router.push("/search" as Href)}
-        onTabChange={(value) => setSection(value as FeedSection)}
+        onTabChange={(value) => {
+          const next = value as FeedSection;
+          if (next === "following" && !requireAccount("view your following feed")) return;
+          setSection(next);
+        }}
         searchLabel="Search LineSpace"
         tabs={sectionTabs}
       />
@@ -113,9 +119,9 @@ export function LineSpaceHomeScreen() {
               onCommentPress={(id) =>
                 router.push({ pathname: "/poem/[id]", params: { id } })
               }
-              onContributionPress={(id) =>
-                router.push({ pathname: "/poem/share/[id]", params: { id } } as unknown as Href)
-              }
+              onContributionPress={(id) => {
+                if (requireAccount("share this post")) router.push({ pathname: "/poem/share/[id]", params: { id } } as unknown as Href);
+              }}
               onLikePress={(id, isLiked) =>
                 engagement.setCollection(id, "liked", isLiked)
               }
@@ -161,12 +167,14 @@ export function LineSpaceHomeScreen() {
         value="post"
         onChange={(value) => {
           if (value === "compose") {
+            if (!requireAccount("publish your own writing")) return;
             router.push({
               pathname: "/(tabs)/compose",
               params: { session: `${Date.now()}` }
             } as Href);
             return;
           }
+          if (value === "inbox" && !requireAccount("open your inbox")) return;
           router.push(tabRoutes[value]);
         }}
       />

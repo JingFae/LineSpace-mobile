@@ -18,7 +18,7 @@ import { useAuth } from "@/auth/AuthSessionProvider";
 import { clearEmailConfirmationFragment, parseEmailConfirmationUrl } from "@/auth/emailConfirmation";
 
 export function LoginScreen() {
-  const { login } = useAuth();
+  const { continueAsGuest, login } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -68,6 +68,21 @@ export function LoginScreen() {
         loading={submitting}
         onPress={submit}
       />
+      <Pressable
+        accessibilityRole="button"
+        disabled={submitting}
+        onPress={async () => {
+          await continueAsGuest();
+          router.replace("/(tabs)" as Href);
+        }}
+        style={({ pressed }) => [styles.guestButton, pressed && styles.guestButtonPressed]}
+      >
+        <View>
+          <Text style={styles.guestButtonTitle}>Browse as a guest</Text>
+          <Text style={styles.guestButtonCopy}>Explore public posts and threads without saving activity.</Text>
+        </View>
+        <Text style={styles.guestButtonArrow}>→</Text>
+      </Pressable>
       <View style={styles.switchRow}>
         <Text style={styles.switchText}>New to LineSpace?</Text>
         <Pressable accessibilityRole="link" onPress={() => router.push("/register" as Href)}>
@@ -584,6 +599,22 @@ const styles = StyleSheet.create({
   confirmationCopy: { color: colors.inkSoft, fontSize: 15, lineHeight: 23 },
   secondaryButton: { alignItems: "center", justifyContent: "center", minHeight: 48 },
   secondaryButtonText: { color: colors.accent, fontSize: 13, fontWeight: "700" },
+  guestButton: {
+    alignItems: "center",
+    backgroundColor: "#F6F3ED",
+    borderColor: "rgba(21,21,21,0.09)",
+    borderRadius: 15,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 64,
+    paddingHorizontal: 15,
+    paddingVertical: 10
+  },
+  guestButtonPressed: { backgroundColor: "#EFEAE2", transform: [{ scale: 0.99 }] },
+  guestButtonTitle: { color: colors.ink, fontSize: 13, fontWeight: "800" },
+  guestButtonCopy: { color: colors.profileMuted, fontSize: 10, lineHeight: 14, marginTop: 3, maxWidth: 245 },
+  guestButtonArrow: { color: colors.accent, fontSize: 21, fontWeight: "500" },
   footnote: {
     color: colors.profileMuted,
     fontSize: 10,

@@ -46,6 +46,7 @@ import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
 import { useAuth } from "@/auth/AuthSessionProvider";
 import { mainTabs, tabRoutes } from "@/navigation/tabs";
 import { FeedTopChrome } from "@/components/FeedTopChrome";
+import { useGuestAccess } from "@/auth/GuestAccessProvider";
 import {
   adaptThreadToCreativeViewModel,
   getThreadContributors,
@@ -56,6 +57,16 @@ import {
 type ComposerTarget =
   | { kind: "thread"; thread: PoetryThread }
   | { kind: "continuation"; continuation: ThreadContinuation };
+
+function useAccountComposerTarget() {
+  const [target, setTargetState] = useState<ComposerTarget | null>(null);
+  const { requireAccount } = useGuestAccess();
+  const setTarget = useCallback((next: ComposerTarget | null) => {
+    if (next && !requireAccount("continue this thread")) return;
+    setTargetState(next);
+  }, [requireAccount]);
+  return [target, setTarget] as const;
+}
 
 type ShareNotice = {
   id: string;
@@ -151,10 +162,11 @@ type ContinuationPathRenderNode = {
 
 export function ThreadFeedScreen() {
   const { user: authUser } = useAuth();
+  const { requireAccount } = useGuestAccess();
   const currentUserId = authUser?.id ?? "";
   const queryClient = useQueryClient();
   const [sort, setSort] = useState<ThreadSort>("latest");
-  const [composerTarget, setComposerTarget] = useState<ComposerTarget | null>(null);
+  const [composerTarget, setComposerTarget] = useAccountComposerTarget();
   const [shareNotice, setShareNotice] = useState<ShareNotice | null>(null);
 
   const profileQuery = useCurrentProfile(currentUserId);
@@ -170,7 +182,7 @@ export function ThreadFeedScreen() {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) =>
       lastPage.length === threadPageSize ? lastPage.at(-1)?.id : undefined,
-    enabled: currentUserId.length > 0
+    enabled: true
   });
   const likeMutation = useThreadLikeMutation();
   const saveMutation = useThreadSaveMutation();
@@ -189,7 +201,11 @@ export function ThreadFeedScreen() {
       <FeedTopChrome
         activeValue={sort}
         onSearch={() => router.push("/search" as Href)}
-        onTabChange={(value) => setSort(value as ThreadSort)}
+        onTabChange={(value) => {
+          const next = value as ThreadSort;
+          if (next === "following" && !requireAccount("view threads from writers you follow")) return;
+          setSort(next);
+        }}
         searchLabel="Search LineSpace"
         tabs={sortTabs}
       />
@@ -237,7 +253,7 @@ export function ThreadFeedScreen() {
               }
               onAuthorPress={() => router.push({ pathname: "/profile/[id]", params: { id: thread.author.id } } as unknown as Href)}
               onShare={() =>
-                router.push({
+                requireAccount("share this thread") && router.push({
                   pathname: "/thread/share/[id]",
                   params: { id: thread.id, kind: "thread" }
                 } as unknown as Href)
@@ -268,9 +284,11 @@ export function ThreadFeedScreen() {
         items={mainTabs}
         onChange={(value) => {
           if (value === "compose") {
+            if (!requireAccount("publish your own writing")) return;
             router.push("/(tabs)/compose" as Href);
             return;
           }
+          if (value === "inbox" && !requireAccount("open your inbox")) return;
           router.push(tabRoutes[value]);
         }}
         profileAvatar={profileAvatar(profileQuery.data)}
@@ -323,7 +341,8 @@ export function ThreadDetailScreen({
   initialSelectedIds?: string;
 }) {
   const queryClient = useQueryClient();
-  const [composerTarget, setComposerTarget] = useState<ComposerTarget | null>(null);
+  const [composerTarget, setComposerTarget] = useAccountComposerTarget();
+  const { requireAccount } = useGuestAccess();
   const [followingAuthorIds, setFollowingAuthorIds] = useState<Set<string>>(() => new Set());
   const [continuationOrder, setContinuationOrder] = useState<ContinuationOrder>("top");
   const [expandedRootIds, setExpandedRootIds] = useState<Set<string>>(() => new Set());
@@ -337,6 +356,14 @@ export function ThreadDetailScreen({
   const likeMutation = useThreadLikeMutation();
   const continuationLikeMutation = useContinuationLikeMutation();
   const saveMutation = useThreadSaveMutation();
+  const followMutation = useMutation({
+    mutationFn: (targetUserId: string) => lineSpaceApi.setUserFollow({ userId: currentUserId, targetUserId, isActive: true }),
+    onSuccess: (result) => {
+      setFollowingAuthorIds((current) => new Set(current).add(result.targetUserId));
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", result.targetUserId] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", currentUserId] });
+    }
+  });
   const detail = detailQuery.data ?? undefined;
   const versionTreeQuery = useQuery({
     queryKey: ["thread-version-tree", threadId, currentUserId, detail?.continuations.map((item) => item.id).join("|")],
@@ -439,12 +466,7 @@ export function ThreadDetailScreen({
               onAuthorPress={() => router.push({ pathname: "/profile/[id]", params: { id: detail.thread.author.id } } as unknown as Href)}
               onContinue={() => setComposerTarget({ kind: "thread", thread: detail.thread })}
               onFollow={() =>
-                setFollowingAuthorIds((current) => {
-                  const next = new Set(current);
-                  if (next.has(detail.thread.author.id)) next.delete(detail.thread.author.id);
-                  else next.add(detail.thread.author.id);
-                  return next;
-                })
+                requireAccount("follow this writer") && followMutation.mutate(detail.thread.author.id)
               }
               onLike={() =>
                 likeMutation.mutate({
@@ -454,7 +476,7 @@ export function ThreadDetailScreen({
                 })
               }
               onShare={() =>
-                router.push({
+                requireAccount("share this thread") && router.push({
                   pathname: "/thread/share/[id]",
                   params: { id: detail.thread.id, kind: "thread" }
                 } as unknown as Href)
@@ -497,7 +519,7 @@ export function ThreadDetailScreen({
                     } as unknown as Href)
                   }
                   onShare={(target) =>
-                    router.push({
+                    requireAccount("share this continuation") && router.push({
                       pathname: "/thread/share/[id]",
                       params: { id: target.id, kind: "continuation" }
                     } as unknown as Href)
@@ -564,7 +586,8 @@ export function ThreadDetailScreen({
 
 export function ContinueDetailScreen({ continuationId }: { continuationId?: string }) {
   const queryClient = useQueryClient();
-  const [composerTarget, setComposerTarget] = useState<ComposerTarget | null>(null);
+  const [composerTarget, setComposerTarget] = useAccountComposerTarget();
+  const { requireAccount } = useGuestAccess();
   const detailQuery = useQuery({
     queryKey: ["continuation-detail", continuationId, currentUserId],
     enabled: Boolean(continuationId),
@@ -603,7 +626,7 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
                 })
               }
               onContinuationShare={(target) =>
-                router.push({
+                requireAccount("share this continuation") && router.push({
                   pathname: "/thread/share/[id]",
                   params: { id: target.id, kind: "continuation" }
                 } as unknown as Href)
@@ -617,7 +640,7 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
                 })
               }
               onThreadShare={() =>
-                router.push({
+                requireAccount("share this thread") && router.push({
                   pathname: "/thread/share/[id]",
                   params: { id: detail.thread.id, kind: "thread" }
                 } as unknown as Href)
@@ -1874,7 +1897,8 @@ function useCurrentProfile(userId: string) {
 
 function useThreadLikeMutation() {
   const queryClient = useQueryClient();
-  return useMutation({
+  const { requireAccount } = useGuestAccess();
+  const mutation = useMutation({
     mutationFn: (input: UpdateThreadLikeInput) => lineSpaceApi.setThreadLike(input),
     onMutate: async (input) => {
       const queryRoots: QueryKey[] = [["threads"], ["thread-detail"], ["continuation-detail"]];
@@ -1897,11 +1921,18 @@ function useThreadLikeMutation() {
       void queryClient.invalidateQueries({ queryKey: ["inbox-summary"] });
     }
   });
+  return {
+    ...mutation,
+    mutate: (input: UpdateThreadLikeInput) => {
+      if (requireAccount("like this thread")) mutation.mutate(input);
+    }
+  };
 }
 
 function useContinuationLikeMutation() {
   const queryClient = useQueryClient();
-  return useMutation({
+  const { requireAccount } = useGuestAccess();
+  const mutation = useMutation({
     mutationFn: (input: UpdateContinuationLikeInput) => lineSpaceApi.setContinuationLike(input),
     onSuccess: (continuation, input) => {
       void queryClient.invalidateQueries({ queryKey: ["thread-detail"] });
@@ -1911,11 +1942,18 @@ function useContinuationLikeMutation() {
       void queryClient.invalidateQueries({ queryKey: ["user-profile-content", input.userId] });
     }
   });
+  return {
+    ...mutation,
+    mutate: (input: UpdateContinuationLikeInput) => {
+      if (requireAccount("like this continuation")) mutation.mutate(input);
+    }
+  };
 }
 
 function useThreadSaveMutation() {
   const queryClient = useQueryClient();
-  return useMutation({
+  const { requireAccount } = useGuestAccess();
+  const mutation = useMutation({
     mutationFn: (input: UpdateThreadCollectionInput) => lineSpaceApi.setThreadCollection(input),
     onMutate: async (input) => {
       const queryRoots: QueryKey[] = [["threads"], ["thread-detail"], ["continuation-detail"]];
@@ -1937,6 +1975,12 @@ function useThreadSaveMutation() {
       void queryClient.invalidateQueries({ queryKey: ["user-profile-content", input.userId] });
     }
   });
+  return {
+    ...mutation,
+    mutate: (input: UpdateThreadCollectionInput) => {
+      if (requireAccount("save this thread")) mutation.mutate(input);
+    }
+  };
 }
 
 type QueryCacheSnapshot = Array<[QueryKey, unknown]>;

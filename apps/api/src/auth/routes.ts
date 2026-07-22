@@ -5,6 +5,7 @@ import type { ProfileRepository } from "../database/profile/profile.repository.j
 import {
   parseBearerToken,
   parseLogin,
+  parsePasswordChange,
   parseRefreshToken,
   parseRegistration
 } from "./validation.js";
@@ -62,6 +63,12 @@ export async function handleAuthRoute(
         status: 200,
         body: await service().authenticate(accessToken)
       };
+    }
+
+    if (method === "POST" && pathname === "/v1/auth/password") {
+      const accessToken = parseBearerToken(context.authorization);
+      await service().changePassword(accessToken, parsePasswordChange(body));
+      return { status: 204, body: null };
     }
 
     return { status: 405, body: { code: "METHOD_NOT_ALLOWED" } };

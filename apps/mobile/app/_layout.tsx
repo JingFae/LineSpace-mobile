@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { Platform, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { AuthLoadingScreen, AuthSessionProvider, useAuth } from "@/auth/AuthSessionProvider";
+import { GuestAccessProvider, useGuestAccess } from "@/auth/GuestAccessProvider";
 
 const screenInset = 12;
 const previewVerticalMargin = 44;
@@ -20,14 +21,16 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthSessionProvider>
-        <RouteGuard>
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: "#F4F2F0" }
-            }}
-          />
-        </RouteGuard>
+        <GuestAccessProvider>
+          <RouteGuard>
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: "#F4F2F0" }
+              }}
+            />
+          </RouteGuard>
+        </GuestAccessProvider>
       </AuthSessionProvider>
     </QueryClientProvider>
   );
@@ -35,21 +38,36 @@ export default function RootLayout() {
 
 function RouteGuard({ children }: { children: ReactNode }) {
   const { status } = useAuth();
+  const { requireAccount } = useGuestAccess();
   const segments = useSegments();
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
   const firstSegment = segments[0] as string | undefined;
   const isPublicRoute =
     firstSegment === "login" || firstSegment === "register" || firstSegment === "auth";
+  const secondSegment = segments[1] as string | undefined;
+  const isGuestRestrictedRoute =
+    status === "guest" && (
+      (firstSegment === "(tabs)" && (secondSegment === "compose" || secondSegment === "comments")) ||
+      (firstSegment === "profile" && (secondSegment === "edit" || secondSegment === "drafts")) ||
+      firstSegment === "compose-preview" ||
+      (firstSegment === "poem" && secondSegment === "share") ||
+      (firstSegment === "thread" && secondSegment === "share")
+    );
 
   useEffect(() => {
     if (status === "loading" || !rootNavigationState?.key) return;
+    if (isGuestRestrictedRoute) {
+      requireAccount(secondSegment === "comments" ? "open your inbox" : "save or publish your own work");
+      router.replace("/(tabs)/discover" as Href);
+      return;
+    }
     if (status === "unauthenticated" && !isPublicRoute) {
       router.replace("/login" as Href);
     } else if (status === "authenticated" && isPublicRoute) {
       router.replace("/(tabs)" as Href);
     }
-  }, [isPublicRoute, rootNavigationState?.key, router, status]);
+  }, [isGuestRestrictedRoute, isPublicRoute, requireAccount, rootNavigationState?.key, router, secondSegment, status]);
 
   // Do not mount protected route screens until session restoration has
   // finished. Those screens perform identity-scoped queries during mount; if
@@ -61,7 +79,8 @@ function RouteGuard({ children }: { children: ReactNode }) {
 
   const shouldHoldRoute =
     (status === "unauthenticated" && !isPublicRoute) ||
-    (status === "authenticated" && isPublicRoute);
+    (status === "authenticated" && isPublicRoute) ||
+    isGuestRestrictedRoute;
 
   return (
     <View style={styles.routeGuardRoot}>

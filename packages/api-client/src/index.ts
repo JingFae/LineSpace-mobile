@@ -29,6 +29,7 @@ export type {
   AuthSession,
   AuthSessionResult,
   AuthUser,
+  ChangePasswordInput,
   ComposeMode,
   ContentSearchResult,
   DraftVisibility,

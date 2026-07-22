@@ -11,7 +11,7 @@ import {
   invalidTokenError
 } from "./errors.js";
 import type { AuthService } from "./service.js";
-import type { ValidatedLogin, ValidatedRegistration } from "./validation.js";
+import type { ValidatedLogin, ValidatedPasswordChange, ValidatedRegistration } from "./validation.js";
 
 type UserIdentityRow = {
   id: string;
@@ -135,6 +135,31 @@ export class SupabaseAuthService implements AuthService {
       throw this.profileMissingError();
     }
     return mapAuthUser(profile, data.user);
+  }
+
+  async changePassword(accessToken: string, input: ValidatedPasswordChange): Promise<void> {
+    const { data, error } = await this.createPublicClient().auth.getUser(accessToken);
+    if (error || !data.user?.email) throw invalidTokenError();
+
+    const verification = await this.createPublicClient().auth.signInWithPassword({
+      email: data.user.email,
+      password: input.currentPassword
+    });
+    if (verification.error || !verification.data.user) throw invalidCredentialsError();
+
+    const updated = await this.adminClient.auth.admin.updateUserById(data.user.id, {
+      password: input.newPassword
+    });
+    if (updated.error) {
+      if (providerErrorCode(updated.error) === "weak_password") {
+        throw new ApiAuthError(
+          "WEAK_PASSWORD",
+          422,
+          "Password does not meet the configured security requirements."
+        );
+      }
+      throw this.providerUnavailableError();
+    }
   }
 
   private async findProfileByUsername(username: string) {

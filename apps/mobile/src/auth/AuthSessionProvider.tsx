@@ -5,6 +5,7 @@ import {
   type AuthSession,
   type AuthSessionResult,
   type AuthUser,
+  type ChangePasswordInput,
   type LoginAuthInput,
   type RegisterAuthInput
 } from "@linespace/api-client";
@@ -21,7 +22,7 @@ import {
 import { getAccessToken, refreshAccessToken, setAccessToken, setRefreshHandler } from "./session-store";
 import { setCurrentUserId, useMocks } from "@/services/lineSpaceApi";
 
-export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
+export type AuthStatus = "loading" | "authenticated" | "guest" | "unauthenticated";
 
 export type AuthContextValue = {
   status: AuthStatus;
@@ -30,6 +31,9 @@ export type AuthContextValue = {
   register: (input: RegisterAuthInput) => Promise<AuthRegistrationResult>;
   login: (input: LoginAuthInput) => Promise<AuthSessionResult>;
   logout: () => Promise<void>;
+  changePassword: (input: ChangePasswordInput) => Promise<void>;
+  continueAsGuest: () => Promise<void>;
+  leaveGuestMode: () => Promise<void>;
   refreshSession: () => Promise<boolean>;
   completeEmailConfirmation: (session: AuthSession) => Promise<boolean>;
 };
@@ -45,6 +49,7 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const authClientRef = useRef<HttpAuthClient | null>(null);
   const sessionUserIdRef = useRef<string | null>(null);
+  const guestModeRef = useRef(false);
 
   if (!useMocks && !authClientRef.current) {
     const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
@@ -59,12 +64,14 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
     setUser(null);
     setCurrentUserId(null);
     sessionUserIdRef.current = null;
+    guestModeRef.current = false;
     setStatus("unauthenticated");
     await clearStoredRefreshToken();
     queryClient.clear();
   }, [queryClient]);
 
   const applySession = useCallback(async (result: AuthSessionResult) => {
+    guestModeRef.current = false;
     if (!useMocks) {
       try {
         await storeRefreshToken(result.session.refreshToken);
@@ -105,6 +112,7 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
     if (refreshPromiseRef.current) return refreshPromiseRef.current;
 
     const promise = (async () => {
+      if (guestModeRef.current) return false;
       if (useMocks) {
         const mockUser = createMockAuthUser();
         setUser(mockUser);
@@ -183,6 +191,33 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
     }
   }, [applySession, clearSession]);
 
+  const changePassword = useCallback(async (input: ChangePasswordInput) => {
+    if (useMocks) return;
+    const token = getAccessToken();
+    if (!token || !authClientRef.current) {
+      throw new Error("Your session has expired. Please sign in again.");
+    }
+    try {
+      await authClientRef.current.changePassword(token, input);
+    } catch (error) {
+      throw normalizeAuthError(error);
+    }
+  }, []);
+
+  const continueAsGuest = useCallback(async () => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = null;
+    await clearStoredRefreshToken();
+    setAccessToken(null);
+    setAccessTokenState(null);
+    setUser(null);
+    setCurrentUserId(null);
+    sessionUserIdRef.current = null;
+    guestModeRef.current = true;
+    queryClient.clear();
+    setStatus("guest");
+  }, [queryClient]);
+
   const completeEmailConfirmation = useCallback(async (session: AuthSession) => {
     if (useMocks) return true;
     if (!authClientRef.current) return false;
@@ -217,10 +252,13 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
       register,
       login,
       logout,
+      changePassword,
+      continueAsGuest,
+      leaveGuestMode: clearSession,
       refreshSession,
       completeEmailConfirmation
     }),
-    [accessToken, completeEmailConfirmation, login, logout, refreshSession, register, status, user]
+    [accessToken, changePassword, clearSession, completeEmailConfirmation, continueAsGuest, login, logout, refreshSession, register, status, user]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
