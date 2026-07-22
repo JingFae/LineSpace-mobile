@@ -21,7 +21,7 @@ export function CreateHomeScreen() {
         accent="#1F1C18"
         description="A finished poem, thought or image-led post with your own layout."
         icon="✦"
-        label="Post · My poem"
+        label="Post"
         onPress={() => router.push({ pathname: "/compose", params: { type: "post", session: `${Date.now()}` } } as unknown as Href)}
       />
       <CreateChoice
@@ -32,6 +32,10 @@ export function CreateHomeScreen() {
         onPress={() => router.push({ pathname: "/compose", params: { type: "thread", session: `${Date.now()}` } } as unknown as Href)}
       />
 
+      <View style={styles.footerCard}>
+        <Text style={styles.footerTitle}>Your work stays yours</Text>
+        <Text style={styles.footerBody}>Save at any stage. Choose visibility and publish only when the work feels ready.</Text>
+      </View>
     </AppScreen>
   );
 }
@@ -66,4 +70,7 @@ const styles = StyleSheet.create({
   choiceLabel: { color: colors.ink, fontSize: 20, lineHeight: 25, fontWeight: "600" },
   choiceDescription: { marginTop: 5, color: colors.profileMuted, fontSize: 12, lineHeight: 17 },
   arrow: { marginLeft: 8, color: colors.profileMuted, fontSize: 24, lineHeight: 28 },
+  footerCard: { marginTop: 26, padding: 16, borderRadius: radius.lg, backgroundColor: colors.surfaceWarm, borderWidth: 1, borderColor: colors.line },
+  footerTitle: { color: colors.ink, fontSize: 14, lineHeight: 18, fontWeight: "600" },
+  footerBody: { marginTop: 5, color: colors.profileMuted, fontSize: 12, lineHeight: 17 }
 });
