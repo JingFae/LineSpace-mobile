@@ -1438,11 +1438,13 @@ export class MockLineSpaceApi implements LineSpaceApi {
   async getThread(threadId: string, viewerId?: string): Promise<ThreadDetail | null> {
     const thread = this.threads.find((item) => item.id === threadId);
     if (!thread || !canViewContent(thread.visibility, thread.audienceUserIds, thread.author.id, viewerId)) return null;
+    const allContinuations = this.continuations
+      .filter((item) => item.threadId === threadId)
+      .map((item) => this.withContinuationViewer(item, viewerId));
     return {
       thread: this.withThreadViewer(thread, viewerId),
-      continuations: this.continuations
-        .filter((item) => item.threadId === threadId && !item.parentContinuationId)
-        .map((item) => this.withContinuationViewer(item, viewerId))
+      continuations: allContinuations.filter((item) => !item.parentContinuationId),
+      allContinuations
     };
   }
 

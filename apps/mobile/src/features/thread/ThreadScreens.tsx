@@ -1,6 +1,6 @@
 import { router, type Href, useFocusEffect } from "expo-router";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { InfiniteData, QueryClient } from "@tanstack/react-query";
+import type { InfiniteData, QueryClient, QueryKey } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
@@ -22,13 +22,11 @@ import {
 import {
   AppScreen,
   Avatar,
-  BellIcon,
   BottomNavigation,
   ContinueIcon,
   ContentTagRow,
   EmptyState,
   LikeIcon,
-  MoreIcon,
   SaveIcon,
   ShareIcon
 } from "@linespace/ui";
@@ -83,7 +81,7 @@ type ContinuationVisibleRow = {
   hasVisibleNextNodeInGroup: boolean;
   isLastVisibleDescendantInGroup: boolean;
   showContinuationEntry: boolean;
-  isLoadingDescendants: boolean;
+  previewContinuation?: ThreadContinuation;
 };
 
 type ContinuationVisibleGroup = {
@@ -326,12 +324,10 @@ export function ThreadDetailScreen({
 }) {
   const queryClient = useQueryClient();
   const [composerTarget, setComposerTarget] = useState<ComposerTarget | null>(null);
-  const [shareNotice, setShareNotice] = useState<ShareNotice | null>(null);
   const [followingAuthorIds, setFollowingAuthorIds] = useState<Set<string>>(() => new Set());
   const [continuationOrder, setContinuationOrder] = useState<ContinuationOrder>("top");
   const [expandedRootIds, setExpandedRootIds] = useState<Set<string>>(() => new Set());
   const [expandedDescendants, setExpandedDescendants] = useState<Record<string, FlattenedDescendantRow[]>>({});
-  const [loadingRootIds, setLoadingRootIds] = useState<Set<string>>(() => new Set());
   const [selectedByLine, setSelectedByLine] = useState<Record<number, string>>({});
   const detailQuery = useQuery({
     queryKey: ["thread-detail", threadId, currentUserId],
@@ -344,10 +340,10 @@ export function ThreadDetailScreen({
   const detail = detailQuery.data ?? undefined;
   const versionTreeQuery = useQuery({
     queryKey: ["thread-version-tree", threadId, currentUserId, detail?.continuations.map((item) => item.id).join("|")],
-    enabled: Boolean(detail),
+    enabled: Boolean(detail && detail.allContinuations === undefined),
     queryFn: () => getAllThreadContinuations(detail!.continuations)
   });
-  const allContinuations = versionTreeQuery.data ?? detail?.continuations ?? [];
+  const allContinuations = detail?.allContinuations ?? versionTreeQuery.data ?? detail?.continuations ?? [];
   const sortedContinuations = useMemo(() => {
     return sortContinuationItems(
       (detail?.continuations ?? []).filter(
@@ -368,14 +364,14 @@ export function ThreadDetailScreen({
             sortedContinuations,
             expandedDescendants,
             expandedRootIds,
-            loadingRootIds
+            allContinuations,
+            continuationOrder
           ),
     [
       allContinuations,
       continuationOrder,
       expandedDescendants,
       expandedRootIds,
-      loadingRootIds,
       selectionMode,
       sortedContinuations
     ]
@@ -393,7 +389,6 @@ export function ThreadDetailScreen({
   const resetExpandedContinuations = useCallback(() => {
     setExpandedRootIds(new Set());
     setExpandedDescendants({});
-    setLoadingRootIds(new Set());
   }, []);
   const handleContinuationOrderChange = useCallback(
     (value: ContinuationOrder) => {
@@ -408,29 +403,12 @@ export function ThreadDetailScreen({
       if (expandedRootIds.has(rootId)) return;
       setExpandedRootIds((current) => new Set(current).add(rootId));
       if (expandedDescendants[rootId]) return;
-      setLoadingRootIds((current) => new Set(current).add(rootId));
-      void getDescendantsDepthFirst(continuation, continuationOrder, currentUserId)
-        .then((descendants) => {
-          setExpandedDescendants((current) => ({
-            ...current,
-            [rootId]: descendants
-          }));
-        })
-        .catch(() => {
-          setExpandedDescendants((current) => ({
-            ...current,
-            [rootId]: []
-          }));
-        })
-        .finally(() => {
-          setLoadingRootIds((current) => {
-            const next = new Set(current);
-            next.delete(rootId);
-            return next;
-          });
-        });
+      setExpandedDescendants((current) => ({
+        ...current,
+        [rootId]: buildDescendantRowsFromFlat(continuation, allContinuations, continuationOrder)
+      }));
     },
-    [continuationOrder, expandedDescendants, expandedRootIds]
+    [allContinuations, continuationOrder, expandedDescendants, expandedRootIds]
   );
 
   useFocusEffect(
@@ -442,15 +420,7 @@ export function ThreadDetailScreen({
 
   return (
     <AppScreen scroll={false} padded={false} style={styles.safeArea} contentContainerStyle={styles.screen}>
-      <DetailTopBar
-        title={selectionMode ? "Build my version" : "Thread"}
-        onNotify={() =>
-          setShareNotice({
-            id: detail?.thread.id ?? "thread-notify",
-            message: "Thread notifications will appear in Inbox."
-          })
-        }
-      />
+      <DetailTopBar title={selectionMode ? "Build my version" : "Thread"} />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.detailContent, composerTarget && styles.composerOpenContentInset]}
@@ -512,7 +482,6 @@ export function ThreadDetailScreen({
                 <ExpandedContinuationGroup
                   key={group.rootRow.rootGroupId}
                   group={group}
-                  order={continuationOrder}
                   onContinue={(target) => setComposerTarget({ kind: "continuation", continuation: target })}
                   onLike={(target) =>
                     continuationLikeMutation.mutate({
@@ -589,7 +558,6 @@ export function ThreadDetailScreen({
         }}
         target={composerTarget}
       /> : null}
-      <ShareToast notice={shareNotice} onDismiss={() => setShareNotice(null)} />
     </AppScreen>
   );
 }
@@ -597,7 +565,6 @@ export function ThreadDetailScreen({
 export function ContinueDetailScreen({ continuationId }: { continuationId?: string }) {
   const queryClient = useQueryClient();
   const [composerTarget, setComposerTarget] = useState<ComposerTarget | null>(null);
-  const [shareNotice, setShareNotice] = useState<ShareNotice | null>(null);
   const detailQuery = useQuery({
     queryKey: ["continuation-detail", continuationId, currentUserId],
     enabled: Boolean(continuationId),
@@ -612,16 +579,7 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
 
   return (
     <AppScreen scroll={false} padded={false} style={styles.safeArea} contentContainerStyle={styles.screen}>
-      <DetailTopBar
-        large
-        title="Continue"
-        onNotify={() =>
-          setShareNotice({
-            id: detail?.current.id ?? "continue-notify",
-            message: "Continuation notifications will appear in Inbox."
-          })
-        }
-      />
+      <DetailTopBar large title="Continue" />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.detailContent, composerTarget && styles.composerOpenContentInset]}
@@ -692,12 +650,11 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
         }}
         target={composerTarget}
       />
-      <ShareToast notice={shareNotice} onDismiss={() => setShareNotice(null)} />
     </AppScreen>
   );
 }
 
-function DetailTopBar({ title, large = false, onNotify }: { title: string; large?: boolean; onNotify?: () => void }) {
+function DetailTopBar({ title, large = false }: { title: string; large?: boolean }) {
   return (
     <View style={styles.detailTopBar}>
       <View style={styles.detailLeftActions}>
@@ -708,14 +665,7 @@ function DetailTopBar({ title, large = false, onNotify }: { title: string; large
       <View style={styles.detailTitleWrap}>
         <Text style={[styles.detailTitle, large && styles.detailTitleLarge]}>{title}</Text>
       </View>
-      <View style={styles.detailHeaderActions}>
-        <Pressable accessibilityLabel="Notify me about this thread" hitSlop={10} onPress={onNotify} style={styles.detailIconButton}>
-          <BellIcon color={colors.ink} />
-        </Pressable>
-        <Pressable accessibilityLabel="More options" hitSlop={10} style={styles.detailIconButton}>
-          <MoreIcon color={colors.ink} />
-        </Pressable>
-      </View>
+      <View style={styles.detailRightSpacer} />
     </View>
   );
 }
@@ -892,7 +842,7 @@ function StartingContentCard({
       <View pointerEvents="none" style={[styles.mediaAccentOne, { backgroundColor: media.accentColor }]} />
       <View pointerEvents="none" style={[styles.mediaAccentTwo, { borderColor: media.accentColor }]} />
       <View pointerEvents="none" style={styles.startingLineNumberPill}>
-        <Text style={styles.startingLineNumberText}>1</Text>
+        <Text style={styles.startingLineNumberText}>Line1</Text>
       </View>
       <Text
         numberOfLines={detail ? 7 : 5}
@@ -965,7 +915,6 @@ function ContinuationHeader({
 
 function ExpandedContinuationGroup({
   group,
-  order,
   onOpen,
   onLike,
   onContinue,
@@ -976,7 +925,6 @@ function ExpandedContinuationGroup({
   onSelect
 }: {
   group: ContinuationVisibleGroup;
-  order: ContinuationOrder;
   onOpen: (continuation: ThreadContinuation) => void;
   onLike: (continuation: ThreadContinuation) => void;
   onContinue: (continuation: ThreadContinuation) => void;
@@ -998,7 +946,6 @@ function ExpandedContinuationGroup({
         onSelect={onSelect}
         onShare={onShare}
         onShowContinuations={onShowContinuations}
-        order={order}
         selectedByLine={selectedByLine}
         selectionMode={selectionMode}
       />
@@ -1008,7 +955,6 @@ function ExpandedContinuationGroup({
 
 function ContinuationTreeNodeView({
   node,
-  order,
   onOpen,
   onLike,
   onContinue,
@@ -1019,7 +965,6 @@ function ContinuationTreeNodeView({
   onSelect
 }: {
   node: ContinuationVisibleTreeNode;
-  order: ContinuationOrder;
   onOpen: (continuation: ThreadContinuation) => void;
   onLike: (continuation: ThreadContinuation) => void;
   onContinue: (continuation: ThreadContinuation) => void;
@@ -1080,7 +1025,6 @@ function ContinuationTreeNodeView({
         style={styles.groupLayer}
       >
         <ContinuationCard
-          order={order}
           row={node.row}
           onContinue={onContinue}
           onLike={onLike}
@@ -1107,7 +1051,6 @@ function ContinuationTreeNodeView({
         >
           <ContinuationTreeNodeView
             node={child}
-            order={order}
             onContinue={onContinue}
             onLike={onLike}
             onOpen={onOpen}
@@ -1127,7 +1070,6 @@ function ContinuationTreeNodeView({
 function ContinuationCard({
   row,
   actionOrder = "continue-first",
-  order = "top",
   onOpen,
   onLike,
   onContinue,
@@ -1139,7 +1081,6 @@ function ContinuationCard({
 }: {
   row: ContinuationVisibleRow;
   actionOrder?: ActionOrder;
-  order?: ContinuationOrder;
   onOpen: (continuation: ThreadContinuation) => void;
   onLike: (continuation: ThreadContinuation) => void;
   onContinue: (continuation: ThreadContinuation) => void;
@@ -1185,29 +1126,27 @@ function ContinuationCard({
         </View>
         <View style={[styles.continuationBody, row.isExpandedDescendant && styles.level1ContinuationBody]}>
           <View style={styles.continuationTopLine}>
-            <View style={styles.lineNumberPill}>
-              <Text style={styles.lineNumberText}>{row.lineNumber}</Text>
-            </View>
             <Pressable accessibilityRole="button" onPress={() => onOpen(continuation)} style={styles.continuationAuthorLine}>
               <Text numberOfLines={1} style={styles.continuationAuthorName}>{continuation.author.handle}</Text>
               <Text style={styles.continuationTime}>{formatRelative(continuation.createdAt)}</Text>
             </Pressable>
-            {selectionMode ? (
-              <Pressable
-                accessibilityLabel={`Select line ${row.lineNumber}`}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: selected }}
-                hitSlop={10}
-                onPress={() => onSelect?.(continuation, row.lineNumber)}
-                style={[styles.versionSelectCircle, selected && styles.versionSelectCircleActive]}
-              >
-                {selected ? <Text style={styles.versionSelectCheck}>✓</Text> : null}
-              </Pressable>
-            ) : (
-              <Pressable accessibilityLabel="More continuation options" hitSlop={10} style={styles.continuationMoreButton}>
-                <MoreIcon color={colors.profileMuted} />
-              </Pressable>
-            )}
+            <View style={styles.continuationLineActions}>
+              {selectionMode ? (
+                <Pressable
+                  accessibilityLabel={`Select line ${row.lineNumber}`}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: selected }}
+                  hitSlop={10}
+                  onPress={() => onSelect?.(continuation, row.lineNumber)}
+                  style={[styles.versionSelectCircle, selected && styles.versionSelectCircleActive]}
+                >
+                  {selected ? <Text style={styles.versionSelectCheck}>✓</Text> : null}
+                </Pressable>
+              ) : null}
+              <View style={styles.lineNumberPill}>
+                <Text style={styles.lineNumberText}>Line{row.lineNumber}</Text>
+              </View>
+            </View>
           </View>
           <Pressable
             accessibilityRole="button"
@@ -1233,16 +1172,10 @@ function ContinuationCard({
               Choose one option for line {row.lineNumber}
             </Text>
           )}
-          {row.isLoadingDescendants ? (
-            <View style={styles.continuationLoadingRow}>
-              <ActivityIndicator color={colors.profileMuted} size="small" />
-              <Text style={styles.continuationLoadingText}>Loading continuations</Text>
-            </View>
-          ) : null}
           {!selectionMode && row.showContinuationEntry && onShowContinuations ? (
             <ShowContinuationsRow
               continuation={continuation}
-              order={order}
+              previewContinuation={row.previewContinuation}
               onPress={() => onShowContinuations(continuation)}
             />
           ) : null}
@@ -1254,22 +1187,14 @@ function ContinuationCard({
 
 function ShowContinuationsRow({
   continuation,
-  order,
+  previewContinuation,
   onPress
 }: {
   continuation: ThreadContinuation;
-  order: ContinuationOrder;
+  previewContinuation?: ThreadContinuation;
   onPress: () => void;
 }) {
-  const childrenPreviewQuery = useQuery({
-    queryKey: ["continuation-children", continuation.id, currentUserId],
-    queryFn: async () => {
-      const detail = await lineSpaceApi.getContinuationDetail(continuation.id, currentUserId);
-      return detail?.children ?? [];
-    }
-  });
-  const firstChild = sortContinuationItems(childrenPreviewQuery.data ?? [], order)[0];
-  const avatarSource = firstChild ?? continuation;
+  const avatarSource = previewContinuation ?? continuation;
 
   return (
     <Pressable accessibilityRole="button" onPress={onPress} style={styles.showContinuationsRow}>
@@ -1483,19 +1408,16 @@ function ContinuationPathNode({
         </Pressable>
       </View>
       <View style={styles.pathNodeBody}>
-        {node.lineNumber !== undefined ? (
-          <View style={styles.pathLineNumberPill}>
-            <Text style={styles.pathLineNumberText}>{node.lineNumber}</Text>
-          </View>
-        ) : null}
         <View style={styles.pathNodeTopLine}>
           <Pressable accessibilityRole="button" onPress={node.onOpen} style={styles.pathAuthorLine}>
             <Text numberOfLines={1} style={styles.pathAuthorName}>{node.author.handle}</Text>
             <Text style={styles.pathTimeText}>{formatRelative(node.createdAt)}</Text>
           </Pressable>
-          <Pressable accessibilityLabel="More continuation options" hitSlop={10} style={styles.pathMoreButton}>
-            <MoreIcon color={colors.profileMuted} />
-          </Pressable>
+          {node.lineNumber !== undefined ? (
+            <View style={styles.pathLineNumberPill}>
+              <Text style={styles.pathLineNumberText}>Line{node.lineNumber}</Text>
+            </View>
+          ) : null}
         </View>
         {node.meta ? <Text numberOfLines={1} style={styles.pathMetaText}>{node.meta}</Text> : null}
         {node.onOpen ? (
@@ -1954,6 +1876,18 @@ function useThreadLikeMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: UpdateThreadLikeInput) => lineSpaceApi.setThreadLike(input),
+    onMutate: async (input) => {
+      const queryRoots: QueryKey[] = [["threads"], ["thread-detail"], ["continuation-detail"]];
+      await Promise.all(queryRoots.map((queryKey) => queryClient.cancelQueries({ queryKey })));
+      const snapshots = captureQuerySnapshots(queryClient, queryRoots);
+      optimisticallyUpdateThreadCaches(queryClient, input.threadId, (thread) =>
+        updateThreadLikeState(thread, input.isActive)
+      );
+      return { snapshots };
+    },
+    onError: (_error, _input, context) => {
+      restoreQuerySnapshots(queryClient, context?.snapshots);
+    },
     onSuccess: (thread, input) => {
       void queryClient.invalidateQueries({ queryKey: ["threads"] });
       void queryClient.invalidateQueries({ queryKey: ["thread-detail"] });
@@ -1983,6 +1917,18 @@ function useThreadSaveMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: UpdateThreadCollectionInput) => lineSpaceApi.setThreadCollection(input),
+    onMutate: async (input) => {
+      const queryRoots: QueryKey[] = [["threads"], ["thread-detail"], ["continuation-detail"]];
+      await Promise.all(queryRoots.map((queryKey) => queryClient.cancelQueries({ queryKey })));
+      const snapshots = captureQuerySnapshots(queryClient, queryRoots);
+      optimisticallyUpdateThreadCaches(queryClient, input.threadId, (thread) =>
+        updateThreadSaveState(thread, input.isActive)
+      );
+      return { snapshots };
+    },
+    onError: (_error, _input, context) => {
+      restoreQuerySnapshots(queryClient, context?.snapshots);
+    },
     onSuccess: (thread, input) => {
       void queryClient.invalidateQueries({ queryKey: ["threads"] });
       void queryClient.invalidateQueries({ queryKey: ["thread-detail"] });
@@ -1991,6 +1937,78 @@ function useThreadSaveMutation() {
       void queryClient.invalidateQueries({ queryKey: ["user-profile-content", input.userId] });
     }
   });
+}
+
+type QueryCacheSnapshot = Array<[QueryKey, unknown]>;
+
+function captureQuerySnapshots(
+  queryClient: QueryClient,
+  queryRoots: readonly QueryKey[]
+): QueryCacheSnapshot {
+  return queryRoots.flatMap((queryKey) => queryClient.getQueriesData({ queryKey }));
+}
+
+function restoreQuerySnapshots(
+  queryClient: QueryClient,
+  snapshots?: QueryCacheSnapshot
+) {
+  for (const [queryKey, data] of snapshots ?? []) {
+    queryClient.setQueryData(queryKey, data);
+  }
+}
+
+function optimisticallyUpdateThreadCaches(
+  queryClient: QueryClient,
+  threadId: string,
+  update: (thread: PoetryThread) => PoetryThread
+) {
+  queryClient.setQueriesData<InfiniteData<PoetryThread[], string | undefined>>(
+    { queryKey: ["threads"] },
+    (data) => data
+      ? {
+          ...data,
+          pages: data.pages.map((page) =>
+            page.map((thread) => thread.id === threadId ? update(thread) : thread)
+          )
+        }
+      : data
+  );
+  queryClient.setQueriesData<ThreadDetail>(
+    { queryKey: ["thread-detail"] },
+    (detail) => detail?.thread.id === threadId
+      ? { ...detail, thread: update(detail.thread) }
+      : detail
+  );
+  queryClient.setQueriesData<ContinuationDetail>(
+    { queryKey: ["continuation-detail"] },
+    (detail) => detail?.thread.id === threadId
+      ? { ...detail, thread: update(detail.thread) }
+      : detail
+  );
+}
+
+function updateThreadLikeState(thread: PoetryThread, isActive: boolean): PoetryThread {
+  const changed = thread.viewer.liked !== isActive;
+  return {
+    ...thread,
+    metrics: {
+      ...thread.metrics,
+      likes: Math.max(0, thread.metrics.likes + (changed ? (isActive ? 1 : -1) : 0))
+    },
+    viewer: { ...thread.viewer, liked: isActive }
+  };
+}
+
+function updateThreadSaveState(thread: PoetryThread, isActive: boolean): PoetryThread {
+  const changed = Boolean(thread.viewer.saved) !== isActive;
+  return {
+    ...thread,
+    metrics: {
+      ...thread.metrics,
+      saves: Math.max(0, (thread.metrics.saves ?? 0) + (changed ? (isActive ? 1 : -1) : 0))
+    },
+    viewer: { ...thread.viewer, saved: isActive }
+  };
 }
 
 function sortContinuationItems(items: readonly ThreadContinuation[], order: ContinuationOrder) {
@@ -2007,26 +2025,29 @@ function sortContinuationItems(items: readonly ThreadContinuation[], order: Cont
     .map(({ item }) => item);
 }
 
-async function getDescendantsDepthFirst(
+function buildDescendantRowsFromFlat(
   continuation: ThreadContinuation,
-  order: ContinuationOrder,
-  viewerId: string,
-  depth = 1,
-  visited = new Set<string>()
-): Promise<FlattenedDescendantRow[]> {
-  if (visited.has(continuation.id)) return [];
-  visited.add(continuation.id);
-
-  const detail = await lineSpaceApi.getContinuationDetail(continuation.id, viewerId);
-  const children = sortContinuationItems(detail?.children ?? [], order);
-  const rows: FlattenedDescendantRow[] = [];
-
-  for (const child of children) {
-    if (visited.has(child.id)) continue;
-    rows.push({ continuation: child, actualDepth: depth });
-    rows.push(...(await getDescendantsDepthFirst(child, order, viewerId, depth + 1, visited)));
+  allContinuations: readonly ThreadContinuation[],
+  order: ContinuationOrder
+): FlattenedDescendantRow[] {
+  const childrenByParent = new Map<string, ThreadContinuation[]>();
+  for (const item of allContinuations) {
+    if (!item.parentContinuationId) continue;
+    const siblings = childrenByParent.get(item.parentContinuationId) ?? [];
+    siblings.push(item);
+    childrenByParent.set(item.parentContinuationId, siblings);
   }
-
+  const rows: FlattenedDescendantRow[] = [];
+  const visited = new Set<string>([continuation.id]);
+  const walk = (parent: ThreadContinuation, depth: number) => {
+    for (const child of sortContinuationItems(childrenByParent.get(parent.id) ?? [], order)) {
+      if (visited.has(child.id)) continue;
+      visited.add(child.id);
+      rows.push({ continuation: child, actualDepth: depth });
+      walk(child, depth + 1);
+    }
+  };
+  walk(continuation, 1);
   return rows;
 }
 
@@ -2039,14 +2060,10 @@ async function getAllThreadContinuations(roots: readonly ThreadContinuation[]) {
     visited.add(continuation.id);
     all.push(continuation);
     const detail = await lineSpaceApi.getContinuationDetail(continuation.id, currentUserId);
-    for (const child of detail?.children ?? []) {
-      await walk(child);
-    }
+    await Promise.all((detail?.children ?? []).map(walk));
   };
 
-  for (const root of roots) {
-    await walk(root);
-  }
+  await Promise.all(roots.map(walk));
   return all;
 }
 
@@ -2054,7 +2071,8 @@ function buildVisibleContinuationGroups(
   roots: readonly ThreadContinuation[],
   expandedDescendants: Record<string, FlattenedDescendantRow[]>,
   expandedRootIds: Set<string>,
-  loadingRootIds: Set<string>
+  allContinuations: readonly ThreadContinuation[],
+  order: ContinuationOrder
 ): ContinuationVisibleGroup[] {
   return roots.map((root) => {
     const isExpanded = expandedRootIds.has(root.id);
@@ -2071,7 +2089,10 @@ function buildVisibleContinuationGroups(
       hasVisibleNextNodeInGroup: descendants.length > 0,
       isLastVisibleDescendantInGroup: descendants.length === 0,
       showContinuationEntry: !isExpanded && root.metrics.continuations > 0,
-      isLoadingDescendants: isExpanded && loadingRootIds.has(root.id)
+      previewContinuation: sortContinuationItems(
+        allContinuations.filter((item) => item.parentContinuationId === root.id),
+        order
+      )[0]
     };
     const descendantRows = descendants.map((item, index) => ({
       continuation: item.continuation,
@@ -2084,8 +2105,7 @@ function buildVisibleContinuationGroups(
       hasVisiblePreviousNodeInGroup: index > 0,
       hasVisibleNextNodeInGroup: index < descendants.length - 1,
       isLastVisibleDescendantInGroup: index === descendants.length - 1,
-      showContinuationEntry: false,
-      isLoadingDescendants: false
+      showContinuationEntry: false
     }));
 
     return { rootRow, descendantRows };
@@ -2121,33 +2141,18 @@ function buildSelectionContinuationGroups(
   allContinuations: readonly ThreadContinuation[],
   order: ContinuationOrder
 ) {
-  const childrenByParent = new Map<string, ThreadContinuation[]>();
-  for (const continuation of allContinuations) {
-    if (!continuation.parentContinuationId) continue;
-    const children = childrenByParent.get(continuation.parentContinuationId) ?? [];
-    children.push(continuation);
-    childrenByParent.set(continuation.parentContinuationId, children);
-  }
-  const expanded: Record<string, FlattenedDescendantRow[]> = {};
-  for (const root of roots) {
-    const rows: FlattenedDescendantRow[] = [];
-    const walk = (parent: ThreadContinuation, depth: number) => {
-      for (const child of sortContinuationItems(
-        childrenByParent.get(parent.id) ?? [],
-        order
-      )) {
-        rows.push({ continuation: child, actualDepth: depth });
-        walk(child, depth + 1);
-      }
-    };
-    walk(root, 1);
-    expanded[root.id] = rows;
-  }
+  const expanded = Object.fromEntries(
+    roots.map((root) => [
+      root.id,
+      buildDescendantRowsFromFlat(root, allContinuations, order)
+    ])
+  );
   return buildVisibleContinuationGroups(
     roots,
     expanded,
     new Set(roots.map((root) => root.id)),
-    new Set()
+    allContinuations,
+    order
   );
 }
 
@@ -2215,16 +2220,31 @@ function updateThreadDetailCache(
     if (!detail) return detail;
     if (target.kind === "thread") {
       return {
+        ...detail,
         thread: addContinuationMetric(detail.thread),
-        continuations: [continuation, ...detail.continuations]
+        continuations: [continuation, ...detail.continuations],
+        ...(detail.allContinuations
+          ? { allContinuations: [continuation, ...detail.allContinuations] }
+          : {})
       };
     }
 
     return {
+      ...detail,
       thread: addContinuationMetric(detail.thread),
       continuations: detail.continuations.map((item) =>
         item.id === target.continuation.id ? addContinuationMetric(item) : item
-      )
+      ),
+      ...(detail.allContinuations
+        ? {
+            allContinuations: [
+              continuation,
+              ...detail.allContinuations.map((item) =>
+                item.id === target.continuation.id ? addContinuationMetric(item) : item
+              )
+            ]
+          }
+        : {})
     };
   });
 }
@@ -2310,8 +2330,7 @@ function createStandaloneContinuationRow(continuation: ThreadContinuation): Cont
     hasVisiblePreviousNodeInGroup: false,
     hasVisibleNextNodeInGroup: false,
     isLastVisibleDescendantInGroup: true,
-    showContinuationEntry: false,
-    isLoadingDescendants: false
+    showContinuationEntry: false
   };
 }
 
@@ -2369,8 +2388,7 @@ const styles = StyleSheet.create({
   detailTitleWrap: { flex: 1, alignItems: "center" },
   detailTitle: { fontSize: 18, lineHeight: 22, fontWeight: "700", color: colors.ink },
   detailTitleLarge: { fontSize: 24, lineHeight: 29, fontWeight: "700" },
-  detailHeaderActions: { width: 88, minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4 },
-  detailIconButton: { width: 40, height: 44, alignItems: "center", justifyContent: "center" },
+  detailRightSpacer: { width: 88, minHeight: 44 },
   backGlyph: { fontSize: 35, lineHeight: 38, color: colors.ink },
   feedContent: { paddingBottom: 96 },
   pageLoader: { alignItems: "center", paddingVertical: spacing.lg },
@@ -2461,6 +2479,7 @@ const styles = StyleSheet.create({
   },
   startingContentText: {
     position: "relative",
+    paddingRight: 52,
     fontSize: 18,
     lineHeight: 25,
     fontWeight: "600"
@@ -2470,7 +2489,7 @@ const styles = StyleSheet.create({
     top: 13,
     right: 14,
     zIndex: 2,
-    minWidth: 24,
+    minWidth: 46,
     height: 24,
     paddingHorizontal: 6,
     borderRadius: 12,
@@ -2681,11 +2700,11 @@ const styles = StyleSheet.create({
   continuationBody: { flex: 1, minWidth: 0, marginLeft: continuationContentGap },
   level1ContinuationBody: { marginLeft: level1ContentGap },
   continuationTopLine: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  continuationLineActions: { flexDirection: "row", alignItems: "center", marginLeft: 8 },
   lineNumberPill: {
-    minWidth: 22,
+    minWidth: 44,
     height: 22,
     paddingHorizontal: 5,
-    marginRight: 6,
     borderRadius: 11,
     alignItems: "center",
     justifyContent: "center",
@@ -2702,7 +2721,6 @@ const styles = StyleSheet.create({
   continuationAuthorName: { flexShrink: 1, maxWidth: "78%", fontSize: 15, lineHeight: 20, fontWeight: "700", color: colors.ink },
   continuationTime: { flexShrink: 0, marginLeft: 7, fontSize: 14, lineHeight: 19, color: colors.profileMuted },
   continuationOpenArea: { maxWidth: "100%" },
-  continuationMoreButton: { width: 36, height: 30, alignItems: "flex-end", justifyContent: "center" },
   versionSelectCircle: {
     width: 25,
     height: 25,
@@ -2725,8 +2743,6 @@ const styles = StyleSheet.create({
     lineHeight: 15
   },
   continuationContent: { marginTop: 2, fontSize: 16, lineHeight: 22, color: colors.ink },
-  continuationLoadingRow: { minHeight: 32, marginTop: 2, flexDirection: "row", alignItems: "center" },
-  continuationLoadingText: { marginLeft: 8, fontSize: 14, lineHeight: 18, color: colors.profileMuted },
   showContinuationsRow: {
     minHeight: showContinuationRowHeight,
     marginTop: 0,
@@ -2788,10 +2804,10 @@ const styles = StyleSheet.create({
   },
   pathNodeBody: { flex: 1, minWidth: 0, marginLeft: pathBodyGap },
   pathLineNumberPill: {
-    alignSelf: "flex-start",
-    minWidth: 24,
+    minWidth: 46,
     height: 24,
     paddingHorizontal: 6,
+    marginLeft: 8,
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
@@ -2802,7 +2818,6 @@ const styles = StyleSheet.create({
   pathAuthorLine: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center" },
   pathAuthorName: { flexShrink: 1, maxWidth: "72%", fontSize: 16, lineHeight: 20, fontWeight: "700", color: colors.ink },
   pathTimeText: { flexShrink: 0, marginLeft: 6, fontSize: 15, lineHeight: 20, color: colors.profileMuted },
-  pathMoreButton: { width: 34, height: 30, alignItems: "flex-end", justifyContent: "center" },
   pathMetaText: { marginTop: 1, fontSize: 14, lineHeight: 18, color: colors.accent },
   pathOpenArea: { maxWidth: "100%" },
   pathContentText: { marginTop: 5, fontSize: 16, lineHeight: 22, color: colors.ink },

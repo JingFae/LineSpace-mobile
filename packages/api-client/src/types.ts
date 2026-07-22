@@ -768,8 +768,10 @@ export type ThreadFeedQuery = {
 
 export type ThreadDetail = {
   thread: PoetryThread;
-  /** First continuations (line 2); descendants are loaded from ContinuationDetail. */
+  /** First continuations (line 2), kept for feed/detail compatibility. */
   continuations: ThreadContinuation[];
+  /** Complete flat continuation tree, prefetched so branches can expand instantly. */
+  allContinuations?: ThreadContinuation[];
 };
 
 export type ContinuationDetail = {

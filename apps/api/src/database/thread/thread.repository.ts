@@ -86,31 +86,17 @@ export class ThreadRepository {
   }
 
   async getThread(threadId: string): Promise<ThreadDetail | null> {
-    const primaryResult = await this.client
-      .from("poetry_threads")
-      .select(threadSelect)
-      .eq("id", threadId)
-      .maybeSingle();
-    const result = isMissingThreadSavesCount(primaryResult.error)
-      ? await this.client
-        .from("poetry_threads")
-        .select(legacyThreadSelect)
-        .eq("id", threadId)
-        .maybeSingle()
-      : primaryResult;
-    ensureDatabaseResult(result.error);
-    if (!result.data) return null;
     const actorId = await getCurrentLinespaceUserId(this.client);
-    const threads = await this.mapThreads(normalizeThreadRows([result.data]), actorId);
-    const thread = threads[0];
+    const thread = await this.loadThreadById(threadId, actorId);
     if (!thread) return null;
     const continuationRows = await this.loadContinuations(threadId);
-    const continuations = await this.mapContinuations(continuationRows, actorId);
+    const allContinuations = await this.mapContinuations(continuationRows, actorId);
     return {
       thread,
-      continuations: continuations.filter(
+      continuations: allContinuations.filter(
         (continuation) => !continuation.parentContinuationId
-      )
+      ),
+      allContinuations
     };
   }
 
@@ -148,7 +134,7 @@ export class ThreadRepository {
     const detail = await this.getThread(currentRow.thread_id);
     if (!detail) return null;
     const actorId = await getCurrentLinespaceUserId(this.client);
-    const allContinuations = await this.mapContinuations(
+    const allContinuations = detail.allContinuations ?? await this.mapContinuations(
       await this.loadContinuations(currentRow.thread_id),
       actorId
     );
@@ -213,16 +199,16 @@ export class ThreadRepository {
   }
 
   async setThreadLike(input: UpdateThreadLikeInput): Promise<PoetryThread> {
-    await this.setEngagement(
+    const actorId = await this.setEngagement(
       "thread_likes",
       "thread_id",
       input.threadId,
       input.userId,
       input.isActive
     );
-    const detail = await this.getThread(input.threadId);
-    if (!detail) throw new Error("thread not found");
-    return detail.thread;
+    const thread = await this.loadThreadById(input.threadId, actorId);
+    if (!thread) throw new Error("thread not found");
+    return thread;
   }
 
   async setContinuationLike(input: UpdateContinuationLikeInput): Promise<ThreadContinuation> {
@@ -259,16 +245,16 @@ export class ThreadRepository {
   }
 
   async setThreadCollection(input: UpdateThreadCollectionInput): Promise<PoetryThread> {
-    await this.setEngagement(
+    const actorId = await this.setEngagement(
       "thread_saves",
       "thread_id",
       input.threadId,
       input.userId,
       input.isActive
     );
-    const detail = await this.getThread(input.threadId);
-    if (!detail) throw new Error("thread not found");
-    return detail.thread;
+    const thread = await this.loadThreadById(input.threadId, actorId);
+    if (!thread) throw new Error("thread not found");
+    return thread;
   }
 
   async recordThreadShare(target: {
@@ -407,6 +393,28 @@ export class ThreadRepository {
     const continuation = rows[0];
     if (!continuation) throw new Error("continuation not found");
     return continuation;
+  }
+
+  private async loadThreadById(
+    threadId: string,
+    actorId: string | null
+  ): Promise<PoetryThread | null> {
+    const primaryResult = await this.client
+      .from("poetry_threads")
+      .select(threadSelect)
+      .eq("id", threadId)
+      .maybeSingle();
+    const result = isMissingThreadSavesCount(primaryResult.error)
+      ? await this.client
+        .from("poetry_threads")
+        .select(legacyThreadSelect)
+        .eq("id", threadId)
+        .maybeSingle()
+      : primaryResult;
+    ensureDatabaseResult(result.error);
+    if (!result.data) return null;
+    const threads = await this.mapThreads(normalizeThreadRows([result.data]), actorId);
+    return threads[0] ?? null;
   }
 
   private async loadContinuations(threadId: string): Promise<ContinuationRow[]> {
@@ -621,6 +629,7 @@ export class ThreadRepository {
         .eq("user_id", actorId);
       ensureDatabaseResult(result.error);
     }
+    return actorId;
   }
 
   private async loadLikeCounts(ids: string[]): Promise<Map<string, number>> {
