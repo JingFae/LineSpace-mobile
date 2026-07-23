@@ -92,10 +92,13 @@ const communitySparkSchema = {
   additionalProperties: false
 } as const;
 
+const DEEPSEEK_DEFAULT_BASE_URL = "https://api.deepseek.com";
+const DEEPSEEK_DEFAULT_MODEL = "deepseek-v4-flash";
+
 export async function requestCommunitySpark(
   input: CommunitySparkAiInput
 ): Promise<CommunitySparkResponse> {
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  const apiKey = communitySparkApiKey();
   if (!apiKey) throw new Error("LLM_NOT_CONFIGURED");
   const model = communitySparkModel();
 
@@ -107,7 +110,7 @@ export async function requestCommunitySpark(
   const comments = selectReaderComments(input.poem);
   let response: Response;
   try {
-    response = await fetch("https://api.openai.com/v1/responses", {
+    response = await fetch(`${communitySparkBaseUrl()}/chat/completions`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -116,34 +119,44 @@ export async function requestCommunitySpark(
       signal: AbortSignal.timeout(35_000),
       body: JSON.stringify({
         model,
-        instructions: COMMUNITY_SPARK_PROMPT,
-        input: JSON.stringify({
-          poem: {
-            title: workingCopy.title.slice(0, 180),
-            lines: workingCopy.lines
-              .slice(0, 200)
-              .map((line) => line.slice(0, 2_000)),
-            tags: workingCopy.tags.slice(0, 32).map((tag) => tag.slice(0, 64))
+        messages: [
+          {
+            role: "system",
+            content: [
+              COMMUNITY_SPARK_PROMPT,
+              "Return only one valid JSON object. Do not wrap it in markdown.",
+              `The JSON must match this schema exactly: ${JSON.stringify(
+                communitySparkSchema
+              )}`
+            ].join("\n\n")
           },
-          comments: comments.map((comment) => ({
-            id: comment.id,
-            author: `@${comment.author.handle}`,
-            text: comment.body.slice(0, 1_000),
-            likes: comment.likes ?? 0
-          })),
-          previousSuggestions: (input.previousSuggestions ?? [])
-            .slice(-12)
-            .map((suggestion) => suggestion.slice(0, 300))
-        }),
-        max_output_tokens: 3_000,
-        text: {
-          format: {
-            type: "json_schema",
-            name: "community_spark",
-            schema: communitySparkSchema,
-            strict: true
+          {
+            role: "user",
+            content: JSON.stringify({
+              poem: {
+                title: workingCopy.title.slice(0, 180),
+                lines: workingCopy.lines
+                  .slice(0, 200)
+                  .map((line) => line.slice(0, 2_000)),
+                tags: workingCopy.tags
+                  .slice(0, 32)
+                  .map((tag) => tag.slice(0, 64))
+              },
+              comments: comments.map((comment) => ({
+                id: comment.id,
+                author: `@${comment.author.handle}`,
+                text: comment.body.slice(0, 1_000),
+                likes: comment.likes ?? 0
+              })),
+              previousSuggestions: (input.previousSuggestions ?? [])
+                .slice(-12)
+                .map((suggestion) => suggestion.slice(0, 300))
+            })
           }
-        }
+        ],
+        response_format: { type: "json_object" },
+        max_tokens: 3_000,
+        stream: false
       })
     });
   } catch (error) {
@@ -160,6 +173,7 @@ export async function requestCommunitySpark(
     console.error("Community Spark provider request failed", {
       code,
       model,
+      provider: "deepseek",
       providerCode,
       providerRequestId: response.headers.get("x-request-id"),
       status: response.status
@@ -167,21 +181,20 @@ export async function requestCommunitySpark(
     throw new Error(code);
   }
 
-  const payload = (await response.json()) as OpenAiResponsePayload;
-  if (payload.status === "incomplete") throw new Error("LLM_INCOMPLETE_RESPONSE");
-  const output = payload.output
-    ?.flatMap((item) => item.content ?? [])
-    .find((item) => item.type === "output_text");
-  if (!output?.text) {
-    const refused = payload.output
-      ?.flatMap((item) => item.content ?? [])
-      .some((item) => item.type === "refusal");
-    throw new Error(refused ? "LLM_REFUSED" : "LLM_EMPTY_RESPONSE");
+  const payload = (await response.json()) as DeepSeekChatCompletionPayload;
+  const choice = payload.choices?.[0];
+  if (choice?.finish_reason === "length") {
+    throw new Error("LLM_INCOMPLETE_RESPONSE");
   }
+  if (choice?.finish_reason === "content_filter" || choice?.message?.refusal) {
+    throw new Error("LLM_REFUSED");
+  }
+  const content = choice?.message?.content?.trim();
+  if (!content) throw new Error("LLM_EMPTY_RESPONSE");
 
   let parsed: RawCommunitySpark;
   try {
-    parsed = JSON.parse(output.text) as RawCommunitySpark;
+    parsed = JSON.parse(stripJsonFence(content)) as RawCommunitySpark;
   } catch {
     throw new Error("LLM_INVALID_RESPONSE");
   }
@@ -197,22 +210,41 @@ export async function requestCommunitySpark(
     summary: cleanText(parsed.summary, 240),
     suggestions,
     usage: {
-      inputTokens: payload.usage?.input_tokens ?? 0,
-      outputTokens: payload.usage?.output_tokens ?? 0
+      inputTokens: payload.usage?.prompt_tokens ?? 0,
+      outputTokens: payload.usage?.completion_tokens ?? 0
     }
   };
 }
 
 export function isCommunitySparkConfigured() {
-  return Boolean(process.env.OPENAI_API_KEY?.trim());
+  return Boolean(communitySparkApiKey());
 }
 
 export function communitySparkModel() {
-  return (
+  const configuredModel =
+    process.env.DEEPSEEK_COMMUNITY_SPARK_MODEL?.trim() ||
     process.env.OPENAI_COMMUNITY_SPARK_MODEL?.trim() ||
-    process.env.OPENAI_MODEL?.trim() ||
-    "gpt-5.6"
+    DEEPSEEK_DEFAULT_MODEL;
+  return configuredModel.toLowerCase();
+}
+
+export function communitySparkProvider() {
+  return "deepseek" as const;
+}
+
+function communitySparkApiKey() {
+  return (
+    process.env.DEEPSEEK_API_KEY?.trim() ||
+    // Temporary migration fallback for deployments that stored a DeepSeek key
+    // under the original Community Spark variable.
+    process.env.OPENAI_API_KEY?.trim()
   );
+}
+
+function communitySparkBaseUrl() {
+  return (
+    process.env.DEEPSEEK_BASE_URL?.trim() || DEEPSEEK_DEFAULT_BASE_URL
+  ).replace(/\/+$/, "");
 }
 
 async function readProviderErrorCode(response: Response) {
@@ -230,14 +262,15 @@ async function readProviderErrorCode(response: Response) {
 function mapProviderFailure(status: number, providerCode?: string) {
   if (
     providerCode === "insufficient_quota" ||
-    providerCode === "billing_not_active"
+    providerCode === "billing_not_active" ||
+    status === 402
   ) {
     return "LLM_QUOTA_EXHAUSTED";
   }
   if (providerCode === "model_not_found" || status === 404) {
     return "LLM_MODEL_UNAVAILABLE";
   }
-  if (status === 400) return "LLM_INVALID_REQUEST";
+  if (status === 400 || status === 422) return "LLM_INVALID_REQUEST";
   if (status === 401) return "LLM_INVALID_API_KEY";
   if (status === 403) return "LLM_ACCESS_DENIED";
   if (status === 429) return "LLM_RATE_LIMITED";
@@ -301,17 +334,23 @@ function cleanText(value: unknown, maxLength: number) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 }
 
-type OpenAiResponsePayload = {
+function stripJsonFence(value: string) {
+  const trimmed = value.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fenced?.[1] ?? trimmed;
+}
+
+type DeepSeekChatCompletionPayload = {
   id?: string;
-  status?: string;
-  output?: Array<{
-    content?: Array<
-      | { type: "output_text"; text?: string }
-      | { type: "refusal"; refusal?: string }
-    >;
+  choices?: Array<{
+    finish_reason?: string;
+    message?: {
+      content?: string;
+      refusal?: string | null;
+    };
   }>;
   usage?: {
-    input_tokens?: number;
-    output_tokens?: number;
+    prompt_tokens?: number;
+    completion_tokens?: number;
   };
 };

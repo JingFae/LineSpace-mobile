@@ -16,9 +16,11 @@
 | `SUPABASE_ANON_KEY` | 兼容可选 | `apps/api` | 旧项目的公开 Anon Key；仅在未设置 Publishable Key 时作为回退 |
 | `SUPABASE_SERVICE_ROLE_KEY` | 认证 API 必需 | 只能由 `apps/api` 读取 | 解析 username 到 Auth 用户及撤销 Session；严禁进入客户端 |
 | `AUTH_EMAIL_REDIRECT_URL` | 可选 | `apps/api` | 注册确认邮件完成后返回 LineSpace 的地址，必须加入 Supabase Redirect URLs；Web 与 Native 应按部署环境分别配置 |
-| `OPENAI_API_KEY` | AI 功能必需 | 只能由 `apps/api` 读取 | Community Spark 与 Thread 版本 AI 请求；不得进入 Expo 客户端 |
-| `OPENAI_MODEL` | 可选 | `apps/api` | 旧 Thread 推荐与 AI 功能的通用模型覆盖值 |
-| `OPENAI_COMMUNITY_SPARK_MODEL` | 可选 | `apps/api` | 仅覆盖 Community Spark 模型，默认 `gpt-5.6`；未设置时优先沿用 `OPENAI_MODEL` |
+| `DEEPSEEK_API_KEY` | Community Spark 必需 | 只能由 `apps/api` 读取 | DeepSeek 服务端密钥；不得进入 Expo 客户端 |
+| `DEEPSEEK_BASE_URL` | 可选 | `apps/api` | DeepSeek OpenAI-compatible API 根地址，默认 `https://api.deepseek.com` |
+| `DEEPSEEK_COMMUNITY_SPARK_MODEL` | 可选 | `apps/api` | Community Spark 模型，默认 `deepseek-v4-flash` |
+| `OPENAI_API_KEY` | Thread AI 可选 | 只能由 `apps/api` 读取 | 旧 Thread 版本 AI 请求；Community Spark 迁移期仅将其作为 DeepSeek 密钥回退值 |
+| `OPENAI_MODEL` | 可选 | `apps/api` | 旧 Thread 推荐模型覆盖值 |
 
 所有 `EXPO_PUBLIC_*` 变量都会进入客户端产物，只能放公开配置。不要给 Service Role Key 或数据库连接串添加这个前缀。认证后端只读取普通服务端变量。前端由 `AuthSessionProvider` 恢复和刷新 Session：Native Refresh Token 写入 Expo SecureStore，Web 写入 `sessionStorage`，Access Token 仅驻留内存。Web 存储仍可能被 XSS 读取，生产环境应配置 CSP 并避免在 URL、日志或错误中暴露 Token。
 

@@ -37,6 +37,7 @@ import { ProfileRepositoryError } from "./database/profile/profile.errors.js";
 import { requestThreadVersionRecommendation } from "./ai/thread-version-recommendation.js";
 import {
   communitySparkModel,
+  communitySparkProvider,
   isCommunitySparkConfigured,
   requestCommunitySpark
 } from "./ai/community-spark.js";
@@ -73,7 +74,8 @@ export async function handleApiRequest(
       service: "linespace-api",
       authConfigured,
       communitySparkConfigured: isCommunitySparkConfigured(),
-      communitySparkModel: communitySparkModel()
+      communitySparkModel: communitySparkModel(),
+      communitySparkProvider: communitySparkProvider()
     });
   }
 

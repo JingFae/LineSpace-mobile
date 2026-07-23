@@ -69,11 +69,12 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_PUBLISHABLE_KEY=sb_publishable_example
 SUPABASE_SERVICE_ROLE_KEY=server-only-secret
 AUTH_EMAIL_REDIRECT_URL=https://your-domain.example/auth/confirm
-OPENAI_API_KEY=server-only-secret
-OPENAI_COMMUNITY_SPARK_MODEL=gpt-5.6
+DEEPSEEK_API_KEY=server-only-secret
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_COMMUNITY_SPARK_MODEL=deepseek-v4-flash
 ```
 
-`EXPO_PUBLIC_*` 会进入客户端 Bundle，不能保存密钥。`SUPABASE_SERVICE_ROLE_KEY`、`DATABASE_URL` 和 `OPENAI_API_KEY` 必须使用 Vercel Server-only 环境变量；它们不得改名为 `EXPO_PUBLIC_*`。
+`EXPO_PUBLIC_*` 会进入客户端 Bundle，不能保存密钥。`SUPABASE_SERVICE_ROLE_KEY`、`DATABASE_URL`、`DEEPSEEK_API_KEY` 和 `OPENAI_API_KEY` 必须使用 Vercel Server-only 环境变量；它们不得改名为 `EXPO_PUBLIC_*`。
 
 Supabase Dashboard 的 Redirect URLs 还需要包含 `https://your-domain.example/auth/confirm`。Native 构建使用同一个后端时，将 `AUTH_EMAIL_REDIRECT_URL` 配为 `linespace://auth/confirm`，并在 Supabase 允许列表中加入该自定义 scheme；Web 与 Native 不应混用错误的回跳地址。
 
@@ -174,9 +175,9 @@ EXPO_PUBLIC_USE_MOCKS=false
 EXPO_PUBLIC_API_BASE_URL=https://line-space-mobile-api.vercel.app/api
 ```
 
-Community Spark reads its OpenAI variables from the Vercel project that serves
+Community Spark reads its DeepSeek variables from the Vercel project that serves
 the configured API base URL. If the Web bundle uses `EXPO_PUBLIC_API_BASE_URL=/api`,
-add `OPENAI_API_KEY` and `OPENAI_COMMUNITY_SPARK_MODEL` to the Web project. If it
+add `DEEPSEEK_API_KEY` and `DEEPSEEK_COMMUNITY_SPARK_MODEL` to the Web project. If it
 uses the separate API URL above, add them to the API project instead. Select the
 Production environment and redeploy after every environment-variable change;
 existing deployments keep their previous values.
@@ -189,7 +190,7 @@ GET https://line-space-mobile-api.vercel.app/api/health
 200 {"ok":true,"service":"linespace-api"}
 
 GET https://line-space-mobile-api.vercel.app/api/health/ready
-200 {"ok":true,"service":"linespace-api","authConfigured":true,"communitySparkConfigured":true,"communitySparkModel":"gpt-5.6"}
+200 {"ok":true,"service":"linespace-api","authConfigured":true,"communitySparkConfigured":true,"communitySparkModel":"deepseek-v4-flash","communitySparkProvider":"deepseek"}
 ```
 
 If either URL returns Expo HTML, the API rewrite/Function was not deployed. If
@@ -197,7 +198,7 @@ the readiness endpoint returns `503` with `authConfigured:false`, verify
 `SUPABASE_URL`, the Publishable/Anon key, and `SUPABASE_SERVICE_ROLE_KEY` in
 the API Vercel project, then redeploy that project. Email confirmation is not
 involved until the registration endpoint has successfully reached Supabase.
-If `communitySparkConfigured` is `false`, the OpenAI key is missing from that
+If `communitySparkConfigured` is `false`, the DeepSeek key is missing from that
 deployment. If it is `true` but generation still fails, the card now reports
 whether the key, model access, quota, request shape, or provider connection is
 the problem without exposing the secret.
