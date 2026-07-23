@@ -35,7 +35,11 @@ import {
 import { DomainRepositoryError } from "./database/core/errors.js";
 import { ProfileRepositoryError } from "./database/profile/profile.errors.js";
 import { requestThreadVersionRecommendation } from "./ai/thread-version-recommendation.js";
-import { requestCommunitySpark } from "./ai/community-spark.js";
+import {
+  communitySparkModel,
+  isCommunitySparkConfigured,
+  requestCommunitySpark
+} from "./ai/community-spark.js";
 
 let lineSpaceRepositoryPromise:
   | Promise<typeof import("./database/linespace-repository.js")>
@@ -67,7 +71,9 @@ export async function handleApiRequest(
     return json(authConfigured ? 200 : 503, {
       ok: authConfigured,
       service: "linespace-api",
-      authConfigured
+      authConfigured,
+      communitySparkConfigured: isCommunitySparkConfigured(),
+      communitySparkModel: communitySparkModel()
     });
   }
 
@@ -670,7 +676,7 @@ export async function handleApiRequest(
           const code = error instanceof Error ? error.message : "LLM_REQUEST_FAILED";
           return json(503, {
             code: code.startsWith("LLM_") ? code : "LLM_REQUEST_FAILED",
-            message: "Creative Spark is resting for a moment. Please try again."
+            message: communitySparkFailureMessage(code)
           });
         }
       }
@@ -1521,6 +1527,30 @@ function isCommunitySparkRequest(
         (tag) => typeof tag === "string" && tag.length > 0 && tag.length <= 64
       ))
   );
+}
+
+function communitySparkFailureMessage(code: string) {
+  switch (code) {
+    case "LLM_NOT_CONFIGURED":
+      return "Creative Spark is not connected on this deployment yet.";
+    case "LLM_INVALID_API_KEY":
+      return "Creative Spark could not authenticate with its AI provider.";
+    case "LLM_ACCESS_DENIED":
+    case "LLM_MODEL_UNAVAILABLE":
+      return "The configured Creative Spark model is unavailable for this project.";
+    case "LLM_RATE_LIMITED":
+      return "Creative Spark is busy right now. Please try again shortly.";
+    case "LLM_QUOTA_EXHAUSTED":
+      return "Creative Spark needs available API credits before it can generate ideas.";
+    case "LLM_INVALID_REQUEST":
+      return "Creative Spark's AI request configuration needs attention.";
+    case "LLM_TIMEOUT":
+    case "LLM_NETWORK_ERROR":
+    case "LLM_PROVIDER_UNAVAILABLE":
+      return "Creative Spark could not reach its AI provider. Please try again.";
+    default:
+      return "Creative Spark is resting for a moment. Please try again.";
+  }
 }
 
 function isApplyCommunitySparkRequest(

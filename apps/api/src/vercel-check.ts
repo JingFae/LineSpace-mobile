@@ -50,10 +50,15 @@ const readinessResponse = await vercelHandler.fetch(
 const readiness = await readinessResponse.json() as {
   service?: string;
   authConfigured?: boolean;
+  communitySparkConfigured?: boolean;
+  communitySparkModel?: string;
 };
 assert(
-  readiness.service === "linespace-api" && typeof readiness.authConfigured === "boolean",
-  "Vercel readiness route did not return the Auth configuration contract."
+  readiness.service === "linespace-api" &&
+    typeof readiness.authConfigured === "boolean" &&
+    typeof readiness.communitySparkConfigured === "boolean" &&
+    Boolean(readiness.communitySparkModel),
+  "Vercel readiness route did not return the Auth and Community Spark configuration contract."
 );
 
 const preflightResponse = await vercelHandler.fetch(

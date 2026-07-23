@@ -90,9 +90,11 @@ export class HttpLineSpaceApiError extends Error {
   constructor(
     readonly method: string,
     readonly path: string,
-    readonly status: number
+    readonly status: number,
+    readonly code?: string,
+    responseMessage?: string
   ) {
-    super(`LineSpace API request failed with ${status}.`);
+    super(responseMessage || `LineSpace API request failed with ${status}.`);
     this.name = "HttpLineSpaceApiError";
   }
 }
@@ -620,7 +622,14 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     }
 
     if (!response.ok) {
-      throw new HttpLineSpaceApiError(method, path, response.status);
+      const payload = await readApiErrorPayload(response);
+      throw new HttpLineSpaceApiError(
+        method,
+        path,
+        response.status,
+        payload.code,
+        payload.message
+      );
     }
     return (await response.json()) as T;
   }
@@ -664,5 +673,22 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     }
 
     return headers;
+  }
+}
+
+async function readApiErrorPayload(response: Response): Promise<{
+  code?: string;
+  message?: string;
+}> {
+  try {
+    const payload = (await response.json()) as unknown;
+    if (!payload || typeof payload !== "object") return {};
+    const record = payload as Record<string, unknown>;
+    return {
+      ...(typeof record.code === "string" ? { code: record.code } : {}),
+      ...(typeof record.message === "string" ? { message: record.message } : {})
+    };
+  } catch {
+    return {};
   }
 }

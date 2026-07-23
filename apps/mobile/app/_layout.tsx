@@ -42,10 +42,13 @@ function RouteGuard({ children }: { children: ReactNode }) {
   const segments = useSegments();
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
-  const firstSegment = segments[0] as string | undefined;
+  // Expo Router's generated route types can narrow this to a one-item tuple in
+  // a clean build. Route guards still need to inspect nested runtime segments.
+  const routeSegments: readonly string[] = segments;
+  const firstSegment = routeSegments[0];
   const isPublicRoute =
     firstSegment === "login" || firstSegment === "register" || firstSegment === "auth";
-  const secondSegment = segments[1] as string | undefined;
+  const secondSegment = routeSegments[1];
   const isGuestRestrictedRoute =
     status === "guest" && (
       (firstSegment === "(tabs)" && (secondSegment === "compose" || secondSegment === "comments")) ||

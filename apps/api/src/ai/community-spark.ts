@@ -95,8 +95,9 @@ const communitySparkSchema = {
 export async function requestCommunitySpark(
   input: CommunitySparkAiInput
 ): Promise<CommunitySparkResponse> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) throw new Error("LLM_NOT_CONFIGURED");
+  const model = communitySparkModel();
 
   const workingCopy = input.workingCopy ?? {
     title: input.poem.title,
@@ -104,47 +105,67 @@ export async function requestCommunitySpark(
     tags: input.poem.tags
   };
   const comments = selectReaderComments(input.poem);
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${apiKey}`
-    },
-    signal: AbortSignal.timeout(35_000),
-    body: JSON.stringify({
-      model:
-        process.env.OPENAI_COMMUNITY_SPARK_MODEL ||
-        process.env.OPENAI_MODEL ||
-        "gpt-5.6",
-      instructions: COMMUNITY_SPARK_PROMPT,
-      input: JSON.stringify({
-        poem: {
-          title: workingCopy.title.slice(0, 180),
-          lines: workingCopy.lines.slice(0, 200).map((line) => line.slice(0, 2_000)),
-          tags: workingCopy.tags.slice(0, 32).map((tag) => tag.slice(0, 64))
-        },
-        comments: comments.map((comment) => ({
-          id: comment.id,
-          author: `@${comment.author.handle}`,
-          text: comment.body.slice(0, 1_000),
-          likes: comment.likes ?? 0
-        })),
-        previousSuggestions: (input.previousSuggestions ?? [])
-          .slice(-12)
-          .map((suggestion) => suggestion.slice(0, 300))
-      }),
-      max_output_tokens: 3_000,
-      text: {
-        format: {
-          type: "json_schema",
-          name: "community_spark",
-          schema: communitySparkSchema,
-          strict: true
+  let response: Response;
+  try {
+    response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`
+      },
+      signal: AbortSignal.timeout(35_000),
+      body: JSON.stringify({
+        model,
+        instructions: COMMUNITY_SPARK_PROMPT,
+        input: JSON.stringify({
+          poem: {
+            title: workingCopy.title.slice(0, 180),
+            lines: workingCopy.lines
+              .slice(0, 200)
+              .map((line) => line.slice(0, 2_000)),
+            tags: workingCopy.tags.slice(0, 32).map((tag) => tag.slice(0, 64))
+          },
+          comments: comments.map((comment) => ({
+            id: comment.id,
+            author: `@${comment.author.handle}`,
+            text: comment.body.slice(0, 1_000),
+            likes: comment.likes ?? 0
+          })),
+          previousSuggestions: (input.previousSuggestions ?? [])
+            .slice(-12)
+            .map((suggestion) => suggestion.slice(0, 300))
+        }),
+        max_output_tokens: 3_000,
+        text: {
+          format: {
+            type: "json_schema",
+            name: "community_spark",
+            schema: communitySparkSchema,
+            strict: true
+          }
         }
-      }
-    })
-  });
-  if (!response.ok) throw new Error(`LLM_REQUEST_FAILED_${response.status}`);
+      })
+    });
+  } catch (error) {
+    const name = error instanceof Error ? error.name : "";
+    throw new Error(
+      name === "AbortError" || name === "TimeoutError"
+        ? "LLM_TIMEOUT"
+        : "LLM_NETWORK_ERROR"
+    );
+  }
+  if (!response.ok) {
+    const providerCode = await readProviderErrorCode(response);
+    const code = mapProviderFailure(response.status, providerCode);
+    console.error("Community Spark provider request failed", {
+      code,
+      model,
+      providerCode,
+      providerRequestId: response.headers.get("x-request-id"),
+      status: response.status
+    });
+    throw new Error(code);
+  }
 
   const payload = (await response.json()) as OpenAiResponsePayload;
   if (payload.status === "incomplete") throw new Error("LLM_INCOMPLETE_RESPONSE");
@@ -180,6 +201,48 @@ export async function requestCommunitySpark(
       outputTokens: payload.usage?.output_tokens ?? 0
     }
   };
+}
+
+export function isCommunitySparkConfigured() {
+  return Boolean(process.env.OPENAI_API_KEY?.trim());
+}
+
+export function communitySparkModel() {
+  return (
+    process.env.OPENAI_COMMUNITY_SPARK_MODEL?.trim() ||
+    process.env.OPENAI_MODEL?.trim() ||
+    "gpt-5.6"
+  );
+}
+
+async function readProviderErrorCode(response: Response) {
+  try {
+    const payload = (await response.json()) as {
+      error?: { code?: unknown; type?: unknown };
+    };
+    const value = payload.error?.code ?? payload.error?.type;
+    return typeof value === "string" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function mapProviderFailure(status: number, providerCode?: string) {
+  if (
+    providerCode === "insufficient_quota" ||
+    providerCode === "billing_not_active"
+  ) {
+    return "LLM_QUOTA_EXHAUSTED";
+  }
+  if (providerCode === "model_not_found" || status === 404) {
+    return "LLM_MODEL_UNAVAILABLE";
+  }
+  if (status === 400) return "LLM_INVALID_REQUEST";
+  if (status === 401) return "LLM_INVALID_API_KEY";
+  if (status === 403) return "LLM_ACCESS_DENIED";
+  if (status === 429) return "LLM_RATE_LIMITED";
+  if (status >= 500) return "LLM_PROVIDER_UNAVAILABLE";
+  return `LLM_REQUEST_FAILED_${status}`;
 }
 
 function selectReaderComments(poem: PoemSummary) {

@@ -69,6 +69,8 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_PUBLISHABLE_KEY=sb_publishable_example
 SUPABASE_SERVICE_ROLE_KEY=server-only-secret
 AUTH_EMAIL_REDIRECT_URL=https://your-domain.example/auth/confirm
+OPENAI_API_KEY=server-only-secret
+OPENAI_COMMUNITY_SPARK_MODEL=gpt-5.6
 ```
 
 `EXPO_PUBLIC_*` 会进入客户端 Bundle，不能保存密钥。`SUPABASE_SERVICE_ROLE_KEY`、`DATABASE_URL` 和 `OPENAI_API_KEY` 必须使用 Vercel Server-only 环境变量；它们不得改名为 `EXPO_PUBLIC_*`。
@@ -172,6 +174,13 @@ EXPO_PUBLIC_USE_MOCKS=false
 EXPO_PUBLIC_API_BASE_URL=https://line-space-mobile-api.vercel.app/api
 ```
 
+Community Spark reads its OpenAI variables from the Vercel project that serves
+the configured API base URL. If the Web bundle uses `EXPO_PUBLIC_API_BASE_URL=/api`,
+add `OPENAI_API_KEY` and `OPENAI_COMMUNITY_SPARK_MODEL` to the Web project. If it
+uses the separate API URL above, add them to the API project instead. Select the
+Production environment and redeploy after every environment-variable change;
+existing deployments keep their previous values.
+
 The API project must define the server-only Supabase variables. After each API
 deployment, verify routing and configuration before testing registration:
 
@@ -180,7 +189,7 @@ GET https://line-space-mobile-api.vercel.app/api/health
 200 {"ok":true,"service":"linespace-api"}
 
 GET https://line-space-mobile-api.vercel.app/api/health/ready
-200 {"ok":true,"service":"linespace-api","authConfigured":true}
+200 {"ok":true,"service":"linespace-api","authConfigured":true,"communitySparkConfigured":true,"communitySparkModel":"gpt-5.6"}
 ```
 
 If either URL returns Expo HTML, the API rewrite/Function was not deployed. If
@@ -188,6 +197,10 @@ the readiness endpoint returns `503` with `authConfigured:false`, verify
 `SUPABASE_URL`, the Publishable/Anon key, and `SUPABASE_SERVICE_ROLE_KEY` in
 the API Vercel project, then redeploy that project. Email confirmation is not
 involved until the registration endpoint has successfully reached Supabase.
+If `communitySparkConfigured` is `false`, the OpenAI key is missing from that
+deployment. If it is `true` but generation still fails, the card now reports
+whether the key, model access, quota, request shape, or provider connection is
+the problem without exposing the secret.
 
 ### Vercel Node ESM boundary
 

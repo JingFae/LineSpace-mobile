@@ -18,6 +18,7 @@ import type {
   CommunitySparkWorkingCopy,
   PoemSummary
 } from "@linespace/api-client";
+import { HttpLineSpaceApiError } from "@linespace/api-client";
 import { lineSpaceApi } from "@/services/lineSpaceApi";
 
 type CommunitySparkCardsProps = {
@@ -93,8 +94,8 @@ export function CommunitySparkCards({
       setGeneratedCopyKey(currentCopyKey);
       setPage(0);
       setTimeout(() => scrollRef.current?.scrollTo({ x: 0, animated: false }), 0);
-    } catch {
-      setError("Creative Spark is resting for a moment. Try again.");
+    } catch (loadError) {
+      setError(communitySparkLoadError(loadError));
     } finally {
       loadingRef.current = false;
       setLoading(false);
@@ -265,6 +266,13 @@ export function CommunitySparkCards({
       ) : null}
     </View>
   );
+}
+
+function communitySparkLoadError(error: unknown) {
+  if (error instanceof HttpLineSpaceApiError) {
+    return error.message;
+  }
+  return "Creative Spark is resting for a moment. Try again.";
 }
 
 function SuggestionCard({
