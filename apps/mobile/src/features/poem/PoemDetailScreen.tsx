@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { router, type Href } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -38,7 +38,10 @@ import { useAuth } from "@/auth/AuthSessionProvider";
 import { getPoemLayoutPresentation } from "./poemPresentation";
 import { usePoemEngagement } from "./usePoemEngagement";
 import { useGuestAccess } from "@/auth/GuestAccessProvider";
-import { CommunitySparkCards } from "./CommunitySparkCards";
+import {
+  CommunitySparkCards,
+  type SparkApplyChange
+} from "./CommunitySparkCards";
 
 declare const require: (path: string) => ImageSourcePropType;
 
@@ -64,6 +67,9 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
   const [notice, setNotice] = useState<string | null>(null);
   const [followingAuthorIds, setFollowingAuthorIds] = useState<Set<string>>(() => new Set());
   const [focusedCommentId, setFocusedCommentId] = useState(commentId);
+  const [postMenuOpen, setPostMenuOpen] = useState(false);
+  const [sparkChange, setSparkChange] = useState<SparkApplyChange | null>(null);
+  const [undoingSpark, setUndoingSpark] = useState(false);
   const scrollRef = useRef<ScrollView | null>(null);
   const commentOffsets = useRef(new Map<string, number>());
   const engagement = usePoemEngagement();
@@ -83,6 +89,16 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
   });
 
   const poem = poemQuery.data ?? undefined;
+  const deletePost = useMutation({
+    mutationFn: (poemId: string) => lineSpaceApi.deletePoem({ poemId, userId: currentUserId }),
+    onSuccess: () => {
+      setPostMenuOpen(false);
+      void queryClient.invalidateQueries({ queryKey: ["feed"] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile-content", currentUserId] });
+      router.replace("/(tabs)/profile" as Href);
+    },
+    onError: () => setNotice("Could not delete this post")
+  });
 
   useEffect(() => {
     if (!notice) return;
@@ -96,6 +112,28 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
 
   const updatePoemCache = (next: PoemSummary) => {
     queryClient.setQueryData(["poem", id, currentUserId], next);
+  };
+
+  const undoSparkChange = async () => {
+    if (!poem || !sparkChange || undoingSpark) return;
+    setUndoingSpark(true);
+    try {
+      const result = await lineSpaceApi.undoCommunitySpark({
+        poemId: poem.id,
+        userId: currentUserId,
+        appliedLines: sparkChange.afterLines,
+        previousLines: sparkChange.beforeLines
+      });
+      updatePoemCache(result.poem);
+      setSparkChange(null);
+      setNotice("AI line changes reverted. Reader credit remains in the conversation.");
+      void queryClient.invalidateQueries({ queryKey: ["feed"] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile-content", currentUserId] });
+    } catch {
+      setNotice("This AI change can no longer be undone safely.");
+    } finally {
+      setUndoingSpark(false);
+    }
   };
 
   const focusComment = (targetCommentId: string) => {
@@ -181,6 +219,8 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
           followMutation.mutate(poem.author.id);
         }}
         poem={poem}
+        showManage={Boolean(poem && poem.author.id === currentUserId)}
+        onManage={() => setPostMenuOpen(true)}
         showFollow={Boolean(poem && poem.author.id !== currentUserId)}
       />
 
@@ -217,8 +257,9 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
               setReplyTarget(comment);
               setCommentComposerOpen(true);
             }}
-            onSparkApplied={(result) => {
+            onSparkApplied={(result, change) => {
               updatePoemCache(result.poem);
+              setSparkChange(change);
               setNotice(
                 result.reply
                   ? "Idea applied · reader credited"
@@ -231,6 +272,9 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
               void queryClient.invalidateQueries({ queryKey: ["inbox-summary"] });
             }}
             onSparkSourcePress={focusComment}
+            onUndoSpark={() => void undoSparkChange()}
+            sparkChange={sparkChange}
+            undoingSpark={undoingSpark}
             onCommentLayout={(targetCommentId, offset) => {
               commentOffsets.current.set(targetCommentId, offset);
               if (targetCommentId === focusedCommentId) {
@@ -277,12 +321,20 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
         replyTarget={replyTarget}
         visible={commentComposerOpen}
       />
+      <PostManageSheet
+        error={deletePost.isError}
+        onClose={() => { deletePost.reset(); setPostMenuOpen(false); }}
+        onDelete={() => poem && deletePost.mutate(poem.id)}
+        onEdit={() => poem && router.push({ pathname: "/(tabs)/compose", params: { type: "post", session: `edit-${poem.id}-${Date.now()}`, editPostId: poem.id } } as unknown as Href)}
+        pending={deletePost.isPending}
+        visible={postMenuOpen}
+      />
       {notice ? <View pointerEvents="none" style={styles.notice}><Text style={styles.noticeText}>{notice}</Text></View> : null}
     </AppScreen>
   );
 }
 
-function DetailHeader({ poem, followed, followPending, showFollow, onFollow }: { poem?: PoemSummary; followed: boolean; followPending: boolean; showFollow: boolean; onFollow: () => void }) {
+function DetailHeader({ poem, followed, followPending, showFollow, showManage, onFollow, onManage }: { poem?: PoemSummary; followed: boolean; followPending: boolean; showFollow: boolean; showManage: boolean; onFollow: () => void; onManage: () => void }) {
   const avatarColor = poem?.author.handle === "lili" ? figmaAccent : poem?.author.avatarColor;
 
   return (
@@ -313,6 +365,11 @@ function DetailHeader({ poem, followed, followPending, showFollow, onFollow }: {
               <Text style={styles.followText}>{followPending ? "…" : followed ? "following" : "+ follow"}</Text>
             </Pressable>
           ) : null}
+          {showManage ? (
+            <Pressable accessibilityLabel="Manage post" accessibilityRole="button" onPress={onManage} style={styles.moreButton}>
+              <Text style={styles.moreGlyph}>•••</Text>
+            </Pressable>
+          ) : null}
           <SearchButton />
         </View>
       ) : <View style={styles.headerRightPlaceholder} />}
@@ -331,7 +388,10 @@ function PoemDetailContent({
   onCommentSave,
   onCommentLayout,
   onSparkApplied,
-  onSparkSourcePress
+  onSparkSourcePress,
+  sparkChange,
+  undoingSpark,
+  onUndoSpark
 }: {
   commentId?: string;
   currentUserId: string;
@@ -342,8 +402,11 @@ function PoemDetailContent({
   onCommentLike: (comment: PoemComment) => void;
   onCommentSave: (comment: PoemComment) => void;
   onCommentLayout: (commentId: string, offset: number) => void;
-  onSparkApplied: (result: ApplyCommunitySparkResult) => void;
+  onSparkApplied: (result: ApplyCommunitySparkResult, change: SparkApplyChange) => void;
   onSparkSourcePress: (commentId: string) => void;
+  sparkChange: SparkApplyChange | null;
+  undoingSpark: boolean;
+  onUndoSpark: () => void;
 }) {
   const layoutPresentation = getPoemLayoutPresentation(poem);
   const isVersionPost = Boolean(poem.versionLines?.length);
@@ -403,7 +466,7 @@ function PoemDetailContent({
 
             <View style={styles.lineStack}>
               {poem.lines.map((line, index) => (
-                <Text key={`${line}-${index}`} style={styles.poemLine}>
+                <Text key={`${line}-${index}`} style={[styles.poemLine, sparkChange?.afterLines[index] === line && sparkChange.beforeLines[index] !== line && styles.aiChangedLine]}>
                   {line}
                 </Text>
               ))}
@@ -442,6 +505,20 @@ function PoemDetailContent({
             poem={poem}
             userId={currentUserId}
           />
+        ) : null}
+
+        {sparkChange ? (
+          <View style={styles.sparkChangeNotice}>
+            <View style={styles.sparkChangeHeader}>
+              <View>
+                <Text style={styles.sparkChangeEyebrow}>COMMUNITY SPARK APPLIED</Text>
+                <Text style={styles.sparkChangeTitle}>The warm highlight marks the lines changed with AI.</Text>
+              </View>
+              <Pressable accessibilityRole="button" disabled={undoingSpark} onPress={onUndoSpark} style={styles.sparkUndoButton}>
+                <Text style={styles.sparkUndoText}>{undoingSpark ? "Undoing…" : "Undo"}</Text>
+              </Pressable>
+            </View>
+          </View>
         ) : null}
 
         <View style={styles.commentSummary}>
@@ -499,6 +576,60 @@ function HeroArtwork({ poem }: { poem: PoemSummary }) {
 
 function CommentComposer({ visible, draft, replyTarget, busy, onChange, onClose, onSubmit }: { visible: boolean; draft: string; replyTarget: PoemComment | null; busy: boolean; onChange: (value: string) => void; onClose: () => void; onSubmit: () => void }) {
   return <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}><KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.composerRoot}><Pressable accessibilityLabel="Close comment composer" onPress={onClose} style={styles.composerBackdrop} /><View style={styles.composerSheet}><View style={styles.composerHandle} /><View style={styles.composerHeader}><View><Text style={styles.composerEyebrow}>{replyTarget ? "REPLYING TO" : "NEW COMMENT"}</Text><Text numberOfLines={1} style={styles.composerTitle}>{replyTarget ? `@${replyTarget.author.handle}` : "Add your voice"}</Text></View><Pressable accessibilityRole="button" disabled={busy} onPress={onSubmit} style={styles.composerSend}><Text style={styles.composerSendText}>{busy ? "…" : "Post"}</Text></Pressable></View><TextInput autoFocus multiline onChangeText={onChange} placeholder={replyTarget ? "Write a thoughtful reply…" : "Write a thoughtful comment…"} placeholderTextColor={colors.profileMuted} style={styles.composerInput} textAlignVertical="top" value={draft} /><Text style={styles.composerHint}>Long press any comment to save it to your profile.</Text></View></KeyboardAvoidingView></Modal>;
+}
+
+function PostManageSheet({
+  visible,
+  pending,
+  error,
+  onClose,
+  onEdit,
+  onDelete
+}: {
+  visible: boolean;
+  pending: boolean;
+  error: boolean;
+  onClose: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  useEffect(() => {
+    if (!visible) setConfirmingDelete(false);
+  }, [visible]);
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
+      <View style={styles.manageRoot}>
+        <Pressable accessibilityLabel="Close post actions" onPress={onClose} style={styles.manageBackdrop} />
+        <View style={styles.manageSheet}>
+          <View style={styles.manageHandle} />
+          {confirmingDelete ? (
+            <>
+              <Text style={styles.manageTitle}>Delete this post?</Text>
+              <Text style={styles.manageBody}>This removes the poem and its community conversation permanently.</Text>
+              {error ? <Text style={styles.manageError}>The post could not be deleted. Please try again.</Text> : null}
+              <View style={styles.manageConfirmRow}>
+                <Pressable disabled={pending} onPress={() => setConfirmingDelete(false)} style={styles.manageCancelButton}><Text style={styles.manageCancelText}>Keep post</Text></Pressable>
+                <Pressable disabled={pending} onPress={onDelete} style={styles.manageDeleteButton}><Text style={styles.manageDeleteText}>{pending ? "Deleting…" : "Delete"}</Text></Pressable>
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={styles.manageTitle}>Post options</Text>
+              <Pressable accessibilityRole="button" onPress={onEdit} style={styles.manageActionButton}>
+                <Text style={styles.manageActionTitle}>Edit in Compose</Text>
+                <Text style={styles.manageActionHint}>Keep this post, its comments and its engagement.</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" onPress={() => setConfirmingDelete(true)} style={[styles.manageActionButton, styles.manageDangerAction]}>
+                <Text style={styles.manageDangerTitle}>Delete post</Text>
+                <Text style={styles.manageActionHint}>A confirmation is required.</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
 }
 
 function CommentRow({
@@ -820,6 +951,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center"
   },
+  moreButton: { width: 38, height: 42, alignItems: "center", justifyContent: "center" },
+  moreGlyph: { color: colors.ink, fontSize: 18, lineHeight: 20, letterSpacing: 1, fontWeight: "700" },
   scroll: {
     flex: 1,
     backgroundColor: colors.surface
@@ -922,6 +1055,21 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontWeight: "400"
   },
+  aiChangedLine: {
+    marginHorizontal: -8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderLeftWidth: 2,
+    borderLeftColor: "#D8B66A",
+    borderRadius: 5,
+    backgroundColor: "#FFF7D9"
+  },
+  sparkChangeNotice: { marginTop: 15, padding: 13, borderRadius: 14, borderWidth: 1, borderColor: "#E9D49A", backgroundColor: "#FFF9E8" },
+  sparkChangeHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  sparkChangeEyebrow: { color: "#8D6A1C", fontSize: 9, letterSpacing: 1.1, fontWeight: "700" },
+  sparkChangeTitle: { maxWidth: 220, marginTop: 3, color: colors.ink, fontSize: 12, lineHeight: 17 },
+  sparkUndoButton: { minWidth: 58, paddingHorizontal: 11, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.ink, alignItems: "center" },
+  sparkUndoText: { color: colors.white, fontSize: 11, fontWeight: "700" },
   tagRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 },
   divider: {
     height: StyleSheet.hairlineWidth,
@@ -1194,6 +1342,23 @@ const styles = StyleSheet.create({
     zIndex: 30
   },
   composerRoot: { flex: 1, justifyContent: "flex-end" },
+  manageRoot: { flex: 1, justifyContent: "flex-end" },
+  manageBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.3)" },
+  manageSheet: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 34, borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: colors.surface },
+  manageHandle: { alignSelf: "center", width: 42, height: 4, borderRadius: radius.pill, backgroundColor: colors.faint },
+  manageTitle: { marginTop: 18, color: colors.ink, fontSize: 21, lineHeight: 27, fontWeight: "600" },
+  manageBody: { marginTop: 7, color: colors.profileMuted, fontSize: 13, lineHeight: 19 },
+  manageActionButton: { marginTop: 12, padding: 15, borderRadius: 15, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line },
+  manageActionTitle: { color: colors.ink, fontSize: 16, fontWeight: "600" },
+  manageActionHint: { marginTop: 4, color: colors.profileMuted, fontSize: 12, lineHeight: 17 },
+  manageDangerAction: { borderColor: "#F0C5BF", backgroundColor: "#FFF7F5" },
+  manageDangerTitle: { color: "#B23B31", fontSize: 16, fontWeight: "600" },
+  manageError: { marginTop: 10, color: "#B23B31", fontSize: 12 },
+  manageConfirmRow: { marginTop: 18, flexDirection: "row", gap: 10 },
+  manageCancelButton: { flex: 1, minHeight: 44, borderRadius: radius.pill, backgroundColor: colors.faint, alignItems: "center", justifyContent: "center" },
+  manageCancelText: { color: colors.ink, fontSize: 13, fontWeight: "600" },
+  manageDeleteButton: { flex: 1, minHeight: 44, borderRadius: radius.pill, backgroundColor: "#B23B31", alignItems: "center", justifyContent: "center" },
+  manageDeleteText: { color: colors.white, fontSize: 13, fontWeight: "700" },
   composerBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.28)" },
   composerSheet: { minHeight: 310, paddingHorizontal: 20, paddingBottom: 28, borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: colors.surface },
   composerHandle: { alignSelf: "center", width: 42, height: 4, marginTop: 9, borderRadius: radius.pill, backgroundColor: colors.faint },

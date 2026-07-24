@@ -37,7 +37,9 @@ Follow these rules exactly:
 `.trim();
 
 type CommunitySparkAiInput = {
-  poem: PoemSummary;
+  poem: Pick<PoemSummary, "id" | "title" | "lines" | "tags" | "comments"> & {
+    author: Pick<PoemSummary["author"], "id">;
+  };
   workingCopy?: CommunitySparkWorkingCopy;
   previousSuggestions?: string[];
 };
@@ -216,6 +218,27 @@ export async function requestCommunitySpark(
   };
 }
 
+export async function requestCreativeSpark(input: {
+  userId: string;
+  workingCopy: CommunitySparkWorkingCopy;
+  previousSuggestions?: string[];
+}): Promise<CommunitySparkResponse> {
+  const lines = input.workingCopy.lines.map((line) => line.trim()).filter(Boolean);
+  if (lines.length === 0) throw new Error("LLM_INVALID_REQUEST");
+  return requestCommunitySpark({
+    poem: {
+      id: `creative-draft-${input.userId}`,
+      title: input.workingCopy.title,
+      lines,
+      tags: input.workingCopy.tags,
+      comments: [],
+      author: { id: input.userId }
+    },
+    workingCopy: { ...input.workingCopy, lines },
+    previousSuggestions: input.previousSuggestions
+  });
+}
+
 export function isCommunitySparkConfigured() {
   return communitySparkKeySource() !== null;
 }
@@ -295,7 +318,7 @@ function mapProviderFailure(status: number, providerCode?: string) {
   return `LLM_REQUEST_FAILED_${status}`;
 }
 
-function selectReaderComments(poem: PoemSummary) {
+function selectReaderComments(poem: CommunitySparkAiInput["poem"]) {
   return (poem.comments ?? [])
     .filter((comment) => comment.author.id !== poem.author.id && comment.body.trim())
     .sort(

@@ -24,6 +24,7 @@ export {
 export type {
   ApplyCommunitySparkInput,
   ApplyCommunitySparkResult,
+  CreativeSparkRequest,
   AiAssistIntent,
   AiAssistRequest,
   AiAssistResponse,
@@ -97,6 +98,8 @@ export type {
   PoemViewerEngagement,
   PoetryThread,
   UpdatePoemCollectionInput,
+  UndoCommunitySparkInput,
+  UndoCommunitySparkResult,
   UpdateCommentCollectionInput,
   UpdateContinuationLikeInput,
   UpdatePoemDraftInput,

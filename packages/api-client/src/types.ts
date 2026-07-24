@@ -576,6 +576,13 @@ export type CommunitySparkResponse = {
   };
 };
 
+/** Suggestions for an unpublished poem. Applying one changes only the local draft. */
+export type CreativeSparkRequest = {
+  userId: string;
+  workingCopy: CommunitySparkWorkingCopy;
+  previousSuggestions?: string[];
+};
+
 export type ApplyCommunitySparkInput = {
   poemId: string;
   userId: string;
@@ -588,6 +595,18 @@ export type ApplyCommunitySparkInput = {
 export type ApplyCommunitySparkResult = {
   poem: PoemSummary;
   reply: PoemComment | null;
+};
+
+export type UndoCommunitySparkInput = {
+  poemId: string;
+  userId: string;
+  /** The lines that must still be on the post before an undo can safely run. */
+  appliedLines: string[];
+  previousLines: string[];
+};
+
+export type UndoCommunitySparkResult = {
+  poem: PoemSummary;
 };
 
 export type CreatePoemCommentInput = {

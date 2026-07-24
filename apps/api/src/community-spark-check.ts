@@ -4,6 +4,7 @@ import {
   communitySparkProvider,
   communitySparkKeySource,
   isCommunitySparkConfigured,
+  requestCreativeSpark,
   requestCommunitySpark
 } from "./ai/community-spark.js";
 
@@ -125,6 +126,19 @@ try {
       result.usage?.inputTokens === 321 &&
       result.usage.outputTokens === 123,
     "Community Spark did not normalize the DeepSeek response."
+  );
+  const draftResult = await requestCreativeSpark({
+    userId: poem.author.id,
+    workingCopy: {
+      title: "A draft in progress",
+      lines: ["A small light waits by the window."],
+      tags: ["draft"]
+    }
+  });
+  assert(
+    draftResult.poemId === `creative-draft-${poem.author.id}` &&
+      draftResult.suggestions.length === 3,
+    "Creative Spark did not generate a draft-only suggestion batch."
   );
   assert(
     communitySparkProvider() === "deepseek" &&

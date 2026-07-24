@@ -1,6 +1,7 @@
 import type {
   ApplyCommunitySparkInput,
   ApplyCommunitySparkResult,
+  CreativeSparkRequest,
   AiAssistRequest,
   AiAssistResponse,
   CommunitySparkRequest,
@@ -75,7 +76,9 @@ import type {
   RespondInboxGroupInviteInput,
   UpdateCommentCollectionInput,
   UserDraftPage,
-  UpdateUserProfileInput
+  UpdateUserProfileInput,
+  UndoCommunitySparkInput,
+  UndoCommunitySparkResult
 } from "./types";
 import type { LineSpaceApi } from "./client";
 
@@ -576,12 +579,28 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     );
   }
 
+  async requestCreativeSpark(
+    request: CreativeSparkRequest
+  ): Promise<CommunitySparkResponse> {
+    return this.postJson<CommunitySparkResponse>("/v1/creative-spark", request);
+  }
+
   async applyCommunitySpark(
     input: ApplyCommunitySparkInput
   ): Promise<ApplyCommunitySparkResult> {
     const { poemId, ...body } = input;
     return this.postJson<ApplyCommunitySparkResult>(
       `/v1/poems/${encodeURIComponent(poemId)}/community-spark/apply`,
+      body
+    );
+  }
+
+  async undoCommunitySpark(
+    input: UndoCommunitySparkInput
+  ): Promise<UndoCommunitySparkResult> {
+    const { poemId, ...body } = input;
+    return this.postJson<UndoCommunitySparkResult>(
+      `/v1/poems/${encodeURIComponent(poemId)}/community-spark/undo`,
       body
     );
   }

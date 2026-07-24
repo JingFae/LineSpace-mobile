@@ -1,6 +1,8 @@
 import type {
   ApplyCommunitySparkInput,
   ApplyCommunitySparkResult,
+  UndoCommunitySparkInput,
+  UndoCommunitySparkResult,
   DeletePoemInput,
   DeletePoemResult,
   FeedQuery,
@@ -236,6 +238,39 @@ export class PostRepository {
         ? poem.comments?.find((comment) => comment.id === replyCommentId) ?? null
         : null
     };
+  }
+
+  async undoCommunitySpark(
+    input: UndoCommunitySparkInput
+  ): Promise<UndoCommunitySparkResult> {
+    const actorId = await getCurrentLinespaceUserId(this.client);
+    if (!actorId || actorId !== input.userId) {
+      throw new Error("community spark actor mismatch");
+    }
+    const current = await this.client
+      .from("posts")
+      .select("author_user_id,body")
+      .eq("id", input.poemId)
+      .maybeSingle();
+    ensureDatabaseResult(current.error);
+    const row = current.data as Pick<PostRow, "author_user_id" | "body"> | null;
+    if (!row || row.author_user_id !== actorId) {
+      throw new Error("post not found or forbidden");
+    }
+    if (normalizePoemBody(row.body) !== normalizePoemBody(input.appliedLines.join("\n"))) {
+      throw new Error("community spark undo is stale");
+    }
+    const previousLines = input.previousLines.map((line) => line.trim()).filter(Boolean);
+    if (previousLines.length === 0) throw new Error("a poem needs at least one line");
+    const update = await this.client
+      .from("posts")
+      .update({ body: previousLines.join("\n"), edited_at: new Date().toISOString() })
+      .eq("id", input.poemId)
+      .eq("author_user_id", actorId);
+    ensureDatabaseResult(update.error);
+    const poem = await this.getPoem(input.poemId);
+    if (!poem) throw new Error("post not found");
+    return { poem };
   }
 
   async setCommentCollection(
@@ -612,6 +647,14 @@ export class PostRepository {
       })
     );
   }
+}
+
+function normalizePoemBody(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join("\n");
 }
 
 type InboxRow = {

@@ -12,6 +12,7 @@ import {
 import type {
   ApplyCommunitySparkInput,
   ApplyCommunitySparkResult,
+  CreativeSparkRequest,
   AiAssistRequest,
   AiAssistResponse,
   CommunitySparkRequest,
@@ -91,7 +92,9 @@ import type {
   RespondInboxGroupInviteInput,
   UpdateCommentCollectionInput,
   UserDraftPage,
-  UpdateUserProfileInput
+  UpdateUserProfileInput,
+  UndoCommunitySparkInput,
+  UndoCommunitySparkResult
 } from "./types";
 
 export interface LineSpaceApi {
@@ -150,7 +153,9 @@ export interface LineSpaceApi {
   shareThreadToGroup(input: ShareThreadToGroupInput): Promise<InboxConversationMessage>;
   requestAiAssist(request: AiAssistRequest): Promise<AiAssistResponse>;
   requestCommunitySpark(request: CommunitySparkRequest): Promise<CommunitySparkResponse>;
+  requestCreativeSpark(request: CreativeSparkRequest): Promise<CommunitySparkResponse>;
   applyCommunitySpark(input: ApplyCommunitySparkInput): Promise<ApplyCommunitySparkResult>;
+  undoCommunitySpark(input: UndoCommunitySparkInput): Promise<UndoCommunitySparkResult>;
   createPoemComment(input: CreatePoemCommentInput): Promise<PoemComment>;
   setCommentCollection(input: UpdateCommentCollectionInput): Promise<PoemCommentEngagementResult>;
   searchUsers(query: string, viewerId: string, options?: UserSearchQuery): Promise<UserSearchPage>;
@@ -1882,6 +1887,62 @@ export class MockLineSpaceApi implements LineSpaceApi {
             : null
       }))
     };
+  }
+
+  async requestCreativeSpark(
+    request: CreativeSparkRequest
+  ): Promise<CommunitySparkResponse> {
+    const workingCopy = request.workingCopy;
+    const lines = workingCopy.lines.map((line) => line.trim()).filter(Boolean);
+    if (lines.length === 0) {
+      throw new Error("Write at least one line before asking Creative Spark.");
+    }
+    const chinese = /[\u3400-\u9fff]/u.test(`${workingCopy.title}\n${lines.join("\n")}`);
+    const continuations = chinese
+      ? ["让回声停在这一行之后。", "把未说完的光留给下一行。", "而风仍记得最初的方向。"]
+      : [
+          "The echo rests after this line.",
+          "Leave the unfinished light for one more line.",
+          "And the wind remembers where it began."
+        ];
+    return {
+      id: `mock-creative-spark-${Date.now()}`,
+      poemId: `creative-draft-${request.userId}`,
+      baseRevision: mockLinesRevision(lines),
+      summary: chinese
+        ? "这些想法会尽量贴近你正在形成的声音。"
+        : "These ideas stay close to the voice already taking shape.",
+      suggestions: continuations.map((line, index) => ({
+        id: `mock-creative-spark-${Date.now()}-${index + 1}`,
+        kind: index === 1 ? "revise" as const : "continue" as const,
+        suggestion: chinese
+          ? "如果你喜欢，可以让这个意象再停留一瞬。"
+          : "If you like, you could let this image stay for one more beat.",
+        preview: line,
+        proposedLines:
+          index === 1 && lines.length > 1
+            ? lines.map((value, lineIndex) =>
+                lineIndex === lines.length - 1 ? `${value}…` : value
+              )
+            : [...lines, line],
+        source: null
+      }))
+    };
+  }
+
+  async undoCommunitySpark(
+    input: UndoCommunitySparkInput
+  ): Promise<UndoCommunitySparkResult> {
+    const poem = this.poems.find((item) => item.id === input.poemId);
+    if (!poem || poem.author.id !== input.userId) {
+      throw new Error("Only the author can undo Community Spark");
+    }
+    if (mockLinesRevision(poem.lines) !== mockLinesRevision(input.appliedLines)) {
+      throw new Error("The poem changed after this AI suggestion was applied");
+    }
+    poem.lines = input.previousLines.map((line) => line.trim()).filter(Boolean);
+    poem.editedAt = new Date().toISOString();
+    return { poem: this.withViewer(poem, input.userId) };
   }
 
   async applyCommunitySpark(

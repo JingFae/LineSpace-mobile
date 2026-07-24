@@ -24,20 +24,31 @@ import { lineSpaceApi } from "@/services/lineSpaceApi";
 type CommunitySparkCardsProps = {
   autoLoad?: boolean;
   label: "Community Spark" | "Creative Spark";
-  poem: PoemSummary;
+  /** Draft mode generates against the supplied working copy without persisting a post. */
+  sparkMode?: "post" | "draft";
+  poem?: PoemSummary;
   userId: string;
   workingCopy?: CommunitySparkWorkingCopy;
-  onApplied: (result: ApplyCommunitySparkResult) => void;
-  onSourcePress: (commentId: string) => void;
+  onApplied?: (result: ApplyCommunitySparkResult, change: SparkApplyChange) => void;
+  onDraftApplied?: (change: SparkApplyChange) => void;
+  onSourcePress?: (commentId: string) => void;
+};
+
+export type SparkApplyChange = {
+  beforeLines: string[];
+  afterLines: string[];
+  suggestion: CommunitySparkSuggestion;
 };
 
 export function CommunitySparkCards({
   autoLoad = false,
   label,
+  sparkMode = "post",
   poem,
   userId,
   workingCopy,
   onApplied,
+  onDraftApplied,
   onSourcePress
 }: CommunitySparkCardsProps) {
   const [expanded, setExpanded] = useState(autoLoad);
@@ -55,15 +66,16 @@ export function CommunitySparkCards({
   const autoLoadedPostRef = useRef<string | null>(null);
 
   const resolvedWorkingCopy = useMemo(() => {
-    const lines = (workingCopy?.lines ?? poem.lines)
+    const fallbackLines = poem?.lines ?? [];
+    const lines = (workingCopy?.lines ?? fallbackLines)
       .map((line) => line.trim())
       .filter(Boolean);
     return {
-      title: (workingCopy?.title ?? poem.title).trim(),
-      lines: lines.length ? lines : poem.lines,
-      tags: workingCopy?.tags ?? poem.tags
+      title: (workingCopy?.title ?? poem?.title ?? "").trim(),
+      lines: lines.length ? lines : fallbackLines,
+      tags: workingCopy?.tags ?? poem?.tags ?? []
     };
-  }, [poem.lines, poem.tags, poem.title, workingCopy]);
+  }, [poem?.lines, poem?.tags, poem?.title, workingCopy]);
   const currentCopyKey = useMemo(
     () => JSON.stringify(resolvedWorkingCopy),
     [resolvedWorkingCopy]
@@ -79,13 +91,25 @@ export function CommunitySparkCards({
     setLoading(true);
     setError(null);
     setAppliedId(null);
+    if (resolvedWorkingCopy.lines.length === 0) {
+      setError("Write at least one line before asking Creative Spark.");
+      setLoading(false);
+      loadingRef.current = false;
+      return;
+    }
     try {
-      const next = await lineSpaceApi.requestCommunitySpark({
-        poemId: poem.id,
-        userId,
-        previousSuggestions: previousSuggestionsRef.current.slice(-12),
-        workingCopy: resolvedWorkingCopy
-      });
+      const next = sparkMode === "draft"
+        ? await lineSpaceApi.requestCreativeSpark({
+            userId,
+            previousSuggestions: previousSuggestionsRef.current.slice(-12),
+            workingCopy: resolvedWorkingCopy
+          })
+        : await lineSpaceApi.requestCommunitySpark({
+            poemId: poem!.id,
+            userId,
+            previousSuggestions: previousSuggestionsRef.current.slice(-12),
+            workingCopy: resolvedWorkingCopy
+          });
       previousSuggestionsRef.current = [
         ...previousSuggestionsRef.current,
         ...next.suggestions.map((suggestion) => suggestion.suggestion)
@@ -100,13 +124,14 @@ export function CommunitySparkCards({
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [currentCopyKey, poem.id, resolvedWorkingCopy, userId]);
+  }, [currentCopyKey, poem?.id, resolvedWorkingCopy, sparkMode, userId]);
 
   useEffect(() => {
-    if (!autoLoad || autoLoadedPostRef.current === poem.id) return;
-    autoLoadedPostRef.current = poem.id;
+    const sparkKey = poem?.id ?? `draft-${currentCopyKey}`;
+    if (!autoLoad || autoLoadedPostRef.current === sparkKey) return;
+    autoLoadedPostRef.current = sparkKey;
     void loadBatch();
-  }, [autoLoad, loadBatch, poem.id]);
+  }, [autoLoad, currentCopyKey, loadBatch, poem?.id]);
 
   const applySuggestion = async (suggestion: CommunitySparkSuggestion) => {
     if (applyingId || !batch) return;
@@ -117,8 +142,18 @@ export function CommunitySparkCards({
     setApplyingId(suggestion.id);
     setError(null);
     try {
+      const change: SparkApplyChange = {
+        beforeLines: [...resolvedWorkingCopy.lines],
+        afterLines: [...suggestion.proposedLines],
+        suggestion
+      };
+      if (sparkMode === "draft") {
+        onDraftApplied?.(change);
+        setAppliedId(suggestion.id);
+        return;
+      }
       const result = await lineSpaceApi.applyCommunitySpark({
-        poemId: poem.id,
+        poemId: poem!.id,
         userId,
         suggestionId: suggestion.id,
         baseRevision: batch.baseRevision,
@@ -126,7 +161,7 @@ export function CommunitySparkCards({
         sourceCommentId: suggestion.source?.commentId
       });
       setAppliedId(suggestion.id);
-      onApplied(result);
+      onApplied?.(result, change);
     } catch {
       setError("This idea could not be applied. Refresh and try once more.");
     } finally {
@@ -168,7 +203,7 @@ export function CommunitySparkCards({
           <View style={styles.sparkMark}><Text style={styles.sparkMarkText}>✦</Text></View>
           <View style={styles.headerCopy}>
             <Text style={styles.title}>{label}</Text>
-            <Text style={styles.subtitle}>Ideas shaped by your readers</Text>
+          <Text style={styles.subtitle}>{sparkMode === "draft" ? "Ideas shaped by your draft" : "Ideas shaped by your readers"}</Text>
           </View>
         </View>
         <View style={styles.headerActions}>
@@ -290,7 +325,7 @@ function SuggestionCard({
   applied: boolean;
   disabled: boolean;
   onApply: () => void;
-  onSourcePress: (commentId: string) => void;
+  onSourcePress?: (commentId: string) => void;
 }) {
   return (
     <View style={styles.card}>
@@ -310,7 +345,7 @@ function SuggestionCard({
           <Pressable
             accessibilityHint="Open this comment in the post"
             accessibilityRole="link"
-            onPress={() => onSourcePress(suggestion.source!.commentId)}
+            onPress={() => onSourcePress?.(suggestion.source!.commentId)}
             style={styles.source}
           >
             <Avatar

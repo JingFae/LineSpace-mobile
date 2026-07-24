@@ -179,6 +179,8 @@ async function main() {
   );
   assert(comment.author.id === "user-ray", "Comment experience smoke setup failed.");
 
+  const originalSparkPoem = await mockApi.getPoem("poem-light", "user-lili");
+  assert(originalSparkPoem, "Community Spark poem is missing.");
   const spark = await mockApi.requestCommunitySpark({
     poemId: "poem-light",
     userId: "user-lili"
@@ -216,6 +218,19 @@ async function main() {
   assert(
     idempotentSpark.reply?.id === appliedSpark.reply.id,
     "Community Spark repeated its reply when the same suggestion was applied twice."
+  );
+  const undoneSpark = await mockApi.undoCommunitySpark({
+    poemId: spark.poemId,
+    userId: "user-lili",
+    appliedLines: appliedSpark.poem.lines,
+    previousLines: originalSparkPoem.lines
+  });
+  assert(
+    undoneSpark.poem.lines.join("\n") === originalSparkPoem.lines.join("\n") &&
+      undoneSpark.poem.credits?.commentContributors.some(
+        (person) => person.handle === sparkSuggestion.source?.author.handle
+      ),
+    "Undoing Community Spark did not restore the poem while preserving reader credit."
   );
 
   const health = await handleApiRequest("GET", "/health", new URLSearchParams());

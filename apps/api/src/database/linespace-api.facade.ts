@@ -1,6 +1,9 @@
 import type {
   ApplyCommunitySparkInput,
   ApplyCommunitySparkResult,
+  CreativeSparkRequest,
+  UndoCommunitySparkInput,
+  UndoCommunitySparkResult,
   AiAssistRequest,
   AiAssistResponse,
   CreateInboxGroupInput,
@@ -298,6 +301,14 @@ export class SupabaseLineSpaceApi implements LineSpaceApi {
     input: ApplyCommunitySparkInput
   ): Promise<ApplyCommunitySparkResult> {
     return this.posts.applyCommunitySpark(input);
+  }
+
+  undoCommunitySpark(input: UndoCommunitySparkInput): Promise<UndoCommunitySparkResult> {
+    return this.posts.undoCommunitySpark(input);
+  }
+
+  async requestCreativeSpark(_input: CreativeSparkRequest): Promise<never> {
+    throw new Error("Creative Spark generation is handled by the API route");
   }
 
   async requestCommunitySpark(): Promise<never> {

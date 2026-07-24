@@ -19,7 +19,10 @@ import type { PoemDraft, PoemDraftMedia, PoemDraftSettings } from "@linespace/ap
 import { lineSpaceApi } from "@/services/lineSpaceApi";
 import { useAuth } from "@/auth/AuthSessionProvider";
 import { getMediaAspectRatio } from "@/features/poem/poemPresentation";
-import { CommunitySparkCards } from "@/features/poem/CommunitySparkCards";
+import {
+  CommunitySparkCards,
+  type SparkApplyChange
+} from "@/features/poem/CommunitySparkCards";
 
 type ComposeScreenProps = {
   sessionKey: string;
@@ -62,6 +65,8 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
   const [settings, setSettings] = useState<PoemDraftSettings>(initialSettings);
   const [error, setError] = useState<string | null>(null);
   const [editHydrated, setEditHydrated] = useState(false);
+  const [sparkChange, setSparkChange] = useState<SparkApplyChange | null>(null);
+  const [undoingSpark, setUndoingSpark] = useState(false);
   const editInitialized = useRef(false);
   const draftInitialized = useRef(false);
   const createdDraft = useRef<PoemDraft | null>(null);
@@ -222,6 +227,35 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
 
   const mediaHeight = getComposeMediaHeight(media);
 
+  const undoSparkChange = async () => {
+    if (!sparkChange || undoingSpark) return;
+    const currentLines = body.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (JSON.stringify(currentLines) !== JSON.stringify(sparkChange.afterLines)) {
+      setError("Your draft changed after the AI edit, so this change can no longer be undone safely.");
+      return;
+    }
+    setUndoingSpark(true);
+    try {
+      if (editPostId) {
+        const result = await lineSpaceApi.undoCommunitySpark({
+          poemId: editPostId,
+          userId: currentUserId,
+          appliedLines: sparkChange.afterLines,
+          previousLines: sparkChange.beforeLines
+        });
+        queryClient.setQueryData(["compose-edit-post", editPostId, currentUserId], result.poem);
+        queryClient.setQueryData(["poem", editPostId, currentUserId], result.poem);
+      }
+      setBody(sparkChange.beforeLines.join("\n"));
+      setSparkChange(null);
+      setError(null);
+    } catch {
+      setError("This AI change can no longer be undone safely.");
+    } finally {
+      setUndoingSpark(false);
+    }
+  };
+
   return (
     <AppScreen
       scroll
@@ -335,8 +369,9 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
           <CommunitySparkCards
             autoLoad
             label="Creative Spark"
-            onApplied={(result) => {
+            onApplied={(result, change) => {
               setBody(result.poem.lines.join("\n"));
+              setSparkChange(change);
               queryClient.setQueryData(
                 ["compose-edit-post", editPostId, currentUserId],
                 result.poem
@@ -367,6 +402,33 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
         </View>
       ) : null}
 
+      {!editPostId ? (
+        <View style={styles.creativeSparkWrap}>
+          <CommunitySparkCards
+            label="Creative Spark"
+            onDraftApplied={(change) => {
+              setBody(change.afterLines.join("\n"));
+              setSparkChange(change);
+            }}
+            sparkMode="draft"
+            userId={currentUserId}
+            workingCopy={{
+              title,
+              lines: body.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
+              tags: parseTags(tag)
+            }}
+          />
+        </View>
+      ) : null}
+
+      {sparkChange ? (
+        <SparkChangeNotice
+          change={sparkChange}
+          isUndoing={undoingSpark}
+          onUndo={() => void undoSparkChange()}
+        />
+      ) : null}
+
       {error || draftQuery.isError || saveMutation.isError ? (
         <Text style={styles.error}>
           {error ?? (draftQuery.isError ? "The draft service is temporarily unavailable." : "The draft could not be saved.")}
@@ -374,6 +436,36 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
       ) : null}
 
     </AppScreen>
+  );
+}
+
+function SparkChangeNotice({
+  change,
+  isUndoing,
+  onUndo
+}: {
+  change: SparkApplyChange;
+  isUndoing: boolean;
+  onUndo: () => void;
+}) {
+  const highlighted = change.afterLines.filter(
+    (line, index) => line !== change.beforeLines[index]
+  );
+  return (
+    <View style={styles.sparkChangeNotice}>
+      <View style={styles.sparkChangeHeader}>
+        <View>
+          <Text style={styles.sparkChangeEyebrow}>CREATIVE SPARK APPLIED</Text>
+          <Text style={styles.sparkChangeTitle}>Your draft keeps the change in a warm glow.</Text>
+        </View>
+        <Pressable accessibilityRole="button" disabled={isUndoing} onPress={onUndo} style={styles.sparkUndoButton}>
+          <Text style={styles.sparkUndoText}>{isUndoing ? "Undoing…" : "Undo"}</Text>
+        </Pressable>
+      </View>
+      {highlighted.slice(0, 3).map((line, index) => (
+        <Text key={`${line}-${index}`} style={styles.sparkChangedLine}>{line}</Text>
+      ))}
+    </View>
   );
 }
 
@@ -724,6 +816,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface
   },
   creativeSparkWrap: { marginHorizontal: 16 },
+  sparkChangeNotice: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E9D49A",
+    backgroundColor: "#FFF9E8"
+  },
+  sparkChangeHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  sparkChangeEyebrow: { color: "#8D6A1C", fontSize: 9, letterSpacing: 1.1, fontWeight: "700" },
+  sparkChangeTitle: { maxWidth: 225, marginTop: 3, color: colors.ink, fontSize: 12, lineHeight: 17 },
+  sparkUndoButton: { minWidth: 58, paddingHorizontal: 11, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.ink, alignItems: "center" },
+  sparkUndoText: { color: colors.white, fontSize: 11, fontWeight: "700" },
+  sparkChangedLine: { marginTop: 8, paddingLeft: 9, borderLeftWidth: 2, borderLeftColor: "#D8B66A", color: colors.inkSoft, fontFamily: "Georgia", fontSize: 13, lineHeight: 19 },
   titleInput: {
     height: 58,
     paddingHorizontal: spacing.lg,

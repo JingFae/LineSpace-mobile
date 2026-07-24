@@ -1,8 +1,10 @@
 import {
   type ApplyCommunitySparkInput,
+  type CreativeSparkRequest,
   type AuthUser,
   type AiAssistRequest,
   type CommunitySparkRequest,
+  type UndoCommunitySparkInput,
   type CreateContinuationInput,
   type CreatePoemDraftInput,
   type CreatePoemCommentInput,
@@ -40,6 +42,7 @@ import {
   communitySparkModel,
   communitySparkProvider,
   isCommunitySparkConfigured,
+  requestCreativeSpark,
   requestCommunitySpark
 } from "./ai/community-spark.js";
 
@@ -83,6 +86,31 @@ export async function handleApiRequest(
 
   const authRoute = await handleAuthRoute(method, pathname, body, context);
   if (authRoute) return authRoute;
+
+  if (method === "POST" && pathname === "/v1/creative-spark") {
+    const actor = await authenticateRequest(context);
+    if (!actor.ok) return actor.response;
+    const request = (body ?? {}) as Partial<Omit<CreativeSparkRequest, "userId">>;
+    if (!isCreativeSparkRequest(request)) {
+      return json(400, {
+        code: "INVALID_CREATIVE_SPARK_REQUEST",
+        message: "Write at least one line before asking Creative Spark."
+      });
+    }
+    try {
+      return json(200, await requestCreativeSpark({
+        userId: actor.user.id,
+        workingCopy: request.workingCopy,
+        previousSuggestions: request.previousSuggestions
+      }));
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "LLM_REQUEST_FAILED";
+      return json(503, {
+        code: code.startsWith("LLM_") ? code : "LLM_REQUEST_FAILED",
+        message: communitySparkFailureMessage(code)
+      });
+    }
+  }
   const { api, isDatabaseBacked } = await createLineSpaceApi(
     context.authorization
   );
@@ -722,6 +750,32 @@ export async function handleApiRequest(
           return json(400, {
             code: "COMMUNITY_SPARK_APPLY_FAILED",
             message: "This idea could not be applied."
+          });
+        }
+      }
+      if (method === "POST" && poemRoute.resource === "community-spark-undo") {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        const request = (body ?? {}) as Partial<
+          Omit<UndoCommunitySparkInput, "poemId" | "userId">
+        >;
+        if (!isUndoCommunitySparkRequest(request)) {
+          return json(400, { code: "INVALID_COMMUNITY_SPARK_UNDO" });
+        }
+        try {
+          return json(200, await api.undoCommunitySpark({
+            poemId: poemRoute.poemId,
+            userId: actor.user.id,
+            appliedLines: request.appliedLines,
+            previousLines: request.previousLines
+          }));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "";
+          return json(/stale|changed/i.test(message) ? 409 : 400, {
+            code: /stale|changed/i.test(message)
+              ? "COMMUNITY_SPARK_UNDO_STALE"
+              : "COMMUNITY_SPARK_UNDO_FAILED",
+            message: "This AI change can no longer be undone safely."
           });
         }
       }
@@ -1469,7 +1523,8 @@ type ParsedPoemRoute =
         | "comments"
         | "share"
         | "community-spark"
-        | "community-spark-apply";
+        | "community-spark-apply"
+        | "community-spark-undo";
     }
   | { poemId: string; resource: "comment-collection"; commentId: string; collection: PoemCollectionKind };
 
@@ -1489,6 +1544,13 @@ function parsePoemRoute(pathname: string): ParsedPoemRoute | null {
     segments[4] === "apply"
   ) {
     return { poemId: segments[2], resource: "community-spark-apply" };
+  }
+  if (
+    segments.length === 5 &&
+    segments[3] === "community-spark" &&
+    segments[4] === "undo"
+  ) {
+    return { poemId: segments[2], resource: "community-spark-undo" };
   }
   if (
     segments.length === 7 &&
@@ -1531,6 +1593,12 @@ function isCommunitySparkRequest(
         (tag) => typeof tag === "string" && tag.length > 0 && tag.length <= 64
       ))
   );
+}
+
+function isCreativeSparkRequest(
+  value: Partial<Omit<CreativeSparkRequest, "userId">>
+): value is Omit<CreativeSparkRequest, "userId"> {
+  return Boolean(value.workingCopy) && isCommunitySparkRequest(value);
 }
 
 function communitySparkFailureMessage(code: string) {
@@ -1578,6 +1646,19 @@ function isApplyCommunitySparkRequest(
         value.sourceCommentId.length > 0 &&
         value.sourceCommentId.length <= 200))
   );
+}
+
+function isUndoCommunitySparkRequest(
+  value: Partial<Omit<UndoCommunitySparkInput, "poemId" | "userId">>
+): value is Omit<UndoCommunitySparkInput, "poemId" | "userId"> {
+  const validLines = (lines: unknown) =>
+    Array.isArray(lines) &&
+    lines.length > 0 &&
+    lines.length <= 200 &&
+    lines.every(
+      (line) => typeof line === "string" && line.trim().length > 0 && line.length <= 2_000
+    );
+  return validLines(value.appliedLines) && validLines(value.previousLines);
 }
 
 function parseInboxMessagesRoute(pathname: string): string | null {
