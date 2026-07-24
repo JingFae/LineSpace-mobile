@@ -36,6 +36,7 @@ import { DomainRepositoryError } from "./database/core/errors.js";
 import { ProfileRepositoryError } from "./database/profile/profile.errors.js";
 import { requestThreadVersionRecommendation } from "./ai/thread-version-recommendation.js";
 import {
+  communitySparkKeySource,
   communitySparkModel,
   communitySparkProvider,
   isCommunitySparkConfigured,
@@ -75,7 +76,8 @@ export async function handleApiRequest(
       authConfigured,
       communitySparkConfigured: isCommunitySparkConfigured(),
       communitySparkModel: communitySparkModel(),
-      communitySparkProvider: communitySparkProvider()
+      communitySparkProvider: communitySparkProvider(),
+      communitySparkKeySource: communitySparkKeySource()
     });
   }
 
@@ -1534,7 +1536,7 @@ function isCommunitySparkRequest(
 function communitySparkFailureMessage(code: string) {
   switch (code) {
     case "LLM_NOT_CONFIGURED":
-      return "Creative Spark is not connected on this deployment yet.";
+      return "Creative Spark needs DEEPSEEK_API_KEY on its API deployment.";
     case "LLM_INVALID_API_KEY":
       return "Creative Spark could not authenticate with its AI provider.";
     case "LLM_ACCESS_DENIED":

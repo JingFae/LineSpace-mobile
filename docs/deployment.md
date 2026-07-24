@@ -182,6 +182,12 @@ uses the separate API URL above, add them to the API project instead. Select the
 Production environment and redeploy after every environment-variable change;
 existing deployments keep their previous values.
 
+The readiness response intentionally reports `communitySparkKeySource` as
+`"DEEPSEEK_API_KEY"`, `"OPENAI_API_KEY"` (migration fallback), or `null`. It
+never returns the secret. When the Web app is configured with
+`https://line-space-mobile-api.vercel.app/api`, check that API domain's
+`/api/health/ready` endpoint—not the Web domain—before testing Community Spark.
+
 The API project must define the server-only Supabase variables. After each API
 deployment, verify routing and configuration before testing registration:
 

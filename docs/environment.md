@@ -24,6 +24,10 @@
 
 所有 `EXPO_PUBLIC_*` 变量都会进入客户端产物，只能放公开配置。不要给 Service Role Key 或数据库连接串添加这个前缀。认证后端只读取普通服务端变量。前端由 `AuthSessionProvider` 恢复和刷新 Session：Native Refresh Token 写入 Expo SecureStore，Web 写入 `sessionStorage`，Access Token 仅驻留内存。Web 存储仍可能被 XSS 读取，生产环境应配置 CSP 并避免在 URL、日志或错误中暴露 Token。
 
+本地开发时，`pnpm dev:api` 和 `pnpm dev:api:local` 会先读取仓库根目录
+`.env`，再以 `apps/api/.env` 中的值覆盖。将 `DEEPSEEK_API_KEY` 写在其中任意
+一个文件即可；不要写入 `apps/mobile/.env`，因为它会被打包到客户端。
+
 ## 邮箱确认回跳
 
 Supabase Dashboard → Authentication → URL Configuration → Redirect URLs 至少加入当前环境的两类地址：

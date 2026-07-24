@@ -2,6 +2,7 @@ import { mockPoems } from "@linespace/api-client";
 import {
   communitySparkModel,
   communitySparkProvider,
+  communitySparkKeySource,
   isCommunitySparkConfigured,
   requestCommunitySpark
 } from "./ai/community-spark.js";
@@ -128,6 +129,7 @@ try {
   assert(
     communitySparkProvider() === "deepseek" &&
       communitySparkModel() === "deepseek-v4-flash" &&
+      communitySparkKeySource() === "DEEPSEEK_API_KEY" &&
       isCommunitySparkConfigured(),
     "Community Spark did not expose its DeepSeek readiness configuration."
   );

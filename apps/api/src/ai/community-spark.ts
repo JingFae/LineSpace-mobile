@@ -110,7 +110,7 @@ export async function requestCommunitySpark(
   const comments = selectReaderComments(input.poem);
   let response: Response;
   try {
-    response = await fetch(`${communitySparkBaseUrl()}/chat/completions`, {
+    response = await fetch(communitySparkEndpoint(), {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -217,7 +217,7 @@ export async function requestCommunitySpark(
 }
 
 export function isCommunitySparkConfigured() {
-  return Boolean(communitySparkApiKey());
+  return communitySparkKeySource() !== null;
 }
 
 export function communitySparkModel() {
@@ -232,19 +232,36 @@ export function communitySparkProvider() {
   return "deepseek" as const;
 }
 
+/**
+ * Safe to expose through readiness checks: this reports only the variable name
+ * currently supplying a key, never the key or any part of its value.
+ */
+export function communitySparkKeySource() {
+  if (process.env.DEEPSEEK_API_KEY?.trim()) return "DEEPSEEK_API_KEY" as const;
+  if (process.env.OPENAI_API_KEY?.trim()) return "OPENAI_API_KEY" as const;
+  return null;
+}
+
 function communitySparkApiKey() {
-  return (
-    process.env.DEEPSEEK_API_KEY?.trim() ||
-    // Temporary migration fallback for deployments that stored a DeepSeek key
-    // under the original Community Spark variable.
-    process.env.OPENAI_API_KEY?.trim()
-  );
+  const source = communitySparkKeySource();
+  if (source === "DEEPSEEK_API_KEY") return process.env.DEEPSEEK_API_KEY!.trim();
+  // Temporary migration fallback for deployments that stored a DeepSeek key
+  // under the original Community Spark variable.
+  if (source === "OPENAI_API_KEY") return process.env.OPENAI_API_KEY!.trim();
+  return undefined;
 }
 
 function communitySparkBaseUrl() {
   return (
     process.env.DEEPSEEK_BASE_URL?.trim() || DEEPSEEK_DEFAULT_BASE_URL
   ).replace(/\/+$/, "");
+}
+
+function communitySparkEndpoint() {
+  const baseUrl = communitySparkBaseUrl();
+  return baseUrl.endsWith("/chat/completions")
+    ? baseUrl
+    : `${baseUrl}/chat/completions`;
 }
 
 async function readProviderErrorCode(response: Response) {

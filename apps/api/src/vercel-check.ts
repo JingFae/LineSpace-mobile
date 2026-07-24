@@ -53,13 +53,17 @@ const readiness = await readinessResponse.json() as {
   communitySparkConfigured?: boolean;
   communitySparkModel?: string;
   communitySparkProvider?: string;
+  communitySparkKeySource?: "DEEPSEEK_API_KEY" | "OPENAI_API_KEY" | null;
 };
 assert(
   readiness.service === "linespace-api" &&
     typeof readiness.authConfigured === "boolean" &&
     typeof readiness.communitySparkConfigured === "boolean" &&
     Boolean(readiness.communitySparkModel) &&
-    readiness.communitySparkProvider === "deepseek",
+    readiness.communitySparkProvider === "deepseek" &&
+    (readiness.communitySparkKeySource === null ||
+      readiness.communitySparkKeySource === "DEEPSEEK_API_KEY" ||
+      readiness.communitySparkKeySource === "OPENAI_API_KEY"),
   "Vercel readiness route did not return the Auth and Community Spark configuration contract."
 );
 
