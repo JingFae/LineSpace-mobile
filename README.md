@@ -1,269 +1,299 @@
 # LineSpace
 
-LineSpace 是面向 iOS、Android 和移动 Web 的诗歌创作、分享与协作产品。
-项目采用 TypeScript Monorepo，前端使用 Expo/React Native/Expo Router，
-服务端使用 Node.js API Function，认证使用 Supabase Auth，用户资料和用户
-关系域逐步迁移到 Supabase/PostgreSQL。
+LineSpace 是一个面向 iOS、Android 和移动 Web 的诗歌社交与创意写作平台。
+它把公开阅读、诗歌发布、Thread Relay 接力创作、评论反馈、私聊分享和作者控制的 AI 共创放在同一个创作循环里：读者可以发现一首诗，参与一条 Thread，留下评论，再把反馈转化为下一次修改。
 
-本 README 用于快速理解仓库职责、启动工程和选择数据模式。完整的边界、
-依赖方向、路由映射和数据流请阅读
-[docs/architecture.md](docs/architecture.md)。
+当前仓库是一个 TypeScript Monorepo，包含 Expo/React Native 客户端、Node.js/Vercel API、共享 API 契约、无业务 UI 组件、设计 tokens，以及 Supabase Auth/PostgreSQL/RLS 数据层。
 
-## 项目状态
+> README 描述当前代码已经实现的能力和真实边界；架构约束、数据库细节和部署检查分别见 [docs/architecture.md](docs/architecture.md)、[docs/environment.md](docs/environment.md) 和 [docs/deployment.md](docs/deployment.md)。
 
-当前已经具备：
+## 当前实现概览
 
-- Expo Router 移动端和 Web 单页导出。
-- Feed、诗歌详情、评论/贡献展示、喜欢和收藏交互。
-- 普通创作、图片选择、草稿、协作邀请、版本预览和发布流程。
-- Thread/Poem Relay 创作流程。
-- Profile、资料编辑、头像、本人与其他用户的连接列表。
-- Inbox 活动摘要、私聊、群聊和内容分享消息的 Mock/HTTP 双实现。
-- Supabase Auth 注册、登录、刷新、退出和 `/me`。
-- `AuthSessionProvider`、路由保护、Refresh Token 安全存储和 401 single-flight 刷新。
-- `public.users.auth_user_id -> auth.users.id` 身份映射。
-- 用户资料、用户搜索、关注关系和最近联系人 PostgreSQL Repository 边界。
-- Mock API 与 HTTP API 共用同一套 `LineSpaceApi` 类型契约。
-- Expo Web 静态导出和 Vercel `/api/*` Function 入口。
-- Community Spark / Creative Spark：仅作者可见，使用原帖与读者评论生成三条
-  同语言建议，并可事务性应用诗句、回复来源评论和写入贡献署名。
+### 已落地的产品能力
 
-当前仍为占位或后续能力：
+- 访客模式：无需登录即可浏览公开 Feed、Post、Thread、搜索、标签和公开资料；涉及发布、互动、保存、关注、分享或 Inbox 时再引导登录。
+- Supabase Auth 认证：注册、登录、邮箱确认回跳、刷新、退出、`/me` 和修改密码。
+- Thread Relay：创建主题与首行，按父子关系继续写作，展开完整分支树，查看稳定行号，并从 Thread 版本中继续创作或发布为个人 Post。
+- Thread 版本：支持推荐、最高赞、最长路径和自定义版本；版本预览支持分享、Web 图片/PDF 导出，以及可选 AI 版本推荐。
+- Post / Poem：标题、正文、标签、提及、图片/视频、草稿、发布、评论/回复、喜欢、收藏、分享和作者删除。
+- 诗歌视觉设计：模板、字体、背景和贴纸由 design catalog 统一提供；发布后的布局和 Thread Version 的署名行会被持久化。
+- Compose Relay：普通诗歌草稿与 Relay 草稿分离，Relay 的首行和写作主题/规则分别保存；支持协作者邀请、版本操作、预览和发布。
+- Discovery：Feed 支持 `latest`、`popular`、`following`，并支持 `all`、`most-contributed`、`growing`、`final` 筛选；支持跨 Post/Thread/User 搜索和标签结果页。
+- Profile：资料编辑、头像、简介、资料可见性、关注/互关关系、Followers/Following 列表、内容统计、草稿和 Posts/Threads/Comments/Saves 内容分区。
+- 成长体系：创作者与评论者经验值、Level 1–10、进度和徽章；经验事件由数据库以幂等方式记录。
+- Inbox：评论、喜欢/收藏、Thread、关注/提及等活动摘要；支持已读标记、私聊、群聊、群邀请，以及 Post/Thread/Continuation 内容分享。
+- Community Spark（界面文案为 Creative Spark）：仅作者可以打开，服务端根据当前诗作与读者评论生成三条同语言的修改/续写建议；作者可将建议应用到当前诗作、回复来源评论并写入贡献署名。
 
-- Discover/Read 和 Comments/Notes 标签页仍是占位页面。
-- Mock 模式仍使用内存数据；HTTP 模式已将 Post、Comment、Draft、Inbox
-  和 Thread 分享接入 PostgreSQL/RLS。
-- Storage 上传已接入用户隔离 bucket；实时协作传输、审核、限流和完整可观测性
-  仍未接入。
-- Community Spark 使用服务端 `DEEPSEEK_API_KEY`；Thread 版本 AI 推荐仍使用
-  `OPENAI_API_KEY`。未配置相应密钥时 UI 会保留可重试的降级状态。
-- 本地仓库没有真实生产 Supabase 凭据，因此不能将静态迁移检查当作真实数据库验证。
+### 当前边界
+
+- Mock 模式使用 `packages/api-client` 的进程内数据，适合 UI 和 Feature 开发。
+- HTTP 模式在 Supabase 环境完整配置时使用 PostgreSQL/RLS Repository；服务端未配置数据库时会回退到 Mock，生产环境应通过 readiness 检查阻止这种误配置。
+- 本仓库没有生产 Supabase 凭据，因此本地检查不能替代生产注册、邮箱确认、云端迁移和真实数据的端到端验证。
+- 实时协作传输、审核策略、分布式限流和完整可观测性尚未接入；当前协作能力是草稿操作/邀请与持久化边界，不是 Realtime 同步编辑器。
+- Community Spark 需要服务端 `DEEPSEEK_API_KEY`；Thread 版本 AI 推荐为可选能力，未配置 AI 密钥时保留确定性版本选择或可重试的降级状态。
+- Web Refresh Token 使用 `sessionStorage`，Access Token 只驻留内存；生产部署仍应配置 CSP、严格脚本控制和服务端限流。
 
 ## 技术栈
 
 | 层 | 技术 |
 | --- | --- |
-| Mobile / Web | Expo 52、Expo Router 4、React Native 0.76、React 18 |
-| 数据请求 | TanStack Query 5 |
-| 客户端语言 | TypeScript 5 |
-| API | Node.js HTTP、tsx、Vercel Function |
-| 认证 | Supabase Auth、JWT |
-| 数据库 | Supabase PostgreSQL、RLS、SQL Migration |
+| 客户端 | Expo 52、Expo Router 4、React Native 0.76、React 18、React Native Web |
+| 数据请求 / 状态 | TanStack Query 5、Zustand 5 |
+| 语言 | TypeScript 5、Node.js 20+ |
+| API | Node.js HTTP、`tsx`、Vercel Node Function |
+| 认证 | Supabase Auth、JWT、Native SecureStore、Web sessionStorage |
+| 数据库 | Supabase PostgreSQL、SQL Migration、RLS、JWT-derived RPC |
 | Monorepo | pnpm Workspace 11.7、Turborepo 2 |
-| UI | React Native、React Native SVG、共享 tokens |
-| 部署 | Expo Web 静态导出、Vercel |
+| UI | React Native、React Native SVG、共享 UI components 和 design tokens |
+| AI | DeepSeek Community Spark；OpenAI Thread 版本推荐兼容入口 |
+| 部署 | Expo Web 静态导出、Vercel 静态托管 + `/api/*` Function |
 
-## 仓库结构
+## 快速开始
 
-```text
-LineSpace-mobile/
-├─ apps/
-│  ├─ mobile/                         # Expo Router 应用
-│  │  ├─ app/                         # 文件路由适配层，只负责路由和参数
-│  │  │  ├─ (tabs)/                   # 首页、Discover、Compose、Comments、Profile
-│  │  │  ├─ auth/                     # 邮箱确认回跳
-│  │  │  ├─ compose/                  # 协作创作路由
-│  │  │  ├─ poem/                     # 诗歌详情和分享路由
-│  │  │  ├─ profile/                  # 资料、编辑、草稿路由
-│  │  │  ├─ thread/                   # Thread、继续创作、版本路由
-│  │  │  ├─ _layout.tsx               # QueryClient、Session、根路由保护
-│  │  │  └─ compose-preview.tsx       # 预览路由
-│  │  ├─ src/
-│  │  │  ├─ auth/                     # AuthSessionProvider、Token 存储和确认回跳
-│  │  │  ├─ features/                 # 按产品领域组织的 Screen 和交互逻辑
-│  │  │  │  ├─ auth/
-│  │  │  │  ├─ compose/
-│  │  │  │  ├─ feed/
-│  │  │  │  ├─ inbox/
-│  │  │  │  ├─ poem/
-│  │  │  │  ├─ profile/
-│  │  │  │  └─ thread/
-│  │  │  ├─ navigation/               # Tab 路由模型和导航常量
-│  │  │  ├─ screens/                  # 可复用的占位/通用页面
-│  │  │  └─ services/                 # Mock/HTTP API 选择和当前会话用户 ID
-│  │  ├─ assets/                      # App 专属图片、Logo 和位图素材
-│  │  ├─ app.json                     # Expo 配置
-│  │  ├─ babel.config.cjs             # Babel 配置
-│  │  └─ metro.config.cjs             # Monorepo Metro 配置
-│  │
-│  └─ api/                            # Node/Vercel API
-│     └─ src/
-│        ├─ auth/                     # Auth Service、校验、错误和 Auth Routes
-│        ├─ database/                 # Repository、Schema、Migration、数据库检查
-│        │  ├─ migrations/
-│        │  ├─ profile-repository.ts
-│        │  ├─ profile-schema.sql
-│        │  └─ compose-schema.sql
-│        ├─ routes.ts                  # HTTP 路由编排和输入校验
-│        ├─ server.ts                  # 本地 Node HTTP 适配层
-│        ├─ auth-check.ts              # 认证契约检查
-│        └─ smoke-check.ts             # API、Mock、HTTP 契约冒烟检查
-│
-├─ packages/
-│  ├─ api-client/                     # 前后端共享 API 契约和客户端实现
-│  │  └─ src/
-│  │     ├─ types.ts                  # 请求、响应和领域类型
-│  │     ├─ client.ts                 # LineSpaceApi + MockLineSpaceApi
-│  │     ├─ http-client.ts             # HttpLineSpaceApi
-│  │     ├─ auth-client.ts             # Auth HTTP Client
-│  │     ├─ mock-data.ts               # Mock 数据和本地可变状态种子
-│  │     └─ index.ts                  # 公共导出面
-│  ├─ ui/                             # 无业务、无网络的 React Native 组件库
-│  │  └─ src/
-│  │     ├─ components/
-│  │     ├─ icon/
-│  │     └─ index.ts
-│  └─ tokens/                         # 颜色、排版、间距和圆角等设计变量
-│     └─ src/
-│        ├─ colors.ts
-│        ├─ spacing.ts
-│        ├─ typography.ts
-│        └─ index.ts
-│
-├─ api/[...path].ts                   # Vercel Function 入口
-├─ docs/                              # 架构、环境、部署和设计交接文档
-├─ .env.example                       # 环境变量模板
-├─ package.json                       # 根命令和 Workspace 脚本
-├─ pnpm-workspace.yaml                # Workspace 声明
-├─ turbo.json                         # Turbo 构建编排
-├─ tsconfig.base.json                 # 共享 TypeScript 基础配置
-└─ vercel.json                        # Web 静态部署和 API 路由配置
+### 环境要求
+
+- Node.js `>=20.0.0`；CI 使用 Node 22。
+- pnpm `11.7.0`，推荐通过 Corepack 启用。
+- iOS 原生开发需要 macOS/Xcode；Android 原生开发需要 Android Studio、SDK 和设备或模拟器。
+- Supabase CLI 和 Docker 仅在本地数据库验证或迁移检查时需要。
+
+### 安装与 Mock 开发
+
+在仓库根目录执行：
+
+```bash
+corepack enable
+pnpm install --frozen-lockfile
+cp .env.example .env
+pnpm dev
 ```
 
-## 模块职责
+Windows PowerShell 可使用：
 
-### `apps/mobile`
+```powershell
+Copy-Item .env.example .env
+pnpm dev
+```
 
-移动端只组合 UI、Feature 和共享 API Client：
-
-- `app/` 是 Expo Router 路由适配层，不放业务数据请求。
-- `src/features/` 按 Feed、Compose、Poem、Profile、Inbox、Thread 等产品域拆分。
-- `src/auth/` 管理 Session 状态、刷新、退出和安全存储。
-- `src/services/lineSpaceApi.ts` 是 Mock/HTTP 的唯一选择点。
-- Feature 不直接调用 `fetch`，只依赖 `LineSpaceApi`。
-
-### `apps/api`
-
-服务端按“认证、路由、数据访问”分层：
-
-- `auth/` 负责 Supabase Auth 交互、JWT 认证、输入校验和通用错误。
-- `routes.ts` 负责 HTTP 方法、路径、输入校验、身份检查和 Repository 编排。
-- `database/` 负责 PostgreSQL Schema、Migration、RLS 契约和 Repository。
-- 普通用户资料和关系查询使用当前请求 JWT。
-- Service Role 只允许存在于服务端认证映射或明确的后台动作中。
-
-### `packages/api-client`
-
-这是前后端共享的 API 契约层：
-
-- `types.ts` 定义稳定的请求和响应类型。
-- `client.ts` 实现 Mock API。
-- `http-client.ts` 实现与 Node API 对齐的 HTTP API。
-- `auth-client.ts` 实现认证 API 客户端。
-- 业务组件不应绕过该包直接拼接 API 请求。
-
-### `packages/ui` 与 `packages/tokens`
-
-- `tokens` 只保存平台无关的设计变量。
-- `ui` 只保存可复用组件、图标和展示逻辑。
-- UI 包不能读取环境变量、调用 API 或依赖具体 Feature。
-- 页面示例数据必须留在 Mock/API Client 层，不进入通用 UI。
-
-## 数据模式
-
-### Mock 模式
-
-默认使用 Mock：
+默认 `.env.example` 使用 Mock：
 
 ```env
 EXPO_PUBLIC_USE_MOCKS=true
 EXPO_PUBLIC_CURRENT_USER_ID=user-lili
 ```
 
-数据流：
+常用启动方式：
 
-```text
-Feature Screen
-  -> lineSpaceApi
-  -> MockLineSpaceApi
-  -> packages/api-client/src/mock-data.ts
+```bash
+pnpm dev                  # Expo 开发服务器
+pnpm dev:web              # Expo Web
+pnpm dev:api              # 本地 Node API，默认 http://localhost:4000
+pnpm --filter @linespace/mobile android
+pnpm --filter @linespace/mobile ios
 ```
 
-Mock 模式不需要真实 Supabase 环境，不会因为认证或数据库不可用而阻塞页面开发。
+Web 端会以移动设备外壳展示应用，便于在桌面浏览器中检查移动布局；原生端通过 Expo 启动。
 
-### HTTP 模式
+### HTTP / Supabase 开发
+
+客户端切换到 HTTP：
 
 ```env
 EXPO_PUBLIC_USE_MOCKS=false
 EXPO_PUBLIC_API_BASE_URL=http://localhost:4000
 ```
 
-数据流：
+API 服务端至少需要：
+
+```env
+SUPABASE_URL=http://127.0.0.1:55421
+SUPABASE_PUBLISHABLE_KEY=<publishable-key>
+SUPABASE_SERVICE_ROLE_KEY=<server-only-key>
+AUTH_EMAIL_REDIRECT_URL=http://localhost:8081/auth/confirm
+```
+
+本地 Supabase 端口来自 `supabase/config.toml`：API/PostgREST `55421`、PostgreSQL `55432`、Studio `55423`、Mailpit `55424`。
+
+启动本地数据库并执行验证：
+
+```bash
+pnpm db:start
+pnpm db:reset
+pnpm db:lint
+pnpm db:security-check
+pnpm dev:api
+```
+
+如果只需要跑 HTTP 路由而没有 Supabase，API 会使用 Mock fallback；这适合契约调试，不代表数据库已经连接成功。使用 `GET /health/ready` 检查 Auth 和 Community Spark 配置。
+
+## 工程结构
+
+```text
+LineSpace-mobile/
+├─ apps/
+│  ├─ mobile/                         # Expo Router 应用、Feature Screens、认证和导航
+│  │  ├─ app/                         # 文件路由适配层，只处理参数、导航和 Route Guard
+│  │  │  ├─ (tabs)/                   # Thread、Post/Discover、Compose、Inbox、Profile
+│  │  │  ├─ auth/confirm.tsx          # 邮箱确认回跳
+│  │  │  ├─ poem/                     # Post 详情与分享
+│  │  │  ├─ profile/                  # 资料、编辑与草稿
+│  │  │  ├─ thread/                   # Thread、继续创作、分享与版本
+│  │  │  ├─ search.tsx                # 全局搜索
+│  │  │  └─ tags/[tag].tsx            # 标签结果
+│  │  ├─ src/
+│  │  │  ├─ auth/                     # Session、访客模式、Token 存储和刷新
+│  │  │  ├─ features/                 # 按产品域组织的 Screen 和交互逻辑
+│  │  │  │  ├─ auth/ compose/ feed/ discovery/
+│  │  │  │  ├─ inbox/ poem/ profile/ thread/
+│  │  │  ├─ navigation/               # Tab 模型和导航常量
+│  │  │  ├─ screens/                  # 通用/占位页面
+│  │  │  └─ services/                 # Mock/HTTP 选择和当前会话用户
+│  │  └─ assets/                      # App 专属图片和位图素材
+│  └─ api/                            # Node HTTP / Vercel API
+│     └─ src/
+│        ├─ ai/                       # Community Spark、Thread AI 推荐
+│        ├─ auth/                     # Auth Service、校验和认证路由
+│        ├─ database/
+│        │  ├─ core/                  # request-scoped Client、身份和错误
+│        │  ├─ profile/               # 资料、搜索、连接和关注
+│        │  ├─ post/                  # Feed、Post、评论和互动
+│        │  ├─ thread/                # Thread、Continuation、Version
+│        │  ├─ draft/                 # 草稿、发布、协作者和 Storage
+│        │  ├─ inbox/                 # 私聊、群聊、分享和活动
+│        │  ├─ discovery/             # 搜索和 Profile 内容聚合
+│        │  ├─ checks/                # 迁移、Vercel 和本地安全检查
+│        │  └─ linespace-api.facade.ts
+│        ├─ routes.ts                 # HTTP 路由编排和输入验证
+│        ├─ server.ts                 # 本地 Node HTTP 适配层
+│        └─ *-check.ts                # Auth、API、AI、迁移契约检查
+├─ packages/
+│  ├─ api-client/                     # 共享 API 类型、Mock、HTTP、Auth Client
+│  ├─ ui/                             # 无业务、无网络的 React Native 组件和图标
+│  └─ tokens/                         # 颜色、字体、间距和圆角等设计变量
+├─ api/[...path].ts                   # Vercel Function 稳定入口
+├─ supabase/migrations/               # 唯一可部署的有序迁移来源
+├─ docs/                              # 架构、环境、部署和设计交接
+├─ .env.example
+├─ package.json / pnpm-workspace.yaml
+├─ turbo.json / tsconfig.base.json
+└─ vercel.json
+```
+
+## 模块职责与依赖方向
+
+```text
+apps/mobile ──> packages/api-client
+             └─> packages/ui ──> packages/tokens
+
+apps/api    ──> packages/api-client
+```
+
+### 移动端
+
+- `app/` 是 Expo Router 的适配层，只读取路由参数、配置公开/受保护路由并渲染 Feature Screen。
+- `src/features/` 按 `auth`、`compose`、`feed`、`discovery`、`inbox`、`poem`、`profile`、`thread` 拆分产品域。
+- `src/auth/` 负责 Session 恢复、访客模式、邮箱确认、刷新、退出和平台差异化 Token 存储。
+- Feature 只依赖 `lineSpaceApi`、Auth hooks、共享 UI 和 tokens，不直接调用 `fetch`、Supabase 或服务端密钥。
+
+### API 与数据库
+
+- `routes.ts` 负责方法、路径、身份检查、输入验证、错误映射和 Repository 编排，不拼接 SQL。
+- `database/` 以 Profile、Post、Thread、Draft、Inbox、Discovery 为边界拆分 Repository/Query。
+- 每个请求创建带当前 Bearer JWT 的 Supabase Client；数据库通过 `auth.uid()` 映射到 `public.users.id`，再由 RLS、约束和事务 RPC 做最终授权。
+- `Service Role` 只允许存在于服务端认证映射或明确的受控后台动作中。
+
+### 共享 API 契约
+
+`packages/api-client` 的 `LineSpaceApi` 是前后端唯一业务契约面：
+
+- `types.ts`：请求、响应和领域模型。
+- `client.ts`：进程内 `MockLineSpaceApi`。
+- `http-client.ts`：与 `/v1/*` 对齐的 `HttpLineSpaceApi`。
+- `auth-client.ts`：认证 API 客户端。
+- `mock-data.ts`：Mock 种子数据和可变状态。
+
+新增业务方法时，需要同时更新类型、Mock、HTTP Client、API 路由/Repository 和对应的 smoke check，避免 Mock 与真实实现漂移。
+
+## 数据与身份模式
+
+### Mock 模式
 
 ```text
 Feature Screen
   -> lineSpaceApi
-  -> HttpLineSpaceApi
-  -> /api/[...path].ts 或 apps/api/src/server.ts
+  -> MockLineSpaceApi
+  -> packages/api-client/src/mock-data.ts + 进程内状态
+```
+
+只有 `EXPO_PUBLIC_USE_MOCKS=true` 才启用 Mock。此模式使用 `EXPO_PUBLIC_CURRENT_USER_ID`（默认 `user-lili`）作为开发身份，不需要 Supabase。
+
+### HTTP 模式
+
+```text
+Feature Screen
+  -> HttpLineSpaceApi / HttpAuthClient
   -> apps/api/src/routes.ts
-  -> Auth Service / ProfileRepository / Mock fallback
-  -> Supabase Auth / PostgreSQL RLS
+  -> Auth Service / LineSpace API Facade
+  -> Profile / Post / Thread / Draft / Inbox Repository
+  -> Supabase Auth + PostgreSQL RLS/RPC/Storage
 ```
 
-HTTP 模式下：
+HTTP 模式的关键行为：
 
-- Access Token 只保存在内存。
-- Native Refresh Token 使用 Expo SecureStore。
-- Web Refresh Token 使用 sessionStorage，不使用 localStorage。
-- 401 最多触发一次 single-flight Refresh，并只重试原请求一次。
-- 当前身份来自 AuthSessionProvider 和 JWT，不信任 `EXPO_PUBLIC_CURRENT_USER_ID`。
+- Access Token 只驻留内存。
+- Native Refresh Token 使用 Expo SecureStore；Web Refresh Token 使用 `sessionStorage`。
+- 收到 401 时只触发一次 single-flight refresh，并且只重试原请求一次。
+- 业务身份始终来自认证 Session/JWT；HTTP 模式不会把 `EXPO_PUBLIC_CURRENT_USER_ID` 当作权限依据。
+- Feed、Thread、User Search 使用不透明 cursor 作为分页锚点；服务端对 limit 和输入长度做边界校验。
+- Supabase Storage 使用 `linespace-media` 和 `linespace-drafts` bucket，并要求对象路径以当前用户 ID 开头。
 
-## 核心 API 分区
+## 产品域与核心 API
 
-### Auth
+| 产品域 | 主要能力 | 主要入口 |
+| --- | --- | --- |
+| Health | 存活与配置就绪检查 | `GET /health`、`GET /health/ready` |
+| Auth | 注册、登录、刷新、退出、当前用户、修改密码 | `/v1/auth/*` |
+| Discovery | Feed、Thread Feed、全文搜索、标签 | `/v1/feed`、`/v1/threads`、`/v1/search`、`/v1/tags/:tag` |
+| Post | 详情、评论、喜欢/收藏、删除、私聊分享 | `/v1/poems/:id/*`、`/v1/users/:id/poem-collections/*` |
+| Thread | 详情、Continuation、点赞/收藏、分享、删除 | `/v1/threads/:id/*`、`/v1/continuations/:id/*` |
+| Version | 版本发布为 Post、版本推荐 | `/v1/threads/:threadId/versions/:versionId/publish`、`POST /v1/ai/assist` |
+| Compose | design catalog、草稿、并发操作、协作者、发布、Storage URL | `/v1/compose/*`、`/v1/drafts/*`、`/v1/storage/upload-url` |
+| Profile | 资料、搜索、关注、连接、内容分区、草稿 | `/v1/users/*` |
+| Inbox | 活动摘要、已读、私聊、群聊、内容分享 | `/v1/users/:id/inbox/*`、`/v1/inbox/groups/*` |
+| Community Spark | 生成建议、应用建议、评论贡献署名 | `/v1/poems/:id/community-spark`、`/apply` |
 
-```text
-POST /v1/auth/register
-POST /v1/auth/login
-POST /v1/auth/refresh
-POST /v1/auth/logout
-GET  /v1/auth/me
+用户域和内容域的权限都由服务端 JWT 推导。请求中携带的 `userId`、`viewerId` 或 `senderId` 不能单独构成授权依据。
+
+## AI 能力边界
+
+### Community Spark / Creative Spark
+
+- 生成入口只允许 Post 作者调用。
+- 服务端加载 Post、评论和作者身份；客户端可提交未保存的工作副本，不能伪造评论来源或作者权限。
+- 每次返回三条建议，每条包含 `revise` 或 `continue` 类型、预览行、来源评论和版本指纹。
+- 应用时带上 `baseRevision`，过期建议会返回冲突，避免覆盖作者最新修改。
+- 应用操作在数据库中写入作者控制的修改、来源评论回复和贡献署名，保持可审计。
+- API Key、模型名和 provider 错误只在服务端处理，不进入 Expo Bundle。
+
+### Thread 版本推荐
+
+`POST /v1/ai/assist` 为旧 Thread AI 推荐兼容入口，当前版本页先生成确定性版本（推荐、最高赞、最长、自定义），再尝试 AI 解释/选择。没有 `OPENAI_API_KEY` 或 provider 不可用时，页面仍可使用确定性版本。
+
+服务端配置：
+
+```env
+DEEPSEEK_API_KEY=
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_COMMUNITY_SPARK_MODEL=deepseek-v4-flash
+OPENAI_API_KEY=
+OPENAI_MODEL=
 ```
 
-### User Domain
+## 数据库迁移与持久化
 
-```text
-GET    /v1/users/:id/profile
-PUT    /v1/users/:id/profile
-GET    /v1/users/search?query&limit&cursor
-GET    /v1/users/:id/connections?kind=followers|following
-GET    /v1/users/:id/followers
-GET    /v1/users/:id/following
-PUT    /v1/users/:id/follow
-DELETE /v1/users/:id/follow
-```
+`supabase/migrations/` 是 Supabase CLI 唯一可部署的迁移目录；`docs/archive/database/deferred-migrations/` 仅保存历史设计，不得复制回正式迁移链。
 
-用户域 Repository 使用：
-
-- `public.users`
-- `user_profile_stats`
-- `user_profile_visibility`
-- `badges`
-- `user_badges`
-- `user_follows`
-- `inbox_messages`
-
-搜索的 actor、连接关系状态和关注写入都由服务端 JWT 推导，前端传入的
-`userId`/`viewerId` 不构成权限依据。
-
-### Content Domain
-
-Feed、Poem、Thread、Compose、评论、喜欢、收藏和转发仍通过现有
-`LineSpaceApi` 契约工作。HTTP 模式现在由 PostRepository、CommentRepository、
-ThreadRepository、DraftRepository 和 InboxRepository 使用 PostgreSQL/RLS
-持久化；Mock 模式仍保持原有内存行为。
-
-## 数据库迁移顺序
+当前迁移必须按以下顺序执行：
 
 ```text
 supabase/migrations/20260715000000_profile_foundation.sql
@@ -282,114 +312,108 @@ supabase/migrations/20260720000200_inbox_activity_notifications.sql
 supabase/migrations/20260720000300_content_experience_progression.sql
 supabase/migrations/20260720000400_inbox_group_transactions.sql
 supabase/migrations/20260720000500_thread_engagement_delete_permissions.sql
+supabase/migrations/20260720000600_engagement_profile_inbox_post_management.sql
+supabase/migrations/20260721000100_relay_draft_semantics.sql
+supabase/migrations/20260721000200_thread_version_participant_posts.sql
+supabase/migrations/20260722000100_thread_continuation_stable_lines.sql
+supabase/migrations/20260722000200_post_version_layout.sql
+supabase/migrations/20260723000100_community_spark.sql
+supabase/migrations/20260723000200_guest_public_content_access.sql
 ```
 
-Level is uniformly bounded to 1–10. PostgreSQL awards append-only, idempotent
-experience events from published Posts/Threads, continuations, comments,
-likes, and saves. Inbox groups are created, accepted/declined, and messaged
-through JWT-derived transactional RPCs; clients cannot assemble group state
-with direct table writes.
+迁移链现在覆盖：
 
-新环境和已有环境都必须按顺序执行。迁移会检查非法 handle、资料字段和缺失表，
-不会静默覆盖已有用户资料。RLS 不得通过关闭的方式绕过。
+- Auth identity、Profile、关注关系、连接列表、徽章和经验值。
+- Post、评论、喜欢/收藏、Feed、Thread、Continuation、Version 和 Draft 持久化。
+- 私聊/群聊、邀请、Post/Thread/Continuation 内容分享和 Inbox 活动通知。
+- Discovery 搜索与标签索引、keyset 查询和公开内容访问。
+- Thread 行号稳定性、Version-to-Post 幂等发布、Post 布局/署名保存。
+- Community Spark 应用记录、评论来源和贡献署名。
+- Supabase Storage bucket、对象路径隔离、JWT-derived RPC 和 RLS 权限。
 
-## 常用命令
-
-```bash
-corepack enable
-pnpm install --frozen-lockfile
-
-pnpm dev                  # Expo 开发服务器
-pnpm dev:web              # Expo Web 开发服务器
-pnpm dev:api              # 本地 Node API，默认 4000
-
-pnpm typecheck            # 全 Workspace TypeScript 检查
-pnpm check:api            # Auth、API、Mock、Migration 契约检查
-pnpm build:web            # Expo Web 生产导出
-pnpm check                # typecheck + check:api + build:web
-pnpm db:security-check    # 本地 Supabase 多用户 RLS/群分享集成检查
-```
-
-原生开发：
-
-```bash
-pnpm --filter @linespace/mobile android
-pnpm --filter @linespace/mobile ios
-```
-
-iOS 需要 macOS/Xcode，Android 需要 Android Studio、SDK 和可用设备或模拟器。
+经验事件使用 append-only `event_key` 幂等记录，Level 限定为 1–10；群组创建、邀请响应、群消息发送、草稿创建和内容发布等敏感写入由数据库事务函数推导当前身份，客户端不能拼装越权状态。
 
 ## 环境变量
 
-复制 `.env.example` 为本地 `.env`，不要提交真实密钥。
+复制 `.env.example` 为 `.env`。任何 `EXPO_PUBLIC_*` 变量都会进入客户端 Bundle，只能放公开配置。
 
-客户端变量：
+### 客户端
 
-- `EXPO_PUBLIC_USE_MOCKS`
-- `EXPO_PUBLIC_API_BASE_URL`
-- `EXPO_PUBLIC_CURRENT_USER_ID`（仅 Mock 模式）
+| 变量 | 说明 |
+| --- | --- |
+| `EXPO_PUBLIC_USE_MOCKS` | 精确为 `true` 才启用 Mock；HTTP/生产应设为 `false` |
+| `EXPO_PUBLIC_API_BASE_URL` | HTTP API 地址；HTTP 模式必需，例如 `http://localhost:4000` 或 `/api` |
+| `EXPO_PUBLIC_CURRENT_USER_ID` | 仅 Mock 模式使用，默认 `user-lili` |
 
-服务端变量：
+### 服务端
 
-- `SUPABASE_URL`
-- `SUPABASE_PUBLISHABLE_KEY` 或 `SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `AUTH_EMAIL_REDIRECT_URL`
-- `PORT`
+| 变量 | 说明 |
+| --- | --- |
+| `PORT` | 本地 Node API 端口，默认 `4000` |
+| `SUPABASE_URL` | Supabase 项目地址 |
+| `SUPABASE_PUBLISHABLE_KEY` | 服务端调用公开 Supabase API 的首选 key |
+| `SUPABASE_ANON_KEY` | `SUPABASE_PUBLISHABLE_KEY` 不存在时的兼容回退 |
+| `SUPABASE_SERVICE_ROLE_KEY` | 仅服务端使用，用于认证身份映射和受控动作 |
+| `AUTH_EMAIL_REDIRECT_URL` | 邮箱确认完成后的 Web 或 Native 回跳地址 |
+| `DEEPSEEK_API_KEY` | Community Spark 服务端密钥 |
+| `DEEPSEEK_BASE_URL` | DeepSeek API 根地址，默认 `https://api.deepseek.com` |
+| `DEEPSEEK_COMMUNITY_SPARK_MODEL` | Community Spark 模型，默认 `deepseek-v4-flash` |
+| `OPENAI_API_KEY` / `OPENAI_MODEL` | Thread AI 推荐兼容入口 |
 
-任何 `EXPO_PUBLIC_*` 变量都会进入客户端 Bundle，不能放入 Service Role、
-数据库连接串或其他私密密钥。完整说明见
-[docs/environment.md](docs/environment.md)。
+`.env.example` 中的 `DATABASE_URL` 是保留的未来配置；当前运行时通过带 JWT 的 Supabase Client 访问 PostgreSQL，不将连接串直接暴露给移动端。
 
-## 设计资产与文档
+## 部署
 
-- [架构与代码边界](docs/architecture.md)
-- [环境变量与数据库准备](docs/environment.md)
-- [部署说明](docs/deployment.md)
-- [Figma 交接](docs/Instructions/figma-handoff.md)
-- [UI 团队技术交接](docs/Instructions/UI团队技术交接.md)
-- [Windows 文件锁排查](docs/Instructions/windows-file-locks.md)
-- [pnpm 排查](docs/Instructions/pnpm-troubleshooting.md)
+当前 `vercel.json` 从仓库根目录完成两件事：
 
-## 开发边界
+```text
+pnpm build:web
+  -> apps/mobile/dist
+  -> Expo Web 静态站点
 
-- 不在客户端调用 Supabase Service Role API。
-- 不在日志、URL、错误信息或业务表中保存密码和 Token。
-- 不通过前端 actor ID 建立权限。
-- 不把数据库访问代码放入 `packages/ui` 或 `apps/mobile`。
-- 不把 Feed/Poem/Post 持久化混入用户资料域迁移。
-- 修改 UI 时优先复用 `packages/tokens` 和 `packages/ui`。
-- 新增业务域时先定义共享 API 类型，再接入 Mock 和 HTTP 实现。
-
-## 已知限制
-
-- Thread 的完整版本计算、Feed 排序策略和 AI 生成仍有后续产品工作；
-  本轮未实现实时协作传输。
-- 尚未连接真实生产 Supabase 项目完成注册、邮箱确认和云端迁移后的端到端验证；
-  本地 Docker Supabase 已完成关键 RLS 与写入验证。
-- `apps/api` 的本地服务器与 Vercel Function 需要分别配置服务端环境变量。
-- Web sessionStorage 仍存在 XSS 风险，生产部署应配置 CSP 和严格脚本控制。
-- 仓库当前没有独立 ESLint；`pnpm lint` 目前兼容为 TypeScript 检查。
-
-## Supabase 云端迁移（当前执行入口）
-
-当前唯一会被 Supabase CLI 执行的迁移目录是 `supabase/migrations/`。
-正式链现在覆盖 Auth、用户资料/关系、Thread、Post/Comment、Compose 草稿、
-私聊/群聊内容分享、Thread Version 原子发布为 Post 和 Storage 权限。
-`docs/archive/database/deferred-migrations/`
-只保留历史设计参考，不会被 `supabase db push` 自动执行，也不应复制回正式
-迁移目录。
-
-本地验证（需要 Docker）：
-
-```bash
-pnpm db:start
-pnpm db:reset
-pnpm db:lint
-pnpm check:api
+/api/:path*
+  -> api/[...path].ts
+  -> apps/api/src/routes.ts
 ```
 
-部署到已链接的 Staging Supabase 项目：
+Vercel 配置：
+
+```json
+{
+  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm build:web",
+  "outputDirectory": "apps/mobile/dist"
+}
+```
+
+Dashboard 的 Root Directory 必须保持仓库根目录，不能改为 `apps/mobile`；否则 pnpm workspace、根锁文件和 `api/` Function 入口无法按当前配置解析。
+
+静态 Web 生产配置示例：
+
+```env
+EXPO_PUBLIC_USE_MOCKS=false
+EXPO_PUBLIC_API_BASE_URL=/api
+```
+
+服务端变量只配置在 Vercel Server 环境：
+
+```env
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_PUBLISHABLE_KEY=<publishable-key>
+SUPABASE_SERVICE_ROLE_KEY=<server-only-secret>
+AUTH_EMAIL_REDIRECT_URL=https://<web-domain>/auth/confirm
+DEEPSEEK_API_KEY=<server-only-secret>
+DEEPSEEK_COMMUNITY_SPARK_MODEL=deepseek-v4-flash
+```
+
+部署后先检查：
+
+```text
+GET /api/health
+GET /api/health/ready
+```
+
+`/api/health/ready` 会返回 Auth、Community Spark、模型和 provider 的公开状态，不会返回任何密钥。生产迁移应先连接 Staging 项目并审查 dry-run：
 
 ```bash
 pnpm exec supabase login
@@ -398,28 +422,42 @@ pnpm db:push:dry-run
 pnpm db:push
 ```
 
-先检查 dry-run 输出，再执行正式推送。不要对 Production 执行
-`supabase db reset --linked`。如果云端曾经手工执行过 SQL，先使用
-`supabase db pull` 或经过审查的 `supabase migration repair` 对齐迁移历史。
+不要对 Production 执行 `supabase db reset --linked`。若云端曾经手工执行过 SQL，先用 `supabase db pull` 或经过审查的 `supabase migration repair` 对齐迁移历史。
 
-### 数据库目录职责
+## 检查命令
 
-```text
-apps/api/src/database/
-├─ core/                       # Client、认证上下文、错误和公共映射
-├─ profile/                    # 用户资料、搜索、关注和最近联系人
-├─ post/                       # Feed、Post、评论及互动
-├─ thread/                     # Thread、Continuation 和分享
-├─ draft/                      # 草稿、协作、发布和 Storage 上传
-├─ inbox/                      # 私聊、群聊和消息内容映射
-├─ discovery/                  # 内容搜索和个人主页聚合查询
-├─ checks/                     # 静态迁移契约和本地安全检查
-└─ linespace-api.facade.ts     # request-scoped 兼容门面
-
-docs/archive/database/
-└─ deferred-migrations/        # 历史设计参考，不是部署入口
-
-supabase/
-├─ config.toml                 # Supabase CLI 本地配置
-└─ migrations/                 # 唯一可部署迁移来源
+```bash
+pnpm typecheck            # 全 Workspace TypeScript 检查
+pnpm check:api            # Auth、API、Mock、Community Spark、Migration、Vercel 检查
+pnpm build:web            # Expo Web 生产导出
+pnpm check                # typecheck + check:api + build:web
+pnpm lint                 # 当前兼容为 pnpm typecheck，仓库暂无独立 ESLint
 ```
+
+本地数据库检查：
+
+```bash
+pnpm db:start
+pnpm db:reset             # 仅本地 Supabase
+pnpm db:lint
+pnpm db:security-check    # 多用户 RLS、群分享、Storage 和内容写入边界
+```
+
+CI 在 Node 22 / pnpm 11.7.0 上执行 `pnpm install --frozen-lockfile` 和 `pnpm check`，并显式使用 Mock 以保证检查不依赖生产凭据。
+
+## 开发约束
+
+- 不在客户端调用 Supabase Service Role API，也不把 Service Role、数据库连接串或 AI Key 放进 `EXPO_PUBLIC_*`。
+- 不通过前端传入的 actor ID、viewer ID 或 sender ID 建立权限；权限必须由 JWT、RLS 和事务 RPC 推导。
+- 不在日志、URL、错误信息或业务表中保存密码、Access Token 或 Refresh Token。
+- 不让 `packages/ui`、`packages/tokens` 或移动端直接依赖数据库、Supabase 或服务端环境变量。
+- 新增产品域时先定义共享 API 类型，再同步实现 Mock、HTTP、路由、Repository、Migration、RLS 和契约检查。
+- 数据库迁移只能追加到 `supabase/migrations/`，必须保持顺序、幂等、可检查，不能通过关闭 RLS 绕过历史数据问题。
+- 修改 UI 时优先复用 `packages/tokens` 和 `packages/ui`；不要为单个 Feature 引入第二套大型状态管理框架。
+
+## 相关文档
+
+- [架构与代码边界](docs/architecture.md)
+- [环境变量与数据库准备](docs/environment.md)
+- [部署说明](docs/deployment.md)
+- [Thread Feed 设计参考](docs/reference/thread/01-thread-feed.jpg)
