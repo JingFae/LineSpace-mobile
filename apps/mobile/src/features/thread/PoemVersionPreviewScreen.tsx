@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { router, type Href } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -45,10 +45,12 @@ export function PoemVersionPreviewScreen({
 }: PoemVersionPreviewScreenProps) {
   const { width } = useWindowDimensions();
   const [viewportWidth, setViewportWidth] = useState(0);
-  const [pageIndex, setPageIndex] = useState(0);
+  const [pageIndex, setPageIndex] = useState(1);
   const [moreOpen, setMoreOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [notice, setNotice] = useState<ExportNotice | null>(null);
+  const pagerRef = useRef<ScrollView | null>(null);
+  const positionedInitialPageRef = useRef(false);
   const threadQuery = useQuery({
     queryKey: ["thread-detail", threadId, currentUserId],
     enabled: Boolean(threadId),
@@ -109,7 +111,6 @@ export function PoemVersionPreviewScreen({
   const versions = useMemo(() => {
     if (!detail || baseVersions.length === 0) return [];
     const mostPopular = [...baseVersions].sort(compareMostPopular)[0]!;
-    const longest = [...baseVersions].sort(compareLongest)[0]!;
     const aiResult = parseVersionAiResult(recommendationQuery.data?.suggestions[0]);
     const recommendedBase =
       baseVersions.find((version) => version.id === aiResult?.selectedVersionId) ??
@@ -140,10 +141,9 @@ export function PoemVersionPreviewScreen({
       })
     };
     const pages: PoemVersionViewModel[] = [
-      recommended,
-      harmonized,
       { ...mostPopular, id: `${mostPopular.id}:popular`, criterion: "mostPopular" },
-      { ...longest, id: `${longest.id}:longest`, criterion: "longest" }
+      recommended,
+      harmonized
     ];
     if (selectedCustomIds.length > 0) {
       pages.push(
@@ -170,6 +170,21 @@ export function PoemVersionPreviewScreen({
     ? getThreadMedia(detail.thread)
     : { ...threadMediaPresets.paper, uri: undefined };
   const pageWidth = viewportWidth || width;
+
+  useEffect(() => {
+    if (
+      positionedInitialPageRef.current ||
+      pageWidth <= 0 ||
+      versions.length < 3
+    ) {
+      return;
+    }
+    positionedInitialPageRef.current = true;
+    setPageIndex(1);
+    requestAnimationFrame(() => {
+      pagerRef.current?.scrollTo({ x: pageWidth, y: 0, animated: false });
+    });
+  }, [pageWidth, versions.length]);
 
   const handleCopy = () => {
     if (!currentVersion) return;
@@ -320,7 +335,19 @@ export function PoemVersionPreviewScreen({
                 ]}
               />
             ) : null}
+            <View
+              accessibilityLabel={`Page ${Math.min(pageIndex, 2) + 1} of 3`}
+              style={styles.pageIndicator}
+            >
+              {versions.slice(0, 3).map((version, index) => (
+                <View
+                  key={version.id}
+                  style={[styles.pageDot, index === pageIndex && styles.pageDotActive]}
+                />
+              ))}
+            </View>
             <ScrollView
+              ref={pagerRef}
               horizontal
               pagingEnabled
               showsHorizontalScrollIndicator={false}
@@ -380,14 +407,6 @@ export function PoemVersionPreviewScreen({
                 </View>
               ))}
             </ScrollView>
-            <View style={styles.pageIndicator}>
-              {versions.map((version, index) => (
-                <View
-                  key={version.id}
-                  style={[styles.pageDot, index === pageIndex && styles.pageDotActive]}
-                />
-              ))}
-            </View>
             <View style={styles.versionActions}>
               <Pressable
                 accessibilityRole="button"
@@ -577,20 +596,12 @@ function compareMostPopular(left: PoemVersionViewModel, right: PoemVersionViewMo
   );
 }
 
-function compareLongest(left: PoemVersionViewModel, right: PoemVersionViewModel) {
-  return (
-    right.continuationCount - left.continuationCount ||
-    right.totalLikeScore - left.totalLikeScore ||
-    left.id.localeCompare(right.id)
-  );
-}
-
 function criterionLabel(criterion?: PoemVersionCriterion) {
   if (criterion === "recommended") return "Recommended";
   if (criterion === "harmonized") return "AI Harmonized";
-  if (criterion === "mostPopular") return "Most popular";
+  if (criterion === "mostPopular") return "Popular";
   if (criterion === "custom") return "My custom version";
-  return "Longest";
+  return "Recommended";
 }
 
 function criterionDescription(
@@ -612,7 +623,7 @@ function criterionDescription(
   }
   if (criterion === "mostPopular") return "The path with the highest combined likes.";
   if (criterion === "custom") return "Your one-choice-per-line edit.";
-  return "The path with the greatest number of connected lines.";
+  return "The most coherent existing path, with every word preserved.";
 }
 
 type ParsedVersionAiResult = {
@@ -1054,11 +1065,9 @@ const styles = StyleSheet.create({
   customEntryTitle: { color: colors.white, fontSize: 15, fontWeight: "700" },
   customEntryBody: { marginTop: 3, color: "rgba(255,255,255,.56)", fontSize: 11 },
   pageIndicator: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 116,
+    minHeight: 22,
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "center",
     gap: 6
   },

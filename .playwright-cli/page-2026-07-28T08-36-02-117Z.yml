@@ -1,0 +1,16 @@
+- generic [ref=e68]:
+  - generic [ref=e69]:
+    - button "Search LineSpace" [ref=e74] [cursor=pointer]
+    - generic [ref=e77]:
+      - tab "Latest" [ref=e78] [cursor=pointer]
+      - tab "Popular" [ref=e81] [cursor=pointer]
+      - tab "Follow" [ref=e83] [cursor=pointer]
+  - generic [ref=e88]:
+    - progressbar [ref=e89]
+    - generic [ref=e94]: Loading threads
+  - generic [ref=e95]:
+    - button "Thread" [ref=e96] [cursor=pointer]
+    - button "Post" [ref=e100] [cursor=pointer]
+    - button "Create" [ref=e104] [cursor=pointer]
+    - button "Inbox" [ref=e107] [cursor=pointer]
+    - button "Profile" [ref=e111] [cursor=pointer]

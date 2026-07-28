@@ -1466,7 +1466,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
     const limit = Math.min(50, Math.max(1, query.limit ?? Math.max(1, threads.length)));
     return threads
       .slice(start, start + limit)
-      .map((thread) => this.withThreadViewer(thread, viewerId));
+      .map((thread) => this.withThreadContributors(thread, viewerId));
   }
 
   async getThread(threadId: string, viewerId?: string): Promise<ThreadDetail | null> {
@@ -2465,6 +2465,29 @@ export class MockLineSpaceApi implements LineSpaceApi {
     };
   }
 
+  private withThreadContributors(
+    thread: PoetryThread,
+    viewerId?: string
+  ): PoetryThread {
+    const viewedThread = this.withThreadViewer(thread, viewerId);
+    const contributors = [
+      viewedThread.author,
+      ...this.continuations
+        .filter((continuation) => continuation.threadId === thread.id)
+        .map((continuation) =>
+          profileToUser(findProfile(this.profiles, continuation.author))
+        )
+    ];
+    const uniqueContributors = [
+      ...new Map(contributors.map((contributor) => [contributor.id, contributor])).values()
+    ];
+    return {
+      ...viewedThread,
+      contributors: uniqueContributors,
+      contributorsCount: uniqueContributors.length
+    };
+  }
+
   private withContinuationViewer(
     continuation: ThreadContinuation,
     viewerId?: string
@@ -2557,6 +2580,7 @@ function cloneThread(thread: PoetryThread): PoetryThread {
   return {
     ...thread,
     author: { ...thread.author },
+    contributors: thread.contributors?.map((contributor) => ({ ...contributor })),
     tags: thread.tags ? [...thread.tags] : undefined,
     mentions: thread.mentions ? [...thread.mentions] : undefined,
     audienceUserIds: thread.audienceUserIds ? [...thread.audienceUserIds] : undefined,

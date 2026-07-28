@@ -105,7 +105,11 @@ export function PoemCard({
             </View>
           </Pressable>
           <Text numberOfLines={1} style={styles.contributors}>
-            {poem.contributorsCount > 1
+            {poem.versionLines?.length
+              ? `thread | ${poem.contributorsCount} ${
+                  poem.contributorsCount === 1 ? "contributor" : "contributors"
+                }`
+              : poem.contributorsCount > 1
               ? `${poem.contributorsCount} contributors`
               : "original post"}
           </Text>

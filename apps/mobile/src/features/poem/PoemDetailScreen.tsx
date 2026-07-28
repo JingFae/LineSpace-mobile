@@ -360,6 +360,11 @@ function DetailHeader({ poem, followed, followPending, showFollow, showManage, o
 
       {poem ? (
         <View style={styles.headerRight}>
+          {poem.versionLines?.length ? (
+            <Text numberOfLines={1} style={styles.versionOriginMeta}>
+              thread | {poem.contributorsCount} {poem.contributorsCount === 1 ? "contributor" : "contributors"}
+            </Text>
+          ) : null}
           {showFollow ? (
             <Pressable accessibilityRole="button" disabled={followPending || followed} onPress={onFollow} style={styles.followButton}>
               <Text style={styles.followText}>{followPending ? "…" : followed ? "following" : "+ follow"}</Text>
@@ -929,6 +934,14 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     color: colors.ink,
     fontWeight: "600"
+  },
+  versionOriginMeta: {
+    maxWidth: 118,
+    fontSize: 10,
+    lineHeight: 13,
+    color: colors.profileMuted,
+    fontWeight: "600",
+    textAlign: "right"
   },
   followButton: {
     height: 24,

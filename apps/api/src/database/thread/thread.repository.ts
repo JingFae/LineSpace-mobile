@@ -464,10 +464,6 @@ export class ThreadRepository {
     actorId: string | null
   ): Promise<PoetryThread[]> {
     if (rows.length === 0) return [];
-    const profiles = await loadProfiles(
-      this.client,
-      rows.map((row) => row.author_user_id)
-    );
     const ids = rows.map((row) => row.id);
     const [likes, saves, continuationCounts] = await Promise.all([
       actorId
@@ -476,7 +472,10 @@ export class ThreadRepository {
       actorId
         ? this.client.from("thread_saves").select("thread_id").eq("user_id", actorId).in("thread_id", ids)
         : Promise.resolve({ data: [], error: null }),
-      this.client.from("thread_continuations").select("thread_id").in("thread_id", ids)
+      this.client
+        .from("thread_continuations")
+        .select("thread_id,author_user_id")
+        .in("thread_id", ids)
     ]);
     ensureDatabaseResult(likes.error);
     ensureDatabaseResult(saves.error);
@@ -491,18 +490,45 @@ export class ThreadRepository {
         (row) => row.thread_id
       )
     );
+    const continuationRows =
+      (continuationCounts.data as Array<{
+        thread_id: string;
+        author_user_id: string;
+      }> | null) ?? [];
+    const profiles = await loadProfiles(this.client, [
+      ...rows.map((row) => row.author_user_id),
+      ...continuationRows.map((row) => row.author_user_id)
+    ]);
     const continuationCount = countBy(
-      ((continuationCounts.data as Array<{ thread_id: string }> | null) ?? []).map(
-        (row) => row.thread_id
-      )
+      continuationRows.map((row) => row.thread_id)
     );
+    const continuationAuthorIdsByThread = new Map<string, string[]>();
+    for (const continuation of continuationRows) {
+      const authorIds = continuationAuthorIdsByThread.get(continuation.thread_id) ?? [];
+      if (!authorIds.includes(continuation.author_user_id)) {
+        authorIds.push(continuation.author_user_id);
+      }
+      continuationAuthorIdsByThread.set(continuation.thread_id, authorIds);
+    }
     return rows.flatMap((row) => {
       const author = profiles.get(row.author_user_id);
       if (!author) return [];
+      const contributorIds = [
+        row.author_user_id,
+        ...(continuationAuthorIdsByThread.get(row.id) ?? []).filter(
+          (id) => id !== row.author_user_id
+        )
+      ];
+      const contributors = contributorIds.flatMap((id) => {
+        const contributor = profiles.get(id);
+        return contributor ? [contributor] : [];
+      });
       return [
         {
           id: row.id,
           author,
+          contributors,
+          contributorsCount: contributors.length,
           ...(row.title ? { title: row.title } : {}),
           content: row.rules ?? row.prompt,
           startingContent: row.starting_content,

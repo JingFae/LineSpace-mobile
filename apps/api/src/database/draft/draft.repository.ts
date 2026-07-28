@@ -229,7 +229,9 @@ export class DraftRepository {
         lineNumber: line.lineNumber,
         text: line.text,
         authorId: line.author.id,
-        ...(line.likes !== undefined ? { likes: line.likes } : {})
+        ...(line.likes !== undefined ? { likes: line.likes } : {}),
+        ...(line.originalText ? { originalText: line.originalText } : {}),
+        ...(line.aiChangeNote ? { aiChangeNote: line.aiChangeNote } : {})
       }));
     }
     if (input.media !== undefined) patch.media = input.media;
@@ -622,7 +624,13 @@ function parseVersionLines(
         lineNumber: source.lineNumber,
         text: source.text,
         author,
-        ...(typeof source.likes === "number" ? { likes: source.likes } : {})
+        ...(typeof source.likes === "number" ? { likes: source.likes } : {}),
+        ...(typeof source.originalText === "string"
+          ? { originalText: source.originalText }
+          : {}),
+        ...(typeof source.aiChangeNote === "string"
+          ? { aiChangeNote: source.aiChangeNote }
+          : {})
       }
     ];
   });

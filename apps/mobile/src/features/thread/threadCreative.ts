@@ -40,7 +40,6 @@ export type PoemVersionCriterion =
   | "recommended"
   | "harmonized"
   | "mostPopular"
-  | "longest"
   | "custom";
 
 export type PoemVersionViewModel = {
@@ -256,18 +255,6 @@ export function calculateVersionLikeScore(path: readonly ThreadContinuation[]) {
   return path.reduce((score, continuation) => score + continuation.metrics.likes, 0);
 }
 
-export function selectRepresentativeVersions(versions: readonly PoemVersionViewModel[]) {
-  if (versions.length <= 1) return versions.map((version) => ({ ...version, criterion: "longest" as const }));
-
-  const byLongest = [...versions].sort(compareLongestVersion);
-  const byMostLiked = [...versions].sort(compareMostLikedVersion);
-  const longest = { ...byLongest[0]!, criterion: "longest" as const };
-  const mostLikedCandidate = byMostLiked.find((version) => version.id !== longest.id);
-  return mostLikedCandidate
-    ? [longest, { ...mostLikedCandidate, criterion: "mostPopular" as const }]
-    : [longest];
-}
-
 export function buildCustomPoemVersion(
   thread: PoetryThread,
   continuations: readonly ThreadContinuation[],
@@ -379,26 +366,6 @@ function buildVersionFromPath(
     totalTextLength: textLength,
     updatedAt: leaf?.createdAt ?? creativeThread.createdAt
   };
-}
-
-function compareLongestVersion(left: PoemVersionViewModel, right: PoemVersionViewModel) {
-  return (
-    right.continuationCount - left.continuationCount ||
-    right.totalTextLength - left.totalTextLength ||
-    right.totalLikeScore - left.totalLikeScore ||
-    Date.parse(right.updatedAt) - Date.parse(left.updatedAt) ||
-    left.id.localeCompare(right.id)
-  );
-}
-
-function compareMostLikedVersion(left: PoemVersionViewModel, right: PoemVersionViewModel) {
-  return (
-    right.totalLikeScore - left.totalLikeScore ||
-    right.continuationCount - left.continuationCount ||
-    right.totalTextLength - left.totalTextLength ||
-    Date.parse(right.updatedAt) - Date.parse(left.updatedAt) ||
-    left.id.localeCompare(right.id)
-  );
 }
 
 function deriveStartingContentFallback(content: string) {

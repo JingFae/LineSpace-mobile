@@ -598,7 +598,9 @@ function parseVersionLines(value: string | undefined): PoemDraft["versionLines"]
         lineNumber: line.lineNumber,
         text: line.text,
         author: line.author,
-        likes: line.likes
+        likes: line.likes,
+        originalText: line.originalText,
+        aiChangeNote: line.aiChangeNote
       }));
   } catch {
     return undefined;

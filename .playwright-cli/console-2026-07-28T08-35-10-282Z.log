@@ -1,0 +1,8 @@
+[     391ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:4173/favicon.ico:0
+[     476ms] [WARNING] Animated: `useNativeDriver` is not supported because the native animated module is missing. Falling back to JS-based animation. To resolve this, add `RCTAnimation` module to this app, or remove `useNativeDriver`. Make sure to run `bundle exec pod install` first. Read more about autolinking: https://github.com/react-native-community/cli/blob/master/docs/autolinking.md @ http://127.0.0.1:4173/_expo/static/js/web/entry-22e3f2e0bc763a6773919e3058e5ef88.js:379
+[     663ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:4173/login:0
+[    3906ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:4000/v1/threads?sort=latest&limit=3:0
+[   51300ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:4000/v1/threads?sort=latest&limit=3:0
+[   54676ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:4000/v1/threads?sort=latest&limit=3:0
+[   59036ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:4000/v1/threads?sort=latest&limit=3:0
+[   65408ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:4000/v1/threads?sort=latest&limit=3:0

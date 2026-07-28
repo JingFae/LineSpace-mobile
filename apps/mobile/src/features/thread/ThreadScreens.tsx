@@ -735,6 +735,7 @@ function ThreadCard({
           </Pressable>
           <StartingContentCard
             compact={!elevated}
+            contributors={thread.contributors ?? [thread.author]}
             creativeThread={creativeThread}
             onPress={onOpenVersion}
           />
@@ -868,7 +869,7 @@ function StartingContentCard({
         <Text style={styles.startingLineNumberText}>Line1</Text>
       </View>
       <Text
-        numberOfLines={detail ? 7 : 5}
+        numberOfLines={detail ? 7 : compact ? 3 : 5}
         style={[
           styles.startingContentText,
           compact && styles.startingContentTextCompact,
@@ -877,12 +878,15 @@ function StartingContentCard({
       >
         {creativeThread.startingContent}
       </Text>
-      {detail ? (
-        <View style={styles.startingContentFooter}>
+      <View style={styles.startingContentFooter}>
+        <View style={styles.startingContentContributors}>
           <ContributorAvatarStack contributors={visibleContributors} />
-          <Text style={[styles.startingContentHint, { color: media.mutedTextColor }]}>Poem Version</Text>
+          <Text style={[styles.startingContentCount, { color: media.mutedTextColor }]}>
+            {visibleContributors.length} {visibleContributors.length === 1 ? "participant" : "participants"}
+          </Text>
         </View>
-      ) : null}
+        <Text style={[styles.startingContentHint, { color: media.mutedTextColor }]}>Poem Version</Text>
+      </View>
     </Pressable>
   );
 }
@@ -1553,6 +1557,7 @@ function ThreadActionBar({
     <ActionButton
       key="like"
       active={liked}
+      animatePress
       count={metrics.likes}
       icon={<LikeIcon filled={liked} activeColor={colors.liked} color={colors.inkSoft} width={19} height={18} />}
       label="Like"
@@ -1591,21 +1596,39 @@ function ThreadActionBar({
 
 function ActionButton({
   active,
+  animatePress = false,
   count,
   icon,
   label,
   onPress
 }: {
   active?: boolean;
+  animatePress?: boolean;
   count: number;
   icon: ReactNode;
   label: string;
   onPress: () => void;
 }) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const handlePress = () => {
+    if (animatePress) {
+      scale.stopAnimation();
+      scale.setValue(0.82);
+      Animated.spring(scale, {
+        toValue: 1,
+        tension: 220,
+        friction: 4,
+        useNativeDriver: true
+      }).start();
+    }
+    onPress();
+  };
   return (
-    <Pressable accessibilityLabel={`${label} ${count}`} accessibilityRole="button" onPress={onPress} style={styles.actionButton}>
-      {icon}
-      <Text style={[styles.actionCount, active && styles.actionCountActive]}>{formatCompact(count)}</Text>
+    <Pressable accessibilityLabel={`${label} ${count}`} accessibilityRole="button" onPress={handlePress} style={styles.actionButton}>
+      <Animated.View style={[styles.actionButtonContent, { transform: [{ scale }] }]}>
+        {icon}
+        <Text style={[styles.actionCount, active && styles.actionCountActive]}>{formatCompact(count)}</Text>
+      </Animated.View>
     </Pressable>
   );
 }
@@ -1932,12 +1955,62 @@ function useThreadLikeMutation() {
 function useContinuationLikeMutation() {
   const queryClient = useQueryClient();
   const { requireAccount } = useGuestAccess();
+  const pendingByContinuation = useRef(
+    new Map<string, Promise<ThreadContinuation>>()
+  );
+  const latestInputByContinuation = useRef(
+    new Map<string, UpdateContinuationLikeInput>()
+  );
+  const desiredLikeByContinuation = useRef(new Map<string, boolean>());
   const mutation = useMutation({
-    mutationFn: (input: UpdateContinuationLikeInput) => lineSpaceApi.setContinuationLike(input),
-    onSuccess: (continuation, input) => {
+    mutationFn: (input: UpdateContinuationLikeInput) => {
+      const previous = pendingByContinuation.current.get(input.continuationId);
+      const request = (previous?.catch(() => undefined) ?? Promise.resolve())
+        .then(() => lineSpaceApi.setContinuationLike(input));
+      pendingByContinuation.current.set(input.continuationId, request);
+      return request.finally(() => {
+        if (pendingByContinuation.current.get(input.continuationId) === request) {
+          pendingByContinuation.current.delete(input.continuationId);
+        }
+      });
+    },
+    onMutate: (input) => {
+      latestInputByContinuation.current.set(input.continuationId, input);
+      const queryRoots: QueryKey[] = [
+        ["thread-detail"],
+        ["continuation-detail"],
+        ["thread-version-tree"]
+      ];
+      for (const queryKey of queryRoots) {
+        void queryClient.cancelQueries({ queryKey });
+      }
+      const snapshots = captureQuerySnapshots(queryClient, queryRoots);
+      if (latestInputByContinuation.current.get(input.continuationId) === input) {
+        optimisticallyUpdateContinuationCaches(
+          queryClient,
+          input.continuationId,
+          (continuation) => updateContinuationLikeState(continuation, input.isActive)
+        );
+      }
+      return { snapshots };
+    },
+    onError: (_error, input, context) => {
+      if (latestInputByContinuation.current.get(input.continuationId) === input) {
+        restoreQuerySnapshots(queryClient, context?.snapshots);
+      }
+    },
+    onSettled: (continuation, _error, input) => {
+      if (latestInputByContinuation.current.get(input.continuationId) !== input) {
+        return;
+      }
+      latestInputByContinuation.current.delete(input.continuationId);
+      desiredLikeByContinuation.current.delete(input.continuationId);
       void queryClient.invalidateQueries({ queryKey: ["thread-detail"] });
       void queryClient.invalidateQueries({ queryKey: ["continuation-detail"] });
-      void queryClient.invalidateQueries({ queryKey: ["user-profile", continuation.author.id] });
+      void queryClient.invalidateQueries({ queryKey: ["thread-version-tree"] });
+      if (continuation) {
+        void queryClient.invalidateQueries({ queryKey: ["user-profile", continuation.author.id] });
+      }
       void queryClient.invalidateQueries({ queryKey: ["user-profile", input.userId] });
       void queryClient.invalidateQueries({ queryKey: ["user-profile-content", input.userId] });
     }
@@ -1945,7 +2018,16 @@ function useContinuationLikeMutation() {
   return {
     ...mutation,
     mutate: (input: UpdateContinuationLikeInput) => {
-      if (requireAccount("like this continuation")) mutation.mutate(input);
+      if (!requireAccount("like this continuation")) return;
+      const pendingDesired = desiredLikeByContinuation.current.get(input.continuationId);
+      const normalizedInput = pendingDesired === undefined
+        ? input
+        : { ...input, isActive: !pendingDesired };
+      desiredLikeByContinuation.current.set(
+        normalizedInput.continuationId,
+        normalizedInput.isActive
+      );
+      mutation.mutate(normalizedInput);
     }
   };
 }
@@ -2031,6 +2113,46 @@ function optimisticallyUpdateThreadCaches(
   );
 }
 
+function optimisticallyUpdateContinuationCaches(
+  queryClient: QueryClient,
+  continuationId: string,
+  update: (continuation: ThreadContinuation) => ThreadContinuation
+) {
+  const updateList = (items: readonly ThreadContinuation[]) =>
+    items.map((continuation) =>
+      continuation.id === continuationId ? update(continuation) : continuation
+    );
+
+  queryClient.setQueriesData<ThreadDetail>(
+    { queryKey: ["thread-detail"] },
+    (detail) => detail
+      ? {
+          ...detail,
+          continuations: updateList(detail.continuations),
+          allContinuations: detail.allContinuations
+            ? updateList(detail.allContinuations)
+            : detail.allContinuations
+        }
+      : detail
+  );
+  queryClient.setQueriesData<ContinuationDetail>(
+    { queryKey: ["continuation-detail"] },
+    (detail) => detail
+      ? {
+          ...detail,
+          path: updateList(detail.path),
+          current:
+            detail.current.id === continuationId ? update(detail.current) : detail.current,
+          children: updateList(detail.children)
+        }
+      : detail
+  );
+  queryClient.setQueriesData<ThreadContinuation[]>(
+    { queryKey: ["thread-version-tree"] },
+    (continuations) => continuations ? updateList(continuations) : continuations
+  );
+}
+
 function updateThreadLikeState(thread: PoetryThread, isActive: boolean): PoetryThread {
   const changed = thread.viewer.liked !== isActive;
   return {
@@ -2040,6 +2162,24 @@ function updateThreadLikeState(thread: PoetryThread, isActive: boolean): PoetryT
       likes: Math.max(0, thread.metrics.likes + (changed ? (isActive ? 1 : -1) : 0))
     },
     viewer: { ...thread.viewer, liked: isActive }
+  };
+}
+
+function updateContinuationLikeState(
+  continuation: ThreadContinuation,
+  isActive: boolean
+): ThreadContinuation {
+  const changed = continuation.viewer.liked !== isActive;
+  return {
+    ...continuation,
+    metrics: {
+      ...continuation.metrics,
+      likes: Math.max(
+        0,
+        continuation.metrics.likes + (changed ? (isActive ? 1 : -1) : 0)
+      )
+    },
+    viewer: { ...continuation.viewer, liked: isActive }
   };
 }
 
@@ -2118,13 +2258,17 @@ function buildVisibleContinuationGroups(
   allContinuations: readonly ThreadContinuation[],
   order: ContinuationOrder
 ): ContinuationVisibleGroup[] {
+  const currentContinuations = new Map(
+    allContinuations.map((continuation) => [continuation.id, continuation])
+  );
   return roots.map((root) => {
+    const currentRoot = currentContinuations.get(root.id) ?? root;
     const isExpanded = expandedRootIds.has(root.id);
     const descendants = isExpanded ? expandedDescendants[root.id] ?? [] : [];
     const rootRow: ContinuationVisibleRow = {
-      continuation: root,
-      lineNumber: root.lineNumber ?? 2,
-      rootGroupId: root.id,
+      continuation: currentRoot,
+      lineNumber: currentRoot.lineNumber ?? 2,
+      rootGroupId: currentRoot.id,
       actualDepth: 0,
       isExpandedDescendant: false,
       isFirstInExpandedGroup: false,
@@ -2134,14 +2278,17 @@ function buildVisibleContinuationGroups(
       isLastVisibleDescendantInGroup: descendants.length === 0,
       showContinuationEntry: !isExpanded && root.metrics.continuations > 0,
       previewContinuation: sortContinuationItems(
-        allContinuations.filter((item) => item.parentContinuationId === root.id),
+        allContinuations.filter((item) => item.parentContinuationId === currentRoot.id),
         order
       )[0]
     };
     const descendantRows = descendants.map((item, index) => ({
-      continuation: item.continuation,
-      lineNumber: item.continuation.lineNumber ?? item.actualDepth + 2,
-      rootGroupId: root.id,
+      continuation:
+        currentContinuations.get(item.continuation.id) ?? item.continuation,
+      lineNumber:
+        (currentContinuations.get(item.continuation.id) ?? item.continuation).lineNumber ??
+        item.actualDepth + 2,
+      rootGroupId: currentRoot.id,
       actualDepth: item.actualDepth,
       isExpandedDescendant: true,
       isFirstInExpandedGroup: index === 0,
@@ -2477,14 +2624,16 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     borderRadius: 20,
     paddingHorizontal: 16,
-    paddingVertical: 15
+    paddingTop: 15,
+    paddingBottom: 42
   },
   startingContentCardCompact: {
     minHeight: 96,
     maxHeight: 164,
     borderRadius: 18,
     paddingHorizontal: 14,
-    paddingVertical: 13
+    paddingTop: 13,
+    paddingBottom: 42
   },
   startingContentCardDetail: {
     minHeight: 118,
@@ -2557,6 +2706,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between"
   },
+  startingContentContributors: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7
+  },
+  startingContentCount: { fontSize: 10, lineHeight: 14, fontWeight: "600" },
   startingContentHint: { fontSize: 12, lineHeight: 16, fontWeight: "600" },
   contributorStack: { flexDirection: "row", alignItems: "center" },
   contributorAvatarWrap: {
@@ -2579,6 +2734,7 @@ const styles = StyleSheet.create({
   actionBar: { flexDirection: "row", alignItems: "center", gap: 18, marginTop: 5 },
   compactActionBar: { marginTop: 3 },
   actionButton: { minHeight: 32, minWidth: 42, flexDirection: "row", alignItems: "center" },
+  actionButtonContent: { flexDirection: "row", alignItems: "center" },
   actionCount: { marginLeft: 5, fontSize: 13, lineHeight: 17, color: colors.inkSoft },
   actionCountActive: { color: colors.liked },
   detailHero: {

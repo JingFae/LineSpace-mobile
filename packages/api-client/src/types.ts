@@ -146,6 +146,10 @@ export type PoemDraft = {
     text: string;
     author: UserProfile;
     likes?: number;
+    /** Original human-authored text when this line was lightly harmonized by AI. */
+    originalText?: string;
+    /** Short, human-readable explanation of the AI edit. */
+    aiChangeNote?: string;
   }>;
   media?: PoemDraftMedia;
   settings: PoemDraftSettings;
@@ -810,6 +814,9 @@ export type ThreadMetrics = {
 export type PoetryThread = {
   id: string;
   author: UserProfile;
+  /** Unique relay participants in contribution order, including the thread author. */
+  contributors?: UserProfile[];
+  contributorsCount?: number;
   title?: string;
   content: string;
   startingContent?: string;
@@ -945,7 +952,11 @@ export type ShareThreadToGroupInput = {
   note?: string;
 };
 
-export type ThreadVersionKind = "recommended" | "most-popular" | "longest" | "custom";
+export type ThreadVersionKind =
+  | "recommended"
+  | "harmonized"
+  | "most-popular"
+  | "custom";
 
 export type ThreadVersionLine = {
   lineNumber: number;

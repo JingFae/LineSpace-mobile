@@ -764,7 +764,13 @@ function toVersionLines(
       lineNumber: row.lineNumber,
       text: row.text,
       author,
-      ...(typeof row.likes === "number" ? { likes: row.likes } : {})
+      ...(typeof row.likes === "number" ? { likes: row.likes } : {}),
+      ...(typeof row.originalText === "string"
+        ? { originalText: row.originalText }
+        : {}),
+      ...(typeof row.aiChangeNote === "string"
+        ? { aiChangeNote: row.aiChangeNote }
+        : {})
     }];
   });
   return lines.length ? lines : undefined;
