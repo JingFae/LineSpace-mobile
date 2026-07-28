@@ -1,5 +1,10 @@
 import { router, type Href } from "expo-router";
-import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient
+} from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
@@ -27,6 +32,7 @@ import { getPoemLayoutPresentation } from "@/features/poem/poemPresentation";
 import { FeedTopChrome } from "@/components/FeedTopChrome";
 import { useGuestAccess } from "@/auth/GuestAccessProvider";
 import { prefetchPoem, prefetchProfile } from "@/services/contentPrefetch";
+import { PostManageSheet } from "@/features/poem/PostManageSheet";
 
 declare const require: (path: string) => ImageSourcePropType;
 
@@ -44,7 +50,19 @@ export function LineSpaceHomeScreen() {
   const currentUserId = authUser?.id ?? "";
   const queryClient = useQueryClient();
   const [section, setSection] = useState<FeedSection>("latest");
+  const [managedPoem, setManagedPoem] = useState<PoemCardModel | null>(null);
   const engagement = usePoemEngagement();
+  const deletePost = useMutation({
+    mutationFn: (poemId: string) =>
+      lineSpaceApi.deletePoem({ poemId, userId: currentUserId }),
+    onSuccess: () => {
+      setManagedPoem(null);
+      void queryClient.invalidateQueries({ queryKey: ["feed"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["user-profile-content", currentUserId]
+      });
+    }
+  });
   const profileQuery = useQuery({
     queryKey: ["user-profile", currentUserId],
     queryFn: () => lineSpaceApi.getUserProfile(currentUserId),
@@ -103,6 +121,7 @@ export function LineSpaceHomeScreen() {
           if (next === "following" && !requireAccount("view your following feed")) return;
           setSection(next);
         }}
+        sectionLabel="Post"
         searchLabel="Search LineSpace"
         tabs={sectionTabs}
       />
@@ -135,6 +154,14 @@ export function LineSpaceHomeScreen() {
               }}
               onLikePress={(id, isLiked) =>
                 engagement.setCollection(id, "liked", isLiked)
+              }
+              onOptionsPress={
+                poem.author.id === currentUserId
+                  ? () => {
+                      deletePost.reset();
+                      setManagedPoem(poem);
+                    }
+                  : undefined
               }
               onPress={openPoem}
               onSavePress={(id, isSaved) =>
@@ -188,6 +215,32 @@ export function LineSpaceHomeScreen() {
           if (value === "inbox" && !requireAccount("open your inbox")) return;
           router.push(tabRoutes[value]);
         }}
+      />
+
+      <PostManageSheet
+        error={deletePost.isError}
+        onClose={() => {
+          deletePost.reset();
+          setManagedPoem(null);
+        }}
+        onDelete={() => {
+          if (managedPoem) deletePost.mutate(managedPoem.id);
+        }}
+        onEdit={() => {
+          if (!managedPoem) return;
+          const poemId = managedPoem.id;
+          setManagedPoem(null);
+          router.push({
+            pathname: "/(tabs)/compose",
+            params: {
+              type: "post",
+              session: `edit-${poemId}-${Date.now()}`,
+              editPostId: poemId
+            }
+          } as unknown as Href);
+        }}
+        pending={deletePost.isPending}
+        visible={Boolean(managedPoem)}
       />
 
     </AppScreen>

@@ -17,7 +17,6 @@ import { AppScreen } from "@linespace/ui";
 import { colors, radius, spacing } from "@linespace/tokens";
 import type { PoemDraft, PoemDraftMedia, PoemDraftSettings } from "@linespace/api-client";
 import { lineSpaceApi } from "@/services/lineSpaceApi";
-import { uploadPublishedMedia } from "@/services/mediaUpload";
 import { useAuth } from "@/auth/AuthSessionProvider";
 import { getMediaAspectRatio } from "@/features/poem/poemPresentation";
 import {
@@ -65,7 +64,6 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
   });
   const [settings, setSettings] = useState<PoemDraftSettings>(initialSettings);
   const [error, setError] = useState<string | null>(null);
-  const [mediaUploading, setMediaUploading] = useState(false);
   const [editHydrated, setEditHydrated] = useState(false);
   const [sparkChange, setSparkChange] = useState<SparkApplyChange | null>(null);
   const [undoingSpark, setUndoingSpark] = useState(false);
@@ -200,34 +198,28 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images", "videos"],
       allowsMultipleSelection: false,
-      quality: 0.85
+      quality: 0.85,
+      // Keep image posts portable across the draft and API boundaries. A
+      // device-local file:// URI cannot be rendered after the post is loaded
+      // again, while the data URI works in both mock and HTTP mode.
+      base64: true
     });
     if (result.canceled || !result.assets[0]) return;
 
     const asset = result.assets[0];
     const isVideo = asset.type === "video";
-    const mimeType = asset.mimeType ?? (isVideo ? "video/mp4" : "image/jpeg");
-    setMediaUploading(true);
-    try {
-      const uri = await uploadPublishedMedia({
-        userId: currentUserId,
-        uri: asset.uri,
-        contentType: mimeType,
-        fileName: asset.fileName ?? undefined
-      });
-      setMedia({
-        uri,
-        kind: isVideo ? "video" : "image",
-        name: asset.fileName ?? (isVideo ? "video" : "image"),
-        width: asset.width,
-        height: asset.height,
-        mimeType
-      });
-    } catch {
-      setError("The selected media could not be uploaded. Please try again.");
-    } finally {
-      setMediaUploading(false);
-    }
+    const uri =
+      !isVideo && asset.base64
+        ? `data:${asset.mimeType ?? "image/jpeg"};base64,${asset.base64}`
+        : asset.uri;
+    setMedia({
+      uri,
+      kind: isVideo ? "video" : "image",
+      name: asset.fileName ?? (isVideo ? "video" : "image"),
+      width: asset.width,
+      height: asset.height,
+      mimeType: asset.mimeType
+    });
   };
 
   const goToPreview = () => {
@@ -290,7 +282,7 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
       contentContainerStyle={styles.screen}
     >
       <ComposeHeader
-        isBusy={(Boolean(resumeDraftId) && draftQuery.isLoading) || editPostQuery.isLoading || saveMutation.isPending || mediaUploading}
+        isBusy={(Boolean(resumeDraftId) && draftQuery.isLoading) || editPostQuery.isLoading || saveMutation.isPending}
         isDisabled={currentUserId.length === 0 || (Boolean(editPostId) && !editPostQuery.data)}
         onAction={goToPreview}
         title={editPostId ? "edit post" : "new post"}

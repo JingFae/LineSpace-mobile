@@ -181,10 +181,14 @@ export class PostRepository {
       .maybeSingle();
     ensureDatabaseResult(result.error);
     if (!result.data) return null;
-    const summaries = await this.mapSummaries([result.data as PostRow], await getCurrentLinespaceUserId(this.client));
+    const actorId = await getCurrentLinespaceUserId(this.client);
+    const [summaries, comments] = await Promise.all([
+      this.mapSummaries([result.data as PostRow], actorId),
+      this.listComments(id, actorId)
+    ]);
     const summary = summaries[0];
     if (!summary) return null;
-    summary.comments = await this.listComments(id);
+    summary.comments = comments;
     return summary;
   }
 
@@ -402,8 +406,14 @@ export class PostRepository {
     };
   }
 
-  async listComments(postId: string): Promise<PoemComment[]> {
-    const actorId = await getCurrentLinespaceUserId(this.client);
+  async listComments(
+    postId: string,
+    knownActorId?: string | null
+  ): Promise<PoemComment[]> {
+    const actorId =
+      knownActorId === undefined
+        ? await getCurrentLinespaceUserId(this.client)
+        : knownActorId;
     const result = await this.client
       .from("post_comments")
       .select(

@@ -42,6 +42,7 @@ import { lineSpaceApi } from "@/services/lineSpaceApi";
 import { useAuth } from "@/auth/AuthSessionProvider";
 import { useGuestAccess } from "@/auth/GuestAccessProvider";
 import { getMediaAspectRatio } from "@/features/poem/poemPresentation";
+import { prefetchPoem, prefetchThread } from "@/services/contentPrefetch";
 
 declare const require: (path: string) => ImageSourcePropType;
 
@@ -114,7 +115,8 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
   const profileQuery = useQuery({
     queryKey: ["user-profile", profileUserId],
     queryFn: () => lineSpaceApi.getUserProfile(profileUserId),
-    enabled: profileUserId.length > 0 && !isGuestOwnProfile
+    enabled: profileUserId.length > 0 && !isGuestOwnProfile,
+    staleTime: 60_000
   });
   const contentQuery = useQuery({
     queryKey: ["user-profile-content", profileUserId, section, threadRelation, saveCollection, saveKind],
@@ -125,12 +127,18 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
         collection: section === "saves" ? saveCollection : undefined,
         contentKind: section === "saves" ? saveKind : undefined
       }),
-    enabled: profileUserId.length > 0 && !isGuestOwnProfile
+    enabled: profileUserId.length > 0 && !isGuestOwnProfile,
+    staleTime: 60_000
   });
   const draftsQuery = useQuery({
     queryKey: ["user-drafts", profileUserId],
-    enabled: isOwner && profileUserId.length > 0 && !isGuestOwnProfile,
-    queryFn: () => lineSpaceApi.listUserDrafts(profileUserId)
+    enabled:
+      isOwner &&
+      profileUserId.length > 0 &&
+      !isGuestOwnProfile &&
+      Boolean(profileQuery.data && contentQuery.data),
+    queryFn: () => lineSpaceApi.listUserDrafts(profileUserId),
+    staleTime: 60_000
   });
   const connectionsQuery = useQuery({
     queryKey: ["user-connections", profileUserId, connectionKind],
@@ -815,12 +823,17 @@ function ProfileContentCard({
   item: UserProfileContentItem;
   onManage?: (item: UserProfileContentItem) => void;
 }) {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const viewerId = user?.id ?? "";
   const open = () => {
     if (item.threadId) {
+      void prefetchThread(queryClient, item.threadId, viewerId);
       router.push({ pathname: "/thread/[id]", params: { id: item.threadId } } as unknown as Href);
       return;
     }
     if (item.poemId) {
+      void prefetchPoem(queryClient, item.poemId, viewerId);
       router.push({
         pathname: "/poem/[id]",
         params: {

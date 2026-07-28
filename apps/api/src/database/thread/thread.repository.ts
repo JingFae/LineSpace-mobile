@@ -90,9 +90,11 @@ export class ThreadRepository {
 
   async getThread(threadId: string): Promise<ThreadDetail | null> {
     const actorId = await getCurrentLinespaceUserId(this.client);
-    const thread = await this.loadThreadById(threadId, actorId);
+    const [thread, continuationRows] = await Promise.all([
+      this.loadThreadById(threadId, actorId),
+      this.loadContinuations(threadId)
+    ]);
     if (!thread) return null;
-    const continuationRows = await this.loadContinuations(threadId);
     const allContinuations = await this.mapContinuations(continuationRows, actorId);
     return {
       thread,

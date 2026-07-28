@@ -42,26 +42,13 @@ export class ProfileContentQuery {
     }
 
     if (section === "posts") {
-      const poems = await this.posts.listProfilePosts(userId);
+      const items = await this.posts.listProfilePostContent(userId);
       return {
         userId,
         section,
-        total: poems.length,
+        total: items.length,
         visible: true,
-        items: poems.map((poem) => ({
-          id: `profile-${poem.id}`,
-          kind: "post" as const,
-          poemId: poem.id,
-          title: poem.title,
-          excerpt: poem.lines[0] ?? "",
-          tags: poem.tags,
-          finishedAt: poem.startedAt,
-          highlightCount: poem.metrics.likes,
-          ...(poem.artworkUrl ? { artworkUrl: poem.artworkUrl } : {}),
-          ...(poem.media ? { media: poem.media } : {}),
-          ...(poem.layout ? { layout: poem.layout } : {}),
-          artworkTone: poem.artworkTone
-        }))
+        items
       };
     }
 

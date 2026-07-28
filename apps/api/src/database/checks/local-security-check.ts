@@ -92,7 +92,6 @@ async function run() {
   const admin = client(credentials.apiUrl, credentials.serviceRoleKey);
   const suffix = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
   const fixtures: FixtureUser[] = [];
-  let uploadedMediaPath: string | null = null;
 
   try {
     const userA = await createFixtureUser(admin, credentials, suffix, "a");
@@ -570,24 +569,6 @@ async function run() {
       "Batched Draft mapping did not preserve the saved Draft."
     );
 
-    const uploadTarget = await userADrafts.createUploadUrl({
-      bucket: "linespace-media",
-      path: `${userA.userId}/posts/performance-${suffix}.png`,
-      contentType: "image/png"
-    });
-    uploadedMediaPath = uploadTarget.path;
-    const uploadBody = new FormData();
-    uploadBody.append("cacheControl", "31536000");
-    uploadBody.append("", new Blob(["LineSpace"], { type: "image/png" }));
-    const uploaded = await fetch(uploadTarget.signedUrl, {
-      method: "PUT",
-      headers: { "x-upsert": "false" },
-      body: uploadBody
-    });
-    assert(uploaded.ok && uploadTarget.publicUrl, "Signed media upload failed.");
-    const publicMedia = await fetch(uploadTarget.publicUrl);
-    assert(publicMedia.ok, "Published media URL was not publicly readable.");
-
     const replacedPost = await userA.client.rpc("publish_draft_over_post", {
       p_draft_id: editDraftId,
       p_post_id: postId
@@ -621,12 +602,9 @@ async function run() {
     assert(!ownerDelete.error && ownerDelete.data === true, "The Post author could not delete their Post.");
 
     process.stdout.write(
-      "Local database security check passed: profile/follow/inbox isolation, batched Post/Draft mapping, signed media upload, atomic group transactions, JWT-derived group senders, engagement counters, Inbox read state, engagement-preserving Post edits, owner-only Post deletion, content-event experience, Thread-version publication, click targets, and atomic share counters.\n"
+      "Local database security check passed: profile/follow/inbox isolation, batched Post/Draft mapping, atomic group transactions, JWT-derived group senders, engagement counters, Inbox read state, engagement-preserving Post edits, owner-only Post deletion, content-event experience, Thread-version publication, click targets, and atomic share counters.\n"
     );
   } finally {
-    if (uploadedMediaPath) {
-      await admin.storage.from("linespace-media").remove([uploadedMediaPath]);
-    }
     for (const fixture of fixtures.reverse()) {
       await admin.auth.admin.deleteUser(fixture.authId);
     }
