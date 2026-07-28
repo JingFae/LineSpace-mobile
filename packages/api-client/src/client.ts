@@ -1815,6 +1815,57 @@ export class MockLineSpaceApi implements LineSpaceApi {
   }
 
   async requestAiAssist(request: AiAssistRequest): Promise<AiAssistResponse> {
+    if (request.intent === "moderation-preview") {
+      try {
+        const payload = JSON.parse(request.text) as {
+          candidateVersions?: Array<{
+            id?: string;
+            totalLikes?: number;
+            lines?: Array<{ lineId?: string; text?: string }>;
+          }>;
+        };
+        const selected = [...(payload.candidateVersions ?? [])]
+          .filter((version) => version.id && version.lines?.length)
+          .sort(
+            (left, right) =>
+              (right.totalLikes ?? 0) - (left.totalLikes ?? 0) ||
+              String(left.id).localeCompare(String(right.id))
+          )[0];
+        if (selected?.id && selected.lines) {
+          const changedIndex = selected.lines.length > 1 ? 1 : 0;
+          return {
+            id: `mock-ai-${Date.now()}`,
+            intent: request.intent,
+            suggestions: [JSON.stringify({
+              selectedVersionId: selected.id,
+              recommendedRationale:
+                "This intact path has the clearest progression of images and transitions.",
+              confidence: 0.72,
+              harmonizedRationale:
+                "One punctuation adjustment gently clarifies the transition without changing its meaning.",
+              harmonizedLines: selected.lines.map((line, index) => {
+                const original = line.text?.trim() ?? "";
+                const canAddPunctuation =
+                  index === changedIndex &&
+                  original.length > 0 &&
+                  !/[.!?。！？,，;；:：…]$/u.test(original);
+                return {
+                  lineId: line.lineId ?? `line-${index + 1}`,
+                  text: canAddPunctuation ? `${original},` : original,
+                  changeNote: canAddPunctuation
+                    ? "Added light punctuation at the end of this contribution."
+                    : "",
+                  changed: canAddPunctuation
+                };
+              })
+            })],
+            usage: { inputTokens: 0, outputTokens: 0 }
+          };
+        }
+      } catch {
+        // Fall through to the generic local suggestions.
+      }
+    }
     return {
       id: `mock-ai-${Date.now()}`,
       intent: request.intent,

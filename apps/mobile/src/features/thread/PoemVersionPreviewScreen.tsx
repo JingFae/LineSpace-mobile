@@ -81,11 +81,17 @@ export function PoemVersionPreviewScreen({
         poemId: threadId,
         text: JSON.stringify({
           task: "recommend-thread-version",
-          versions: baseVersions.map((version) => ({
+          thread: {
+            id: detail?.thread.id,
+            title: detail?.thread.title,
+            rules: detail?.thread.rules
+          },
+          candidateVersions: baseVersions.map((version) => ({
             id: version.id,
             lineCount: version.lines.length,
             totalLikes: version.totalLikeScore,
             lines: version.lines.map((line) => ({
+              lineId: line.id,
               lineNumber: line.lineNumber,
               text: line.text,
               authorId: line.author.id,
@@ -104,7 +110,7 @@ export function PoemVersionPreviewScreen({
     if (!detail || baseVersions.length === 0) return [];
     const mostPopular = [...baseVersions].sort(compareMostPopular)[0]!;
     const longest = [...baseVersions].sort(compareLongest)[0]!;
-    const aiResult = parseRecommendation(recommendationQuery.data?.suggestions[0]);
+    const aiResult = parseVersionAiResult(recommendationQuery.data?.suggestions[0]);
     const recommendedBase =
       baseVersions.find((version) => version.id === aiResult?.selectedVersionId) ??
       mostPopular;
@@ -112,10 +118,30 @@ export function PoemVersionPreviewScreen({
       ...recommendedBase,
       id: `${recommendedBase.id}:recommended`,
       criterion: "recommended" as const,
-      aiRationale: aiResult?.rationale
+      aiRationale: aiResult?.recommendedRationale
+    };
+    const harmonizedLinesById = new Map(
+      aiResult?.harmonizedLines.map((line) => [line.lineId, line]) ?? []
+    );
+    const harmonized = {
+      ...recommendedBase,
+      id: `${recommendedBase.id}:harmonized`,
+      criterion: "harmonized" as const,
+      aiRationale: aiResult?.harmonizedRationale,
+      lines: recommendedBase.lines.map((line) => {
+        const aiLine = harmonizedLinesById.get(line.id);
+        if (!aiLine?.changed || aiLine.text === line.text) return { ...line };
+        return {
+          ...line,
+          originalText: line.text,
+          text: aiLine.text,
+          aiChangeNote: aiLine.changeNote
+        };
+      })
     };
     const pages: PoemVersionViewModel[] = [
       recommended,
+      harmonized,
       { ...mostPopular, id: `${mostPopular.id}:popular`, criterion: "mostPopular" },
       { ...longest, id: `${longest.id}:longest`, criterion: "longest" }
     ];
@@ -312,13 +338,20 @@ export function PoemVersionPreviewScreen({
                   >
                     <View style={styles.versionMetaRow}>
                       <View>
+                        {version.criterion === "recommended" ||
+                        version.criterion === "harmonized" ? (
+                          <Text style={styles.versionNumber}>
+                            {version.criterion === "recommended" ? "VERSION 1" : "VERSION 2"}
+                          </Text>
+                        ) : null}
                         <Text style={styles.versionCriterion}>
                           {criterionLabel(version.criterion)}
                         </Text>
                         <Text style={styles.versionDescription}>
                           {criterionDescription(
                             version.criterion,
-                            recommendationQuery.isFetching
+                            recommendationQuery.isFetching,
+                            recommendationQuery.isError
                           )}
                         </Text>
                         {version.aiRationale ? (
@@ -419,27 +452,58 @@ function PoemArtwork({
       <View style={[styles.artworkWash, { backgroundColor: media.overlayColor }]} />
       <Text style={[styles.artworkTitle, { color: media.textColor }]}>{version.title}</Text>
       <View style={styles.artworkRule} />
-      {version.lines.map((line) => (
-        <View key={line.id} style={styles.artworkLineRow}>
-          <Avatar
-            color={line.author.avatarColor}
-            imageSource={line.author.avatarUrl ? { uri: line.author.avatarUrl } : undefined}
-            label={line.author.displayName}
-            size={30}
-          />
-          <View style={styles.artworkLineCopy}>
-            <View style={styles.artworkLineHeader}>
-              <Text style={[styles.artworkLineAuthor, { color: media.textColor }]}>
-                {line.lineNumber}. @{line.author.handle}
-              </Text>
-              <Text style={[styles.artworkLineLikes, { color: media.mutedTextColor }]}>
-                ♥ {line.likes}
-              </Text>
-            </View>
-            <Text style={[styles.artworkLine, { color: media.textColor }]}>{line.text}</Text>
-          </View>
+      {version.criterion === "harmonized" ? (
+        <View style={styles.harmonizedLegend}>
+          <View style={styles.harmonizedLegendSwatch} />
+          <Text style={[styles.harmonizedLegendText, { color: media.mutedTextColor }]}>
+            Blue marks AI additions or replacements
+          </Text>
         </View>
-      ))}
+      ) : null}
+      {version.lines.map((line) => {
+        const segments = line.originalText
+          ? buildHarmonizedTextSegments(line.originalText, line.text)
+          : [{ text: line.text, ai: false }];
+        return (
+          <View
+            key={line.id}
+            style={[
+              styles.artworkLineRow,
+              line.originalText && styles.harmonizedLineRow
+            ]}
+          >
+            <Avatar
+              color={line.author.avatarColor}
+              imageSource={line.author.avatarUrl ? { uri: line.author.avatarUrl } : undefined}
+              label={line.author.displayName}
+              size={30}
+            />
+            <View style={styles.artworkLineCopy}>
+              <View style={styles.artworkLineHeader}>
+                <Text style={[styles.artworkLineAuthor, { color: media.textColor }]}>
+                  {line.lineNumber}. @{line.author.handle}
+                </Text>
+                <Text style={[styles.artworkLineLikes, { color: media.mutedTextColor }]}>
+                  ♥ {line.likes}
+                </Text>
+              </View>
+              <Text style={[styles.artworkLine, { color: media.textColor }]}>
+                {segments.map((segment, index) => (
+                  <Text
+                    key={`${line.id}:${index}`}
+                    style={segment.ai ? styles.harmonizedText : undefined}
+                  >
+                    {segment.text}
+                  </Text>
+                ))}
+              </Text>
+              {line.aiChangeNote ? (
+                <Text style={styles.harmonizedChangeNote}>{line.aiChangeNote}</Text>
+              ) : null}
+            </View>
+          </View>
+        );
+      })}
       <View style={styles.artworkFooter}>
         <View style={styles.artworkContributors}>
           {contributors.slice(0, 5).map((contributor, index) => (
@@ -523,6 +587,7 @@ function compareLongest(left: PoemVersionViewModel, right: PoemVersionViewModel)
 
 function criterionLabel(criterion?: PoemVersionCriterion) {
   if (criterion === "recommended") return "Recommended";
+  if (criterion === "harmonized") return "AI Harmonized";
   if (criterion === "mostPopular") return "Most popular";
   if (criterion === "custom") return "My custom version";
   return "Longest";
@@ -530,34 +595,185 @@ function criterionLabel(criterion?: PoemVersionCriterion) {
 
 function criterionDescription(
   criterion: PoemVersionCriterion | undefined,
-  aiLoading: boolean
+  aiLoading: boolean,
+  aiUnavailable: boolean
 ) {
   if (criterion === "recommended") {
+    if (aiUnavailable) return "AI is unavailable; the most popular intact path is shown.";
     return aiLoading
-      ? "AI is reviewing tone, imagery and continuity."
-      : "AI-reviewed path with a popularity fallback.";
+      ? "AI is reading every branch without rewriting it."
+      : "The most coherent existing path, with every word preserved.";
+  }
+  if (criterion === "harmonized") {
+    if (aiUnavailable) return "AI is unavailable; the recommended path remains unchanged.";
+    return aiLoading
+      ? "Preparing a restrained, traceable edit of the recommended path."
+      : "Small transition edits only; blue marks every AI-authored change.";
   }
   if (criterion === "mostPopular") return "The path with the highest combined likes.";
   if (criterion === "custom") return "Your one-choice-per-line edit.";
   return "The path with the greatest number of connected lines.";
 }
 
-function parseRecommendation(value?: string) {
+type ParsedVersionAiResult = {
+  selectedVersionId?: string;
+  recommendedRationale?: string;
+  harmonizedRationale?: string;
+  harmonizedLines: Array<{
+    lineId: string;
+    text: string;
+    changeNote: string;
+    changed: boolean;
+  }>;
+};
+
+function parseVersionAiResult(value?: string): ParsedVersionAiResult | undefined {
   if (!value) return undefined;
   try {
     const parsed = JSON.parse(value) as {
       selectedVersionId?: unknown;
+      recommendedRationale?: unknown;
       rationale?: unknown;
+      harmonizedRationale?: unknown;
+      harmonizedLines?: unknown;
     };
     return {
       selectedVersionId:
         typeof parsed.selectedVersionId === "string"
           ? parsed.selectedVersionId
           : undefined,
-      rationale: typeof parsed.rationale === "string" ? parsed.rationale : undefined
+      recommendedRationale:
+        typeof parsed.recommendedRationale === "string"
+          ? parsed.recommendedRationale
+          : typeof parsed.rationale === "string"
+            ? parsed.rationale
+            : undefined,
+      harmonizedRationale:
+        typeof parsed.harmonizedRationale === "string"
+          ? parsed.harmonizedRationale
+          : undefined,
+      harmonizedLines: normalizeHarmonizedLines(parsed.harmonizedLines)
     };
   } catch {
     return undefined;
+  }
+}
+
+function normalizeHarmonizedLines(value: unknown): ParsedVersionAiResult["harmonizedLines"] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((line) => {
+    if (!line || typeof line !== "object") return [];
+    const item = line as Record<string, unknown>;
+    if (
+      typeof item.lineId !== "string" ||
+      typeof item.text !== "string" ||
+      typeof item.changed !== "boolean"
+    ) {
+      return [];
+    }
+    return [{
+      lineId: item.lineId,
+      text: item.text,
+      changeNote: typeof item.changeNote === "string" ? item.changeNote : "",
+      changed: item.changed
+    }];
+  });
+}
+
+type HarmonizedTextSegment = {
+  text: string;
+  ai: boolean;
+};
+
+function buildHarmonizedTextSegments(
+  original: string,
+  harmonized: string
+): HarmonizedTextSegment[] {
+  if (original === harmonized) return [{ text: harmonized, ai: false }];
+  const before = [...original];
+  const after = [...harmonized];
+  if (before.length > 500 || after.length > 500) {
+    return buildPrefixSuffixSegments(before, after);
+  }
+
+  const table = Array.from(
+    { length: before.length + 1 },
+    () => new Uint16Array(after.length + 1)
+  );
+  for (let left = before.length - 1; left >= 0; left -= 1) {
+    for (let right = after.length - 1; right >= 0; right -= 1) {
+      table[left]![right] =
+        before[left] === after[right]
+          ? table[left + 1]![right + 1]! + 1
+          : Math.max(table[left + 1]![right]!, table[left]![right + 1]!);
+    }
+  }
+
+  const segments: HarmonizedTextSegment[] = [];
+  let left = 0;
+  let right = 0;
+  while (left < before.length && right < after.length) {
+    if (before[left] === after[right]) {
+      appendTextSegment(segments, before[left]!, false);
+      left += 1;
+      right += 1;
+    } else if (table[left]![right + 1]! >= table[left + 1]![right]!) {
+      appendTextSegment(segments, after[right]!, true);
+      right += 1;
+    } else {
+      left += 1;
+    }
+  }
+  while (right < after.length) {
+    appendTextSegment(segments, after[right]!, true);
+    right += 1;
+  }
+  return segments.length ? segments : [{ text: harmonized, ai: true }];
+}
+
+function buildPrefixSuffixSegments(
+  before: string[],
+  after: string[]
+): HarmonizedTextSegment[] {
+  let prefix = 0;
+  while (
+    prefix < before.length &&
+    prefix < after.length &&
+    before[prefix] === after[prefix]
+  ) {
+    prefix += 1;
+  }
+  let suffix = 0;
+  while (
+    suffix < before.length - prefix &&
+    suffix < after.length - prefix &&
+    before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
+  ) {
+    suffix += 1;
+  }
+  const segments: HarmonizedTextSegment[] = [];
+  if (prefix) segments.push({ text: after.slice(0, prefix).join(""), ai: false });
+  const changed = after.slice(prefix, after.length - suffix).join("");
+  if (changed) segments.push({ text: changed, ai: true });
+  if (suffix) {
+    segments.push({
+      text: after.slice(after.length - suffix).join(""),
+      ai: false
+    });
+  }
+  return segments.length ? segments : [{ text: after.join(""), ai: true }];
+}
+
+function appendTextSegment(
+  segments: HarmonizedTextSegment[],
+  text: string,
+  ai: boolean
+) {
+  const previous = segments[segments.length - 1];
+  if (previous?.ai === ai) {
+    previous.text += text;
+  } else {
+    segments.push({ text, ai });
   }
 }
 
@@ -699,6 +915,14 @@ const styles = StyleSheet.create({
     fontFamily: "Georgia",
     fontWeight: "700"
   },
+  versionNumber: {
+    marginBottom: 2,
+    color: "#73AEDD",
+    fontSize: 9,
+    lineHeight: 12,
+    fontWeight: "800",
+    letterSpacing: 1.4
+  },
   versionDescription: {
     maxWidth: 270,
     marginTop: 4,
@@ -749,12 +973,38 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     backgroundColor: "rgba(255,255,255,.42)"
   },
+  harmonizedLegend: {
+    position: "relative",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    marginBottom: 5
+  },
+  harmonizedLegendSwatch: {
+    width: 16,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "rgba(69, 143, 204, .28)"
+  },
+  harmonizedLegendText: {
+    fontSize: 9,
+    lineHeight: 12,
+    fontWeight: "600"
+  },
   artworkLineRow: {
     position: "relative",
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 10,
     paddingVertical: 10
+  },
+  harmonizedLineRow: {
+    marginHorizontal: -8,
+    paddingHorizontal: 8,
+    borderLeftWidth: 2,
+    borderLeftColor: "#4F94CB",
+    backgroundColor: "rgba(84, 153, 209, .08)",
+    borderRadius: 10
   },
   artworkLineCopy: { flex: 1, minWidth: 0 },
   artworkLineHeader: {
@@ -765,6 +1015,17 @@ const styles = StyleSheet.create({
   artworkLineAuthor: { fontSize: 11, lineHeight: 14, fontWeight: "700", opacity: 0.72 },
   artworkLineLikes: { fontSize: 10, lineHeight: 14, fontWeight: "600" },
   artworkLine: { marginTop: 4, fontSize: 17, lineHeight: 25, fontFamily: "Georgia" },
+  harmonizedText: {
+    color: "#174F79",
+    backgroundColor: "rgba(166, 220, 255, .82)"
+  },
+  harmonizedChangeNote: {
+    marginTop: 5,
+    color: "#367EAF",
+    fontSize: 9,
+    lineHeight: 13,
+    fontWeight: "600"
+  },
   artworkFooter: {
     position: "relative",
     marginTop: 22,

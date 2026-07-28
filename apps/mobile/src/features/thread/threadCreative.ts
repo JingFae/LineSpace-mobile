@@ -25,6 +25,9 @@ export type CreativeThreadViewModel = {
 export type PoemVersionLineViewModel = {
   id: string;
   text: string;
+  /** Present only when AI Harmonized changed this contribution. */
+  originalText?: string;
+  aiChangeNote?: string;
   author: UserProfile;
   isStartingContent: boolean;
   lineNumber: number;
@@ -33,7 +36,12 @@ export type PoemVersionLineViewModel = {
   parentContinuationId?: string;
 };
 
-export type PoemVersionCriterion = "recommended" | "mostPopular" | "longest" | "custom";
+export type PoemVersionCriterion =
+  | "recommended"
+  | "harmonized"
+  | "mostPopular"
+  | "longest"
+  | "custom";
 
 export type PoemVersionViewModel = {
   id: string;

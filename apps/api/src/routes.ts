@@ -80,7 +80,9 @@ export async function handleApiRequest(
       communitySparkConfigured: isCommunitySparkConfigured(),
       communitySparkModel: communitySparkModel(),
       communitySparkProvider: communitySparkProvider(),
-      communitySparkKeySource: communitySparkKeySource()
+      communitySparkKeySource: communitySparkKeySource(),
+      threadVersionAiConfigured: isCommunitySparkConfigured(),
+      threadVersionAiModel: communitySparkModel()
     });
   }
 
@@ -1222,12 +1224,26 @@ export async function handleApiRequest(
   if (method === "POST" && pathname === "/v1/ai/assist") {
     const actor = await authenticateRequest(context);
     if (!actor.ok) return actor.response;
-    const request = body as AiAssistRequest;
+    const request = body as Partial<AiAssistRequest> | undefined;
+    if (
+      request?.intent !== "moderation-preview" ||
+      typeof request.text !== "string" ||
+      request.text.length === 0 ||
+      request.text.length > 160_000
+    ) {
+      return json(400, {
+        code: "INVALID_THREAD_VERSION_AI_REQUEST",
+        message: "Thread Version AI requires a valid, bounded branch structure."
+      });
+    }
     try {
-      return json(200, await requestThreadVersionRecommendation(request));
+      return json(
+        200,
+        await requestThreadVersionRecommendation(request as AiAssistRequest)
+      );
     } catch (error) {
       const code = error instanceof Error ? error.message : "LLM_NOT_CONFIGURED";
-      return json(501, {
+      return json(503, {
         code: code.startsWith("LLM_") ? code : "LLM_REQUEST_FAILED",
         message:
           "AI recommendation is unavailable. The version page will use its deterministic fallback.",

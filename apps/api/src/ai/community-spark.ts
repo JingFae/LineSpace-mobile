@@ -265,7 +265,7 @@ export function communitySparkKeySource() {
   return null;
 }
 
-function communitySparkApiKey() {
+export function communitySparkApiKey() {
   const source = communitySparkKeySource();
   if (source === "DEEPSEEK_API_KEY") return process.env.DEEPSEEK_API_KEY!.trim();
   // Temporary migration fallback for deployments that stored a DeepSeek key
@@ -280,14 +280,14 @@ function communitySparkBaseUrl() {
   ).replace(/\/+$/, "");
 }
 
-function communitySparkEndpoint() {
+export function communitySparkEndpoint() {
   const baseUrl = communitySparkBaseUrl();
   return baseUrl.endsWith("/chat/completions")
     ? baseUrl
     : `${baseUrl}/chat/completions`;
 }
 
-async function readProviderErrorCode(response: Response) {
+export async function readProviderErrorCode(response: Response) {
   try {
     const payload = (await response.json()) as {
       error?: { code?: unknown; type?: unknown };
@@ -299,7 +299,7 @@ async function readProviderErrorCode(response: Response) {
   }
 }
 
-function mapProviderFailure(status: number, providerCode?: string) {
+export function mapProviderFailure(status: number, providerCode?: string) {
   if (
     providerCode === "insufficient_quota" ||
     providerCode === "billing_not_active" ||
@@ -374,13 +374,13 @@ function cleanText(value: unknown, maxLength: number) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 }
 
-function stripJsonFence(value: string) {
+export function stripJsonFence(value: string) {
   const trimmed = value.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
   return fenced?.[1] ?? trimmed;
 }
 
-type DeepSeekChatCompletionPayload = {
+export type DeepSeekChatCompletionPayload = {
   id?: string;
   choices?: Array<{
     finish_reason?: string;
