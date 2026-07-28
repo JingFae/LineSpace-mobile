@@ -1,0 +1,2 @@
+[      57ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:4173/thread/version/171703f5-6417-4ed5-8a9d-68378d8ad523:0
+[     132ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:4173/favicon.ico:0

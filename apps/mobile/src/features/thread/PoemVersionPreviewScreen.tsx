@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { router, type Href } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { Ref } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -17,6 +18,7 @@ import { AppScreen, Avatar, EmptyState, MoreIcon, ShareIcon } from "@linespace/u
 import { colors, radius, spacing } from "@linespace/tokens";
 import type { ThreadContinuation, ThreadDetail } from "@linespace/api-client";
 import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
+import { exportPoemCard } from "@/utils/poemCardExport";
 import {
   adaptThreadToCreativeViewModel,
   buildCustomPoemVersion,
@@ -50,6 +52,7 @@ export function PoemVersionPreviewScreen({
   const [exportOpen, setExportOpen] = useState(false);
   const [notice, setNotice] = useState<ExportNotice | null>(null);
   const pagerRef = useRef<ScrollView | null>(null);
+  const exportCardRef = useRef<View | null>(null);
   const positionedInitialPageRef = useRef(false);
   const threadQuery = useQuery({
     queryKey: ["thread-detail", threadId, currentUserId],
@@ -201,27 +204,25 @@ export function PoemVersionPreviewScreen({
   const handleExport = async (kind: "JPG" | "PDF") => {
     if (!currentVersion) return;
     setExportOpen(false);
-    if (Platform.OS === "web") {
-      const exported =
-        kind === "JPG"
-          ? await exportVersionJpeg(currentVersion, media)
-          : exportVersionPdf(currentVersion, media);
+    try {
+      await exportPoemCard(exportCardRef.current, {
+        format: kind,
+        title: currentVersion.title,
+        backgroundColor: media.backgroundColor
+      });
       setNotice({
         id: `${currentVersion.id}:${kind}`,
-        message: exported
-          ? `${kind} export opened successfully.`
-          : `${kind} export was blocked by the browser.`
+        message: `${kind} downloaded from LineSpace.`
       });
-      return;
+    } catch (error) {
+      setNotice({
+        id: `${currentVersion.id}:${kind}:error`,
+        message:
+          error instanceof Error
+            ? error.message
+            : "The poem card could not be exported. Please try again."
+      });
     }
-    await Share.share({
-      title: currentVersion.title,
-      message: `${currentVersion.title}\n\n${getFullPoemText(currentVersion)}`
-    });
-    setNotice({
-      id: `${currentVersion.id}:${kind}`,
-      message: `${kind} content is ready in the system share sheet.`
-    });
   };
 
   const handlePost = () => {
@@ -440,6 +441,20 @@ export function PoemVersionPreviewScreen({
           </>
         )}
       </View>
+      {currentVersion ? (
+        <View
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          pointerEvents="none"
+          style={styles.exportCaptureStage}
+        >
+          <PoemArtwork
+            exportRef={exportCardRef}
+            media={media}
+            version={currentVersion}
+          />
+        </View>
+      ) : null}
       {notice ? (
         <Pressable
           accessibilityRole="button"
@@ -455,16 +470,22 @@ export function PoemVersionPreviewScreen({
 
 function PoemArtwork({
   version,
-  media
+  media,
+  exportRef
 }: {
   version: PoemVersionViewModel;
   media: ThreadMediaPreset;
+  exportRef?: Ref<View>;
 }) {
   const contributors = [...new Map(
     version.lines.map((line) => [line.author.id, line.author])
   ).values()];
   return (
-    <View style={[styles.artwork, { backgroundColor: media.backgroundColor }]}>
+    <View
+      collapsable={false}
+      ref={exportRef}
+      style={[styles.artwork, { backgroundColor: media.backgroundColor }]}
+    >
       {media.uri ? (
         <Image source={{ uri: media.uri }} resizeMode="cover" style={styles.artworkImage} />
       ) : null}
@@ -788,104 +809,6 @@ function appendTextSegment(
   }
 }
 
-async function exportVersionJpeg(
-  version: PoemVersionViewModel,
-  media: ThreadMediaPreset
-) {
-  if (typeof document === "undefined") return false;
-  const canvas = document.createElement("canvas");
-  const width = 1200;
-  const lineHeight = 70;
-  const height = Math.max(1200, 320 + version.lines.length * lineHeight);
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d");
-  if (!context) return false;
-  context.fillStyle = media.backgroundColor;
-  context.fillRect(0, 0, width, height);
-  context.fillStyle = media.textColor;
-  context.font = "bold 54px Georgia";
-  context.fillText(version.title, 90, 120);
-  context.font = "24px Arial";
-  let y = 220;
-  for (const line of version.lines) {
-    context.font = "bold 20px Arial";
-    context.fillText(`${line.lineNumber}. @${line.author.handle}  ♥ ${line.likes}`, 90, y);
-    context.font = "28px Georgia";
-    drawWrappedText(context, line.text, 90, y + 34, width - 180, 36);
-    y += lineHeight;
-  }
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, "image/jpeg", 0.92)
-  );
-  if (!blob) return false;
-  downloadBlob(blob, `${safeFilename(version.title)}.jpg`);
-  return true;
-}
-
-function exportVersionPdf(version: PoemVersionViewModel, media: ThreadMediaPreset) {
-  if (typeof window === "undefined") return false;
-  const popup = window.open("", "_blank", "noopener,noreferrer");
-  if (!popup) return false;
-  const lines = version.lines
-    .map(
-      (line) =>
-        `<section><small>${line.lineNumber}. @${escapeHtml(line.author.handle)} · ♥ ${line.likes}</small><p>${escapeHtml(line.text)}</p></section>`
-    )
-    .join("");
-  popup.document.write(
-    `<!doctype html><html><head><title>${escapeHtml(version.title)}</title><style>body{margin:0;padding:56px;background:${media.backgroundColor};color:${media.textColor};font-family:Georgia,serif}main{max-width:720px;margin:auto}h1{font-size:42px}section{margin:32px 0}small{font:600 13px Arial,sans-serif;opacity:.72}p{font-size:22px;line-height:1.65;white-space:pre-wrap}@media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}</style></head><body><main><h1>${escapeHtml(version.title)}</h1>${lines}</main><script>window.onload=()=>window.print()</script></body></html>`
-  );
-  popup.document.close();
-  return true;
-}
-
-function drawWrappedText(
-  context: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  maxWidth: number,
-  lineHeight: number
-) {
-  const words = text.split(/\s+/);
-  let line = "";
-  let offset = 0;
-  for (const word of words) {
-    const candidate = line ? `${line} ${word}` : word;
-    if (context.measureText(candidate).width > maxWidth && line) {
-      context.fillText(line, x, y + offset);
-      line = word;
-      offset += lineHeight;
-    } else {
-      line = candidate;
-    }
-  }
-  if (line) context.fillText(line, x, y + offset);
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
-function safeFilename(value: string) {
-  return value.replace(/[<>:"/\\|?*\u0000-\u001F]/g, "-").slice(0, 80) || "linespace-version";
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
 const styles = StyleSheet.create({
   previewScreen: { backgroundColor: "#11151D" },
   previewRoot: { flex: 1, backgroundColor: "#11151D" },
@@ -908,6 +831,12 @@ const styles = StyleSheet.create({
   previewTopTitle: { color: colors.white, fontSize: 18, fontWeight: "700" },
   previewTopSubtitle: { marginTop: 2, color: "rgba(255,255,255,.62)", fontSize: 11 },
   previewViewport: { flex: 1, position: "relative" },
+  exportCaptureStage: {
+    position: "absolute",
+    left: -10000,
+    top: 0,
+    width: 420
+  },
   previewLoading: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10 },
   previewLoadingText: { color: "rgba(255,255,255,.7)", fontSize: 13 },
   versionPager: { flex: 1 },

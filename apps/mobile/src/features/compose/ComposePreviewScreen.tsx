@@ -1,13 +1,12 @@
 import { router, type Href } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ReactNode, Ref } from "react";
 import {
   ActivityIndicator,
   Image,
   Modal,
   Pressable,
-  Share,
   ScrollView,
   StyleSheet,
   Text,
@@ -35,6 +34,10 @@ import { lineSpaceApi } from "@/services/lineSpaceApi";
 import { useAuth } from "@/auth/AuthSessionProvider";
 import { tabRoutes } from "@/navigation/tabs";
 import { getMediaAspectRatio } from "@/features/poem/poemPresentation";
+import {
+  exportPoemCard,
+  type PoemCardExportFormat
+} from "@/utils/poemCardExport";
 import { VisibilityAudienceSheet } from "./VisibilityAudienceSheet";
 
 type SearchParamValue = string | string[] | undefined;
@@ -57,6 +60,7 @@ export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
   const [audienceOpen, setAudienceOpen] = useState(false);
   const [step, setStep] = useState<2 | 3>(2);
   const [settings, setSettings] = useState<PoemDraftSettings | null>(null);
+  const exportCardRef = useRef<View | null>(null);
 
   const draftQuery = useQuery({
     queryKey: ["compose-draft", draftId],
@@ -171,10 +175,31 @@ export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
       <FinishDraftSheet
         isBusy={publishMutation.isPending || saveMutation.isPending}
         onClose={() => setFinishOpen(false)}
+        onExport={async (format) => {
+          const draft = draftQuery.data;
+          if (!draft) throw new Error("The poem card is still preparing.");
+          const backgroundColor =
+            catalogQuery.data?.backgrounds.find(
+              (background) => background.id === layout?.backgroundId
+            )?.swatch;
+          await exportPoemCard(exportCardRef.current, {
+            format,
+            title: draft.title,
+            backgroundColor
+          });
+        }}
         onPublish={() => publishMutation.mutate()}
         onSave={() => saveMutation.mutate()}
         visible={finishOpen}
       />
+      {draftQuery.data && catalogQuery.data && layout ? (
+        <ComposeExportCanvas
+          catalog={catalogQuery.data}
+          draft={draftQuery.data}
+          exportRef={exportCardRef}
+          layout={layout}
+        />
+      ) : null}
       {settings ? <VisibilityAudienceSheet onChange={setSettings} onClose={() => setAudienceOpen(false)} settings={settings} visible={audienceOpen} /> : null}
     </AppScreen>
   );
@@ -189,13 +214,101 @@ function SettingToggle({ label, value, onPress }: { label: string; value: boolea
   return <Pressable accessibilityRole="switch" accessibilityState={{ checked: value }} onPress={onPress} style={styles.settingToggle}><Text style={styles.settingLabel}>{label}</Text><View style={[styles.switchTrack, value && styles.switchTrackOn]}><View style={[styles.switchThumb, value && styles.switchThumbOn]} /></View></Pressable>;
 }
 
-function FinishDraftSheet({ visible, isBusy, onClose, onPublish, onSave }: { visible: boolean; isBusy: boolean; onClose: () => void; onPublish: () => void; onSave: () => void }) {
+function FinishDraftSheet({
+  visible,
+  isBusy,
+  onClose,
+  onPublish,
+  onSave,
+  onExport
+}: {
+  visible: boolean;
+  isBusy: boolean;
+  onClose: () => void;
+  onPublish: () => void;
+  onSave: () => void;
+  onExport: (format: PoemCardExportFormat) => Promise<void>;
+}) {
   const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState<PoemCardExportFormat | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const exportDraft = async (format: "PDF" | "JPG") => {
     setExportOpen(false);
-    await Share.share({ message: `LineSpace ${format} export\n\nYour finished composition is ready to export from the rendered layout.` });
+    setExportError(null);
+    setExporting(format);
+    try {
+      await onExport(format);
+    } catch (error) {
+      setExportError(
+        error instanceof Error
+          ? error.message
+          : "The poem card could not be exported. Please try again."
+      );
+    } finally {
+      setExporting(null);
+    }
   };
-  return <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}><View style={styles.finishRoot}><Pressable accessibilityLabel="Close publish choices" onPress={onClose} style={styles.finishBackdrop} /><View style={styles.finishSheet}><View style={styles.finishHandle} /><Text style={styles.finishEyebrow}>04 · FINISH</Text><Text style={styles.finishTitle}>How would you like to carry it forward?</Text><Text style={styles.finishHint}>Publish to LineSpace, keep a private draft, or export this layout for elsewhere.</Text><Pressable accessibilityRole="button" disabled={isBusy} onPress={onPublish} style={styles.publishChoice}><Text style={styles.publishChoiceTitle}>Publish</Text><Text style={styles.publishChoiceHint}>Make this {"post"} visible now</Text></Pressable><Pressable accessibilityRole="button" disabled={isBusy} onPress={onSave} style={styles.saveChoice}><Text style={styles.saveChoiceTitle}>Save to draft</Text><Text style={styles.saveChoiceHint}>Keep editing privately</Text></Pressable><Pressable accessibilityRole="button" disabled={isBusy} onPress={() => setExportOpen((value) => !value)} style={styles.exportChoice}><Text style={styles.exportChoiceTitle}>Export</Text><Text style={styles.exportChoiceHint}>Use the designed layout as PDF or JPG</Text></Pressable>{exportOpen ? <View style={styles.exportRow}><Pressable onPress={() => void exportDraft("PDF")} style={styles.exportButton}><Text style={styles.exportButtonText}>PDF</Text></Pressable><Pressable onPress={() => void exportDraft("JPG")} style={styles.exportButton}><Text style={styles.exportButtonText}>JPG</Text></Pressable></View> : null}<Pressable accessibilityRole="button" disabled={isBusy} onPress={onClose} style={styles.cancelChoice}><Text style={styles.cancelText}>Not yet</Text></Pressable></View></View></Modal>;
+  const busy = isBusy || exporting !== null;
+  return <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}><View style={styles.finishRoot}><Pressable accessibilityLabel="Close publish choices" onPress={onClose} style={styles.finishBackdrop} /><View style={styles.finishSheet}><View style={styles.finishHandle} /><Text style={styles.finishEyebrow}>04 · FINISH</Text><Text style={styles.finishTitle}>How would you like to carry it forward?</Text><Text style={styles.finishHint}>Publish to LineSpace, keep a private draft, or export this layout for elsewhere.</Text><Pressable accessibilityRole="button" disabled={busy} onPress={onPublish} style={styles.publishChoice}><Text style={styles.publishChoiceTitle}>Publish</Text><Text style={styles.publishChoiceHint}>Make this {"post"} visible now</Text></Pressable><Pressable accessibilityRole="button" disabled={busy} onPress={onSave} style={styles.saveChoice}><Text style={styles.saveChoiceTitle}>Save to draft</Text><Text style={styles.saveChoiceHint}>Keep editing privately</Text></Pressable><Pressable accessibilityRole="button" disabled={busy} onPress={() => setExportOpen((value) => !value)} style={styles.exportChoice}><Text style={styles.exportChoiceTitle}>{exporting ? `Preparing ${exporting}…` : "Export"}</Text><Text style={styles.exportChoiceHint}>Download this exact poem card as PDF or JPG</Text></Pressable>{exportOpen ? <View style={styles.exportRow}><Pressable disabled={busy} onPress={() => void exportDraft("PDF")} style={styles.exportButton}><Text style={styles.exportButtonText}>PDF</Text></Pressable><Pressable disabled={busy} onPress={() => void exportDraft("JPG")} style={styles.exportButton}><Text style={styles.exportButtonText}>JPG</Text></Pressable></View> : null}{exportError ? <Text style={styles.exportError}>{exportError}</Text> : null}<Pressable accessibilityRole="button" disabled={busy} onPress={onClose} style={styles.cancelChoice}><Text style={styles.cancelText}>Not yet</Text></Pressable></View></View></Modal>;
+}
+
+function ComposeExportCanvas({
+  draft,
+  catalog,
+  layout,
+  exportRef
+}: {
+  draft: PoemDraft;
+  catalog: PoemDesignCatalog;
+  layout: PoemLayoutConfig;
+  exportRef: Ref<View>;
+}) {
+  const background = catalog.backgrounds.find((item) => item.id === layout.backgroundId)!;
+  const typography = catalog.typography.find((item) => item.id === layout.typographyId)!;
+  const stickerSymbols = layout.stickerIds
+    .map((id) => catalog.stickers.find((item) => item.id === id)?.symbol)
+    .filter((symbol): symbol is string => Boolean(symbol));
+  const lines = draft.body.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const mediaSource: ImageSourcePropType | undefined =
+    draft.media?.kind === "image" ? { uri: draft.media.uri } : undefined;
+
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      pointerEvents="none"
+      style={styles.exportCaptureStage}
+    >
+      <View collapsable={false} ref={exportRef} style={styles.exportCaptureCard}>
+        {draft.versionLines?.length ? (
+          <VersionLayoutCard
+            backgroundColor={background.swatch}
+            draft={draft}
+            mediaSource={mediaSource}
+            typographyColor={typography.swatch}
+          />
+        ) : (
+          <PoemLayoutCard
+            backgroundRole={background.role}
+            mediaAspectRatio={getMediaAspectRatio(draft.media)}
+            mediaSource={mediaSource}
+            poem={{
+              title: draft.title || "untitled line",
+              lines: lines.length > 0 ? lines : ["A line is waiting to be written."],
+              tags: draft.tags,
+              byline:
+                draft.byline ||
+                draft.collaborators[0]?.user.displayName ||
+                "writer",
+              startedAtLabel: formatPoemDate(draft.createdAt)
+            }}
+            stickerSymbols={stickerSymbols}
+            typographyRole={typography.role}
+          />
+        )}
+      </View>
+    </View>
+  );
 }
 
 function LayoutWorkspace({
@@ -417,6 +530,13 @@ const styles = StyleSheet.create({
   },
   safeArea: { backgroundColor: colors.profileCanvas },
   screen: { flex: 1, paddingBottom: 0, backgroundColor: colors.profileCanvas },
+  exportCaptureStage: {
+    position: "absolute",
+    left: -10000,
+    top: 0,
+    width: 420
+  },
+  exportCaptureCard: { width: 420 },
   header: { height: 101, paddingBottom: 11, backgroundColor: colors.white, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" },
   closeButton: { width: 48, height: 40, marginLeft: 4, alignItems: "center", justifyContent: "center" },
   closeGlyph: { color: colors.black, fontSize: 30, lineHeight: 32, fontWeight: "300" },
@@ -446,5 +566,5 @@ const styles = StyleSheet.create({
   errorText: { color: colors.accent, fontSize: 13, lineHeight: 18 },
   floatingError: { position: "absolute", left: 20, right: 20, bottom: 215, padding: 10, borderRadius: radius.md, overflow: "hidden", backgroundColor: "rgba(255,255,255,0.94)", color: colors.accent, fontSize: 11, lineHeight: 15, textAlign: "center" },
   settingsStage: { padding: 20, paddingBottom: 36 }, stageEyebrow: { color: colors.profileMuted, fontSize: 10, letterSpacing: 1.4 }, stageTitle: { marginTop: 9, color: colors.ink, fontSize: 27, lineHeight: 34, fontWeight: "600" }, stageHint: { marginTop: 9, color: colors.profileMuted, fontSize: 13, lineHeight: 19 }, audienceSetting: { minHeight: 76, marginTop: 24, padding: 16, borderRadius: 16, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, settingLabel: { color: colors.ink, fontSize: 16, lineHeight: 21 }, settingValue: { marginTop: 4, color: colors.profileMuted, fontSize: 12, lineHeight: 16 }, settingChevron: { color: colors.ink, fontSize: 28 }, settingToggle: { minHeight: 62, paddingHorizontal: 16, marginTop: 10, borderRadius: 16, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, switchTrack: { width: 50, height: 29, paddingHorizontal: 1, borderRadius: radius.pill, backgroundColor: "#D9D9D9", justifyContent: "center" }, switchTrackOn: { backgroundColor: "#50B973" }, switchThumb: { width: 27, height: 27, borderRadius: 14, backgroundColor: colors.white, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.faint }, switchThumbOn: { alignSelf: "flex-end" }, settingsNext: { minHeight: 56, marginTop: 24, paddingHorizontal: 18, borderRadius: 16, backgroundColor: colors.ink, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, settingsNextText: { color: colors.white, fontSize: 16, fontWeight: "600" }, settingsNextArrow: { color: colors.white, fontSize: 22 },
-  finishRoot: { flex: 1, justifyContent: "flex-end" }, finishBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.3)" }, finishSheet: { paddingHorizontal: 20, paddingBottom: 28, borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: colors.surface }, finishHandle: { alignSelf: "center", width: 42, height: 4, marginTop: 9, borderRadius: radius.pill, backgroundColor: colors.faint }, finishEyebrow: { marginTop: 20, color: colors.profileMuted, fontSize: 10, letterSpacing: 1.2 }, finishTitle: { marginTop: 8, color: colors.ink, fontSize: 24, lineHeight: 30 }, finishHint: { marginTop: 8, color: colors.profileMuted, fontSize: 13, lineHeight: 18 }, publishChoice: { marginTop: 22, padding: 16, borderRadius: 14, backgroundColor: colors.black }, publishChoiceTitle: { color: colors.white, fontSize: 18 }, publishChoiceHint: { marginTop: 3, color: "rgba(255,255,255,0.65)", fontSize: 12 }, saveChoice: { marginTop: 10, padding: 16, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white }, saveChoiceTitle: { color: colors.ink, fontSize: 18 }, saveChoiceHint: { marginTop: 3, color: colors.profileMuted, fontSize: 12 }, exportChoice: { marginTop: 10, padding: 16, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surfaceWarm }, exportChoiceTitle: { color: colors.ink, fontSize: 18 }, exportChoiceHint: { marginTop: 3, color: colors.profileMuted, fontSize: 12 }, exportRow: { marginTop: 8, flexDirection: "row", gap: 8 }, exportButton: { flex: 1, padding: 12, borderRadius: 12, backgroundColor: colors.white, alignItems: "center", borderWidth: 1, borderColor: colors.line }, exportButtonText: { color: colors.ink, fontSize: 13, fontWeight: "600" }, cancelChoice: { marginTop: 10, alignItems: "center", padding: 13 }, cancelText: { color: colors.profileMuted, fontSize: 14 }
+  finishRoot: { flex: 1, justifyContent: "flex-end" }, finishBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.3)" }, finishSheet: { paddingHorizontal: 20, paddingBottom: 28, borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: colors.surface }, finishHandle: { alignSelf: "center", width: 42, height: 4, marginTop: 9, borderRadius: radius.pill, backgroundColor: colors.faint }, finishEyebrow: { marginTop: 20, color: colors.profileMuted, fontSize: 10, letterSpacing: 1.2 }, finishTitle: { marginTop: 8, color: colors.ink, fontSize: 24, lineHeight: 30 }, finishHint: { marginTop: 8, color: colors.profileMuted, fontSize: 13, lineHeight: 18 }, publishChoice: { marginTop: 22, padding: 16, borderRadius: 14, backgroundColor: colors.black }, publishChoiceTitle: { color: colors.white, fontSize: 18 }, publishChoiceHint: { marginTop: 3, color: "rgba(255,255,255,0.65)", fontSize: 12 }, saveChoice: { marginTop: 10, padding: 16, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white }, saveChoiceTitle: { color: colors.ink, fontSize: 18 }, saveChoiceHint: { marginTop: 3, color: colors.profileMuted, fontSize: 12 }, exportChoice: { marginTop: 10, padding: 16, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surfaceWarm }, exportChoiceTitle: { color: colors.ink, fontSize: 18 }, exportChoiceHint: { marginTop: 3, color: colors.profileMuted, fontSize: 12 }, exportRow: { marginTop: 8, flexDirection: "row", gap: 8 }, exportButton: { flex: 1, padding: 12, borderRadius: 12, backgroundColor: colors.white, alignItems: "center", borderWidth: 1, borderColor: colors.line }, exportButtonText: { color: colors.ink, fontSize: 13, fontWeight: "600" }, exportError: { marginTop: 9, color: colors.accent, fontSize: 11, lineHeight: 15, textAlign: "center" }, cancelChoice: { marginTop: 10, alignItems: "center", padding: 13 }, cancelText: { color: colors.profileMuted, fontSize: 14 }
 });
