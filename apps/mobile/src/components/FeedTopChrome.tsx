@@ -11,12 +11,14 @@ export function FeedTopChrome({
   activeValue,
   onSearch,
   onTabChange,
+  sectionLabel,
   searchLabel,
   tabs
 }: {
   activeValue: string;
   onSearch: () => void;
   onTabChange: (value: string) => void;
+  sectionLabel: "Post" | "Thread";
   searchLabel: string;
   tabs: readonly FeedTopChromeTab[];
 }) {
@@ -24,7 +26,11 @@ export function FeedTopChrome({
     <View style={styles.root}>
       <View style={styles.header}>
         <View style={styles.headerButton} />
-        <LineSpaceLogoIcon color={colors.black} height={31} width={54} />
+        <View style={styles.brand}>
+          <LineSpaceLogoIcon color={colors.black} height={31} width={54} />
+          <View style={styles.brandDivider} />
+          <Text style={styles.sectionLabel}>{sectionLabel}</Text>
+        </View>
         <Pressable
           accessibilityLabel={searchLabel}
           accessibilityRole="button"
@@ -74,6 +80,23 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: "center",
     justifyContent: "center"
+  },
+  brand: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10
+  },
+  brandDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 22,
+    backgroundColor: colors.line
+  },
+  sectionLabel: {
+    color: colors.ink,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "600",
+    letterSpacing: 0.2
   },
   pressed: { opacity: 0.58 },
   tabs: {

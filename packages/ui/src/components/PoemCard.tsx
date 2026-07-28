@@ -60,6 +60,7 @@ type PoemCardProps = {
   onCommentPress?: (id: string) => void;
   onContributionPress?: (id: string) => void;
   onLikePress?: (id: string, isLiked: boolean) => void;
+  onOptionsPress?: (id: string) => void;
   onSavePress?: (id: string, isSaved: boolean) => void;
   onTagPress?: (tag: string) => void;
 };
@@ -72,6 +73,7 @@ export function PoemCard({
   onCommentPress,
   onContributionPress,
   onLikePress,
+  onOptionsPress,
   onSavePress,
   onTagPress
 }: PoemCardProps) {
@@ -114,6 +116,24 @@ export function PoemCard({
               : "original post"}
           </Text>
         </View>
+
+        {onOptionsPress ? (
+          <Pressable
+            accessibilityLabel="Post options"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={(event) => {
+              event.stopPropagation();
+              onOptionsPress(poem.id);
+            }}
+            style={({ pressed }) => [
+              styles.optionsButton,
+              pressed && styles.optionsButtonPressed
+            ]}
+          >
+            <Text style={styles.optionsGlyph}>•••</Text>
+          </Pressable>
+        ) : null}
 
         {poem.versionLines?.length ? (
           <VersionPostLayoutCard
@@ -212,7 +232,34 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface
   },
   contentPressable: {
-    borderRadius: radius.lg
+    borderRadius: radius.lg,
+    position: "relative"
+  },
+  optionsButton: {
+    position: "absolute",
+    top: 68,
+    right: 12,
+    zIndex: 8,
+    width: 38,
+    height: 30,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(21,21,21,0.13)",
+    backgroundColor: "rgba(255,255,255,0.9)"
+  },
+  optionsButtonPressed: {
+    opacity: 0.68,
+    transform: [{ scale: 0.96 }]
+  },
+  optionsGlyph: {
+    marginTop: -4,
+    color: colors.ink,
+    fontSize: 16,
+    lineHeight: 18,
+    letterSpacing: 1,
+    fontWeight: "700"
   },
   authorRow: {
     minHeight: 56,

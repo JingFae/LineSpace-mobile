@@ -1,7 +1,10 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { DraftRepository } from "../draft/draft.repository.js";
 import { InboxRepository } from "../inbox/inbox.repository.js";
+import { PostRepository } from "../post/post.repository.js";
+import { ThreadRepository } from "../thread/thread.repository.js";
 
 type LocalCredentials = {
   apiUrl: string;
@@ -89,6 +92,7 @@ async function run() {
   const admin = client(credentials.apiUrl, credentials.serviceRoleKey);
   const suffix = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
   const fixtures: FixtureUser[] = [];
+  let uploadedMediaPath: string | null = null;
 
   try {
     const userA = await createFixtureUser(admin, credentials, suffix, "a");
@@ -490,6 +494,17 @@ async function run() {
       commentCounters.data?.likes_count === 1 && commentCounters.data?.saves_count === 1,
       "Comment like/save counts did not update atomically."
     );
+    const userCPosts = new PostRepository(userC.client);
+    const mappedPost = await userCPosts.getPoem(postId);
+    const mappedComment = mappedPost?.comments?.find(
+      (comment) => comment.id === commentId
+    );
+    assert(
+      mappedComment?.viewer?.liked === true &&
+        mappedComment.viewer.saved === true &&
+        mappedComment.author.id === userB.userId,
+      "Batched Post comment mapping did not preserve authors or viewer engagement."
+    );
     const markedRead = await userB.client.rpc("mark_inbox_activity_read", {
       p_category: "likes"
     });
@@ -538,6 +553,41 @@ async function run() {
       tags: ["edited"]
     });
     assert(!editDraft.error, "Could not prepare the Post edit draft.");
+    const userAPosts = new PostRepository(userA.client);
+    const userAThreads = new ThreadRepository(userA.client);
+    const userADrafts = new DraftRepository(
+      userA.client,
+      userAPosts,
+      userAThreads
+    );
+    await userADrafts.savePoemDraft({
+      draftId: editDraftId,
+      userId: userA.userId
+    });
+    const mappedDrafts = await userADrafts.listUserDrafts(userA.userId);
+    assert(
+      mappedDrafts.items.some((draft) => draft.id === editDraftId),
+      "Batched Draft mapping did not preserve the saved Draft."
+    );
+
+    const uploadTarget = await userADrafts.createUploadUrl({
+      bucket: "linespace-media",
+      path: `${userA.userId}/posts/performance-${suffix}.png`,
+      contentType: "image/png"
+    });
+    uploadedMediaPath = uploadTarget.path;
+    const uploadBody = new FormData();
+    uploadBody.append("cacheControl", "31536000");
+    uploadBody.append("", new Blob(["LineSpace"], { type: "image/png" }));
+    const uploaded = await fetch(uploadTarget.signedUrl, {
+      method: "PUT",
+      headers: { "x-upsert": "false" },
+      body: uploadBody
+    });
+    assert(uploaded.ok && uploadTarget.publicUrl, "Signed media upload failed.");
+    const publicMedia = await fetch(uploadTarget.publicUrl);
+    assert(publicMedia.ok, "Published media URL was not publicly readable.");
+
     const replacedPost = await userA.client.rpc("publish_draft_over_post", {
       p_draft_id: editDraftId,
       p_post_id: postId
@@ -571,9 +621,12 @@ async function run() {
     assert(!ownerDelete.error && ownerDelete.data === true, "The Post author could not delete their Post.");
 
     process.stdout.write(
-      "Local database security check passed: profile/follow/inbox isolation, atomic group transactions, JWT-derived group senders, engagement counters, Inbox read state, engagement-preserving Post edits, owner-only Post deletion, content-event experience, Thread-version publication, click targets, and atomic share counters.\n"
+      "Local database security check passed: profile/follow/inbox isolation, batched Post/Draft mapping, signed media upload, atomic group transactions, JWT-derived group senders, engagement counters, Inbox read state, engagement-preserving Post edits, owner-only Post deletion, content-event experience, Thread-version publication, click targets, and atomic share counters.\n"
     );
   } finally {
+    if (uploadedMediaPath) {
+      await admin.storage.from("linespace-media").remove([uploadedMediaPath]);
+    }
     for (const fixture of fixtures.reverse()) {
       await admin.auth.admin.deleteUser(fixture.authId);
     }

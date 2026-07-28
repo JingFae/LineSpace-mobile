@@ -221,6 +221,7 @@ export function ThreadFeedScreen() {
           if (next === "following" && !requireAccount("view threads from writers you follow")) return;
           setSort(next);
         }}
+        sectionLabel="Thread"
         searchLabel="Search LineSpace"
         tabs={sortTabs}
       />

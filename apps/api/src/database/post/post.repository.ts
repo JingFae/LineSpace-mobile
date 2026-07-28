@@ -18,6 +18,7 @@ import type {
   SharePoemResult,
   UpdateCommentCollectionInput,
   UpdatePoemCollectionInput,
+  UserProfileContentItem,
   UserPoemCollections
 } from "@linespace/api-client";
 import { getCurrentLinespaceUserId } from "../core/auth-context.js";
@@ -84,6 +85,19 @@ type CommentContributionRow = {
   contributor_user_id: string;
   created_at: string;
 };
+
+type ProfilePostRow = Pick<
+  PostRow,
+  | "id"
+  | "title"
+  | "body"
+  | "tags"
+  | "artwork_url"
+  | "media"
+  | "layout"
+  | "started_at"
+  | "likes_count"
+>;
 
 const postSelect =
   "id,author_user_id,title,body,tags,mentions,artwork_url,media,layout,version_lines,visibility,audience_user_ids,status,declare_original,allow_comments,allow_sharing,allow_save,started_at,edited_at,comments_count,likes_count,shares_count,saves_count";
@@ -416,6 +430,48 @@ export class PostRepository {
       .limit(50);
     ensureDatabaseResult(result.error);
     return this.mapSummaries((result.data as PostRow[] | null) ?? [], actorId);
+  }
+
+  async listProfilePostContent(
+    userId: string
+  ): Promise<UserProfileContentItem[]> {
+    const result = await this.client
+      .from("posts")
+      .select(
+        "id,title,body,tags,artwork_url,media,layout,started_at,likes_count"
+      )
+      .eq("author_user_id", userId)
+      .eq("status", "published")
+      .order("started_at", { ascending: false })
+      .limit(50);
+    ensureDatabaseResult(result.error);
+    return ((result.data as ProfilePostRow[] | null) ?? []).map((row) => {
+      const media = toMedia(row.media);
+      const layout = toLayout(row.layout);
+      return {
+        id: `profile-${row.id}`,
+        kind: "post" as const,
+        poemId: row.id,
+        title: row.title,
+        excerpt:
+          row.body
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .find(Boolean) ?? "",
+        tags: row.tags ?? [],
+        finishedAt: row.started_at,
+        highlightCount: countValue(row.likes_count),
+        ...(row.artwork_url ? { artworkUrl: row.artwork_url } : {}),
+        ...(media ? { media } : {}),
+        ...(layout ? { layout } : {}),
+        artworkTone:
+          layout?.backgroundId === "midnight"
+            ? "night"
+            : layout?.backgroundId === "kraft-paper"
+              ? "paper"
+              : "water"
+      };
+    });
   }
 
   async listPoemsByIds(ids: string[]): Promise<PoemSummary[]> {

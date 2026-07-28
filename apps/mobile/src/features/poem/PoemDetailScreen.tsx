@@ -42,6 +42,7 @@ import {
   CommunitySparkCards,
   type SparkApplyChange
 } from "./CommunitySparkCards";
+import { PostManageSheet } from "./PostManageSheet";
 
 declare const require: (path: string) => ImageSourcePropType;
 
@@ -582,60 +583,6 @@ function HeroArtwork({ poem }: { poem: PoemSummary }) {
 
 function CommentComposer({ visible, draft, replyTarget, busy, onChange, onClose, onSubmit }: { visible: boolean; draft: string; replyTarget: PoemComment | null; busy: boolean; onChange: (value: string) => void; onClose: () => void; onSubmit: () => void }) {
   return <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}><KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.composerRoot}><Pressable accessibilityLabel="Close comment composer" onPress={onClose} style={styles.composerBackdrop} /><View style={styles.composerSheet}><View style={styles.composerHandle} /><View style={styles.composerHeader}><View><Text style={styles.composerEyebrow}>{replyTarget ? "REPLYING TO" : "NEW COMMENT"}</Text><Text numberOfLines={1} style={styles.composerTitle}>{replyTarget ? `@${replyTarget.author.handle}` : "Add your voice"}</Text></View><Pressable accessibilityRole="button" disabled={busy} onPress={onSubmit} style={styles.composerSend}><Text style={styles.composerSendText}>{busy ? "…" : "Post"}</Text></Pressable></View><TextInput autoFocus multiline onChangeText={onChange} placeholder={replyTarget ? "Write a thoughtful reply…" : "Write a thoughtful comment…"} placeholderTextColor={colors.profileMuted} style={styles.composerInput} textAlignVertical="top" value={draft} /><Text style={styles.composerHint}>Long press any comment to save it to your profile.</Text></View></KeyboardAvoidingView></Modal>;
-}
-
-function PostManageSheet({
-  visible,
-  pending,
-  error,
-  onClose,
-  onEdit,
-  onDelete
-}: {
-  visible: boolean;
-  pending: boolean;
-  error: boolean;
-  onClose: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  useEffect(() => {
-    if (!visible) setConfirmingDelete(false);
-  }, [visible]);
-  return (
-    <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
-      <View style={styles.manageRoot}>
-        <Pressable accessibilityLabel="Close post actions" onPress={onClose} style={styles.manageBackdrop} />
-        <View style={styles.manageSheet}>
-          <View style={styles.manageHandle} />
-          {confirmingDelete ? (
-            <>
-              <Text style={styles.manageTitle}>Delete this post?</Text>
-              <Text style={styles.manageBody}>This removes the poem and its community conversation permanently.</Text>
-              {error ? <Text style={styles.manageError}>The post could not be deleted. Please try again.</Text> : null}
-              <View style={styles.manageConfirmRow}>
-                <Pressable disabled={pending} onPress={() => setConfirmingDelete(false)} style={styles.manageCancelButton}><Text style={styles.manageCancelText}>Keep post</Text></Pressable>
-                <Pressable disabled={pending} onPress={onDelete} style={styles.manageDeleteButton}><Text style={styles.manageDeleteText}>{pending ? "Deleting…" : "Delete"}</Text></Pressable>
-              </View>
-            </>
-          ) : (
-            <>
-              <Text style={styles.manageTitle}>Post options</Text>
-              <Pressable accessibilityRole="button" onPress={onEdit} style={styles.manageActionButton}>
-                <Text style={styles.manageActionTitle}>Edit in Compose</Text>
-                <Text style={styles.manageActionHint}>Keep this post, its comments and its engagement.</Text>
-              </Pressable>
-              <Pressable accessibilityRole="button" onPress={() => setConfirmingDelete(true)} style={[styles.manageActionButton, styles.manageDangerAction]}>
-                <Text style={styles.manageDangerTitle}>Delete post</Text>
-                <Text style={styles.manageActionHint}>A confirmation is required.</Text>
-              </Pressable>
-            </>
-          )}
-        </View>
-      </View>
-    </Modal>
-  );
 }
 
 function CommentRow({
@@ -1356,23 +1303,6 @@ const styles = StyleSheet.create({
     zIndex: 30
   },
   composerRoot: { flex: 1, justifyContent: "flex-end" },
-  manageRoot: { flex: 1, justifyContent: "flex-end" },
-  manageBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.3)" },
-  manageSheet: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 34, borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: colors.surface },
-  manageHandle: { alignSelf: "center", width: 42, height: 4, borderRadius: radius.pill, backgroundColor: colors.faint },
-  manageTitle: { marginTop: 18, color: colors.ink, fontSize: 21, lineHeight: 27, fontWeight: "600" },
-  manageBody: { marginTop: 7, color: colors.profileMuted, fontSize: 13, lineHeight: 19 },
-  manageActionButton: { marginTop: 12, padding: 15, borderRadius: 15, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line },
-  manageActionTitle: { color: colors.ink, fontSize: 16, fontWeight: "600" },
-  manageActionHint: { marginTop: 4, color: colors.profileMuted, fontSize: 12, lineHeight: 17 },
-  manageDangerAction: { borderColor: "#F0C5BF", backgroundColor: "#FFF7F5" },
-  manageDangerTitle: { color: "#B23B31", fontSize: 16, fontWeight: "600" },
-  manageError: { marginTop: 10, color: "#B23B31", fontSize: 12 },
-  manageConfirmRow: { marginTop: 18, flexDirection: "row", gap: 10 },
-  manageCancelButton: { flex: 1, minHeight: 44, borderRadius: radius.pill, backgroundColor: colors.faint, alignItems: "center", justifyContent: "center" },
-  manageCancelText: { color: colors.ink, fontSize: 13, fontWeight: "600" },
-  manageDeleteButton: { flex: 1, minHeight: 44, borderRadius: radius.pill, backgroundColor: "#B23B31", alignItems: "center", justifyContent: "center" },
-  manageDeleteText: { color: colors.white, fontSize: 13, fontWeight: "700" },
   composerBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.28)" },
   composerSheet: { minHeight: 310, paddingHorizontal: 20, paddingBottom: 28, borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: colors.surface },
   composerHandle: { alignSelf: "center", width: 42, height: 4, marginTop: 9, borderRadius: radius.pill, backgroundColor: colors.faint },
