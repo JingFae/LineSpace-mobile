@@ -65,11 +65,13 @@ export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
   const draftQuery = useQuery({
     queryKey: ["compose-draft", draftId],
     queryFn: () => lineSpaceApi.getPoemDraft(draftId),
-    enabled: Boolean(draftId) && currentUserId.length > 0
+    enabled: Boolean(draftId) && currentUserId.length > 0,
+    staleTime: 60_000
   });
   const catalogQuery = useQuery({
     queryKey: ["poem-design-catalog"],
-    queryFn: () => lineSpaceApi.getPoemDesignCatalog()
+    queryFn: () => lineSpaceApi.getPoemDesignCatalog(),
+    staleTime: Infinity
   });
   const layoutMutation = useMutation({
     mutationFn: (nextLayout: PoemLayoutConfig) =>
@@ -82,11 +84,14 @@ export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
   });
   const publishMutation = useMutation({
     mutationFn: async () => {
-      if (layout) {
-        await lineSpaceApi.updatePoemDraft({ draftId, userId: currentUserId, layout });
-      }
-      if (settings) {
-        await lineSpaceApi.updatePoemDraft({ draftId, userId: currentUserId, settings });
+      if (layout || settings) {
+        const draft = await lineSpaceApi.updatePoemDraft({
+          draftId,
+          userId: currentUserId,
+          ...(layout ? { layout } : {}),
+          ...(settings ? { settings } : {})
+        });
+        queryClient.setQueryData(["compose-draft", draft.id], draft);
       }
       if (draftQuery.data?.mode === "relay") return lineSpaceApi.publishThreadDraft({ draftId, userId: currentUserId });
       return lineSpaceApi.publishPoemDraft({
@@ -109,11 +114,14 @@ export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
   });
   const saveMutation = useMutation({
     mutationFn: async () => {
-      if (layout) {
-        await lineSpaceApi.updatePoemDraft({ draftId, userId: currentUserId, layout });
-      }
-      if (settings) {
-        await lineSpaceApi.updatePoemDraft({ draftId, userId: currentUserId, settings });
+      if (layout || settings) {
+        const draft = await lineSpaceApi.updatePoemDraft({
+          draftId,
+          userId: currentUserId,
+          ...(layout ? { layout } : {}),
+          ...(settings ? { settings } : {})
+        });
+        queryClient.setQueryData(["compose-draft", draft.id], draft);
       }
       return lineSpaceApi.savePoemDraft({ draftId, userId: currentUserId });
     },

@@ -85,7 +85,8 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
   const poemQuery = useQuery({
     queryKey: ["poem", id, currentUserId],
     enabled: Boolean(id),
-    queryFn: () => lineSpaceApi.getPoem(id!, currentUserId || undefined)
+    queryFn: () => lineSpaceApi.getPoem(id!, currentUserId || undefined),
+    staleTime: 60_000
   });
 
   const poem = poemQuery.data ?? undefined;

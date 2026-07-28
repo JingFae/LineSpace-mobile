@@ -399,10 +399,9 @@ export class PostRepository {
       .order("created_at", { ascending: true })
       .order("id", { ascending: true });
     ensureDatabaseResult(result.error);
-    return Promise.all(
-      ((result.data as CommentRow[] | null) ?? []).map((row) =>
-        this.mapComment(row, actorId)
-      )
+    return this.mapComments(
+      (result.data as CommentRow[] | null) ?? [],
+      actorId
     );
   }
 
@@ -503,39 +502,75 @@ export class PostRepository {
   }
 
   private async mapComment(row: CommentRow, actorId: string | null): Promise<PoemComment> {
-    const profileResult = await this.client
-      .from("users")
-      .select("id,linespace_id,handle,display_name,avatar_url,avatar_color,bio,level")
-      .eq("id", row.author_user_id)
-      .maybeSingle();
-    ensureDatabaseResult(profileResult.error);
-    const profileRow = profileResult.data as (UserRow & { level?: number }) | null;
-    if (!profileRow) throw new Error("comment author not found");
-    const engagement = actorId
-      ? await this.client
-          .from("post_comment_engagements")
-          .select("kind")
-          .eq("user_id", actorId)
-          .eq("comment_id", row.id)
-      : { data: [], error: null };
-    ensureDatabaseResult(engagement.error);
-    const kinds = new Set(
-      ((engagement.data as Array<{ kind: string }> | null) ?? []).map((item) => item.kind)
+    const comments = await this.mapComments([row], actorId);
+    const comment = comments[0];
+    if (!comment) throw new Error("comment author not found");
+    return comment;
+  }
+
+  private async mapComments(
+    rows: CommentRow[],
+    actorId: string | null
+  ): Promise<PoemComment[]> {
+    if (rows.length === 0) return [];
+    const commentIds = rows.map((row) => row.id);
+    const authorIds = [...new Set(rows.map((row) => row.author_user_id))];
+    const [profilesResult, engagementResult] = await Promise.all([
+      this.client
+        .from("users")
+        .select(
+          "id,linespace_id,handle,display_name,avatar_url,avatar_color,bio,level"
+        )
+        .in("id", authorIds),
+      actorId
+        ? this.client
+            .from("post_comment_engagements")
+            .select("comment_id,kind")
+            .eq("user_id", actorId)
+            .in("comment_id", commentIds)
+        : Promise.resolve({ data: [], error: null })
+    ]);
+    ensureDatabaseResult(profilesResult.error);
+    ensureDatabaseResult(engagementResult.error);
+
+    const profiles = new Map(
+      (
+        (profilesResult.data as Array<UserRow & { level?: number }> | null) ?? []
+      ).map((profile) => [profile.id, profile] as const)
     );
-    return {
-      id: row.id,
-      author: toUserProfile(profileRow),
-      dateLabel: dateLabel(row.created_at),
-      body: row.body,
-      createdAt: row.created_at,
-      ...(row.parent_comment_id ? { parentCommentId: row.parent_comment_id } : {}),
-      likes: countValue(row.likes_count),
-      level: countValue(profileRow.level),
-      viewer: {
-        liked: kinds.has("liked"),
-        saved: kinds.has("saved")
-      }
-    };
+    const engagementByComment = new Map<string, Set<string>>();
+    for (const engagement of
+      (engagementResult.data as Array<{
+        comment_id: string;
+        kind: string;
+      }> | null) ?? []) {
+      const kinds =
+        engagementByComment.get(engagement.comment_id) ?? new Set<string>();
+      kinds.add(engagement.kind);
+      engagementByComment.set(engagement.comment_id, kinds);
+    }
+
+    return rows.map((row) => {
+      const profile = profiles.get(row.author_user_id);
+      if (!profile) throw new Error("comment author not found");
+      const kinds = engagementByComment.get(row.id) ?? new Set<string>();
+      return {
+        id: row.id,
+        author: toUserProfile(profile),
+        dateLabel: dateLabel(row.created_at),
+        body: row.body,
+        createdAt: row.created_at,
+        ...(row.parent_comment_id
+          ? { parentCommentId: row.parent_comment_id }
+          : {}),
+        likes: countValue(row.likes_count),
+        level: countValue(profile.level),
+        viewer: {
+          liked: kinds.has("liked"),
+          saved: kinds.has("saved")
+        }
+      };
+    });
   }
 
   private async loadPostViewer(

@@ -51,6 +51,15 @@ type DraftRow = {
   updated_at: string;
 };
 
+type DraftCollaboratorRow = {
+  draft_id: string;
+  user_id: string;
+  role: "owner" | "editor";
+  status: "invited" | "active";
+  cursor_line: number | null;
+  last_seen_at: string;
+};
+
 const draftSelect =
   "id,owner_user_id,mode,status,title,body,relay_first_line,relay_rules,byline,tags,mentions,version_lines,media,settings,layout,version,created_at,updated_at";
 
@@ -401,8 +410,8 @@ export class DraftRepository {
       .order("updated_at", { ascending: false })
       .limit(100);
     ensureDatabaseResult(result.error);
-    const items = await Promise.all(
-      ((result.data as DraftRow[] | null) ?? []).map((row) => this.mapDraft(row))
+    const items = await this.mapDrafts(
+      (result.data as DraftRow[] | null) ?? []
     );
     return { userId, total: items.length, items };
   }
@@ -441,25 +450,44 @@ export class DraftRepository {
   }
 
   private async mapDraft(row: DraftRow): Promise<PoemDraft> {
-    const collaboratorsResult = await this.client
+    const drafts = await this.mapDrafts([row]);
+    const draft = drafts[0];
+    if (!draft) throw new Error("draft was not found");
+    return draft;
+  }
+
+  private async mapDrafts(rows: DraftRow[]): Promise<PoemDraft[]> {
+    if (rows.length === 0) return [];
+    const result = await this.client
       .from("draft_collaborators")
-      .select("user_id,role,status,cursor_line,last_seen_at")
-      .eq("draft_id", row.id)
+      .select("draft_id,user_id,role,status,cursor_line,last_seen_at")
+      .in("draft_id", rows.map((row) => row.id))
       .order("last_seen_at", { ascending: false });
-    ensureDatabaseResult(collaboratorsResult.error);
-    const collaboratorRows = (collaboratorsResult.data as Array<{
-      user_id: string;
-      role: "owner" | "editor";
-      status: "invited" | "active";
-      cursor_line: number | null;
-      last_seen_at: string;
-    }> | null) ?? [];
-    const ownerIds = [
-      row.owner_user_id,
+    ensureDatabaseResult(result.error);
+    const collaboratorRows =
+      (result.data as DraftCollaboratorRow[] | null) ?? [];
+    const profiles = await loadProfiles(this.client, [
+      ...rows.map((row) => row.owner_user_id),
       ...collaboratorRows.map((item) => item.user_id),
-      ...versionLineAuthorIds(row.version_lines)
-    ];
-    const profiles = await loadProfiles(this.client, ownerIds);
+      ...rows.flatMap((row) => versionLineAuthorIds(row.version_lines))
+    ]);
+    const collaboratorsByDraft = new Map<string, DraftCollaboratorRow[]>();
+    for (const collaborator of collaboratorRows) {
+      const current = collaboratorsByDraft.get(collaborator.draft_id) ?? [];
+      current.push(collaborator);
+      collaboratorsByDraft.set(collaborator.draft_id, current);
+    }
+
+    return rows.map((row) =>
+      this.toDraft(row, collaboratorsByDraft.get(row.id) ?? [], profiles)
+    );
+  }
+
+  private toDraft(
+    row: DraftRow,
+    collaboratorRows: DraftCollaboratorRow[],
+    profiles: Map<string, UserProfile>
+  ): PoemDraft {
     const owner = profiles.get(row.owner_user_id);
     const collaborators = [
       owner

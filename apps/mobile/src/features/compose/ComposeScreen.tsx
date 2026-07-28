@@ -69,7 +69,26 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
   const [undoingSpark, setUndoingSpark] = useState(false);
   const editInitialized = useRef(false);
   const draftInitialized = useRef(false);
-  const createdDraft = useRef<PoemDraft | null>(null);
+  const draftQueryKey = [
+    "compose-draft-session",
+    currentUserId,
+    sessionKey,
+    "post",
+    resumeDraftId ?? editPostId ?? sourceVersionId ?? "new"
+  ] as const;
+  const loadDraft = async () => {
+    if (!resumeDraftId) {
+      return lineSpaceApi.createPoemDraft({
+        ownerId: currentUserId,
+        mode: "draft"
+      });
+    }
+    const draft = await lineSpaceApi.getPoemDraft(resumeDraftId);
+    if (!draft || draft.ownerId !== currentUserId || draft.mode !== "draft") {
+      throw new Error("Draft was not found");
+    }
+    return draft;
+  };
 
   const editPostQuery = useQuery({
     queryKey: ["compose-edit-post", editPostId, currentUserId],
@@ -104,23 +123,15 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
   }, [currentUserId, editPostQuery.data]);
 
   const draftQuery = useQuery({
-    queryKey: [
-      "compose-draft-session",
-      currentUserId,
-      sessionKey,
-      "post",
-      resumeDraftId ?? editPostId ?? sourceVersionId ?? "new"
-    ],
-    queryFn: async () => {
-      if (!resumeDraftId) throw new Error("A saved draft id is required");
-      const draft = await lineSpaceApi.getPoemDraft(resumeDraftId);
-      if (!draft || draft.ownerId !== currentUserId || draft.mode !== "draft") {
-        throw new Error("Draft was not found");
-      }
-      return draft;
-    },
-    enabled: Boolean(resumeDraftId) && currentUserId.length > 0,
+    queryKey: draftQueryKey,
+    queryFn: loadDraft,
+    enabled: currentUserId.length > 0,
     retry: 1,
+    staleTime: Infinity
+  });
+  useQuery({
+    queryKey: ["poem-design-catalog"],
+    queryFn: () => lineSpaceApi.getPoemDesignCatalog(),
     staleTime: Infinity
   });
 
@@ -141,10 +152,13 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      let draft = draftQuery.data ?? createdDraft.current;
+      let draft = draftQuery.data;
       if (!draft) {
-        draft = await lineSpaceApi.createPoemDraft({ ownerId: currentUserId, mode: "draft" });
-        createdDraft.current = draft;
+        draft = await queryClient.fetchQuery({
+          queryKey: draftQueryKey,
+          queryFn: loadDraft,
+          staleTime: Infinity
+        });
       }
       return lineSpaceApi.updatePoemDraft({
         draftId: draft.id,
@@ -162,11 +176,14 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
         settings
       });
     },
-    onSuccess: (draft) =>
+    onSuccess: (draft) => {
+      queryClient.setQueryData(draftQueryKey, draft);
+      queryClient.setQueryData(["compose-draft", draft.id], draft);
       router.push({
         pathname: "/compose-preview",
         params: { draftId: draft.id, ...(editPostId ? { editPostId } : {}) }
-      } as Href)
+      } as Href);
+    }
   });
 
   const openMediaPicker = async () => {

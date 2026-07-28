@@ -47,6 +47,7 @@ import { useAuth } from "@/auth/AuthSessionProvider";
 import { mainTabs, tabRoutes } from "@/navigation/tabs";
 import { FeedTopChrome } from "@/components/FeedTopChrome";
 import { useGuestAccess } from "@/auth/GuestAccessProvider";
+import { prefetchProfile, prefetchThread } from "@/services/contentPrefetch";
 import {
   adaptThreadToCreativeViewModel,
   getThreadContributors,
@@ -195,6 +196,20 @@ export function ThreadFeedScreen() {
       return true;
     });
   }, [threadQuery.data]);
+  const openThread = (threadId: string, version = false) => {
+    void prefetchThread(queryClient, threadId, currentUserId);
+    router.push({
+      pathname: version ? "/thread/version/[id]" : "/thread/[id]",
+      params: { id: threadId }
+    } as unknown as Href);
+  };
+  const openProfile = (userId: string) => {
+    void prefetchProfile(queryClient, userId);
+    router.push({
+      pathname: "/profile/[id]",
+      params: { id: userId }
+    } as unknown as Href);
+  };
 
   return (
     <AppScreen scroll={false} padded={false} style={styles.safeArea} contentContainerStyle={styles.screen}>
@@ -245,13 +260,9 @@ export function ThreadFeedScreen() {
                   isActive: !thread.viewer.saved
                 })
               }
-              onOpen={() =>
-                router.push({ pathname: "/thread/[id]", params: { id: thread.id } } as unknown as Href)
-              }
-              onOpenVersion={() =>
-                router.push({ pathname: "/thread/version/[id]", params: { id: thread.id } } as unknown as Href)
-              }
-              onAuthorPress={() => router.push({ pathname: "/profile/[id]", params: { id: thread.author.id } } as unknown as Href)}
+              onOpen={() => openThread(thread.id)}
+              onOpenVersion={() => openThread(thread.id, true)}
+              onAuthorPress={() => openProfile(thread.author.id)}
               onShare={() =>
                 requireAccount("share this thread") && router.push({
                   pathname: "/thread/share/[id]",

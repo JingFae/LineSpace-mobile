@@ -16,7 +16,6 @@ import {
 } from "react-native";
 import { AppScreen, Avatar, EmptyState, MoreIcon, ShareIcon } from "@linespace/ui";
 import { colors, radius, spacing } from "@linespace/tokens";
-import type { ThreadContinuation, ThreadDetail } from "@linespace/api-client";
 import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
 import { exportPoemCard } from "@/utils/poemCardExport";
 import {
@@ -57,20 +56,11 @@ export function PoemVersionPreviewScreen({
   const threadQuery = useQuery({
     queryKey: ["thread-detail", threadId, currentUserId],
     enabled: Boolean(threadId),
-    queryFn: () => lineSpaceApi.getThread(threadId!, currentUserId)
-  });
-  const treeQuery = useQuery({
-    queryKey: [
-      "thread-version-tree",
-      threadId,
-      currentUserId,
-      threadQuery.data?.continuations.map((item) => item.id).join("|")
-    ],
-    enabled: Boolean(threadQuery.data),
-    queryFn: () => getThreadContinuationTree(threadQuery.data!)
+    queryFn: () => lineSpaceApi.getThread(threadId!, currentUserId),
+    staleTime: 60_000
   });
   const detail = threadQuery.data ?? undefined;
-  const allContinuations = treeQuery.data ?? detail?.continuations ?? [];
+  const allContinuations = detail?.allContinuations ?? detail?.continuations ?? [];
   const baseVersions = useMemo(
     () => (detail ? buildPoemVersions(detail.thread, allContinuations) : []),
     [allContinuations, detail]
@@ -304,7 +294,7 @@ export function PoemVersionPreviewScreen({
         onLayout={(event) => setViewportWidth(event.nativeEvent.layout.width)}
         style={styles.previewViewport}
       >
-        {threadQuery.isLoading || treeQuery.isLoading ? (
+        {threadQuery.isLoading ? (
           <View style={styles.previewLoading}>
             <ActivityIndicator color={colors.white} />
             <Text style={styles.previewLoadingText}>Building poem versions</Text>
@@ -584,23 +574,6 @@ function PreviewMenu({
       ))}
     </View>
   );
-}
-
-async function getThreadContinuationTree(detail: ThreadDetail) {
-  const visited = new Set<string>();
-  const result: ThreadContinuation[] = [];
-  const visit = async (continuation: ThreadContinuation) => {
-    if (visited.has(continuation.id)) return;
-    visited.add(continuation.id);
-    result.push(continuation);
-    const childDetail = await lineSpaceApi.getContinuationDetail(
-      continuation.id,
-      currentUserId
-    );
-    for (const child of childDetail?.children ?? []) await visit(child);
-  };
-  for (const continuation of detail.continuations) await visit(continuation);
-  return result;
 }
 
 function versionSignature(versions: readonly PoemVersionViewModel[]) {

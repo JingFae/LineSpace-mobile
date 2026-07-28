@@ -16,7 +16,19 @@ const previewShellWidth = previewScreenWidth + screenInset * 2;
 const previewShellHeight = previewScreenHeight + screenInset * 2;
 
 export default function RootLayout() {
-  const [queryClient] = useState(() => new QueryClient());
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            staleTime: 30_000,
+            gcTime: 30 * 60_000,
+            retry: 1,
+            refetchOnWindowFocus: false
+          }
+        }
+      })
+  );
 
   return (
     <QueryClientProvider client={queryClient}>

@@ -1,5 +1,5 @@
 import { router, type Href } from "expo-router";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
@@ -26,6 +26,7 @@ import { usePoemEngagement } from "@/features/poem/usePoemEngagement";
 import { getPoemLayoutPresentation } from "@/features/poem/poemPresentation";
 import { FeedTopChrome } from "@/components/FeedTopChrome";
 import { useGuestAccess } from "@/auth/GuestAccessProvider";
+import { prefetchPoem, prefetchProfile } from "@/services/contentPrefetch";
 
 declare const require: (path: string) => ImageSourcePropType;
 
@@ -41,6 +42,7 @@ export function LineSpaceHomeScreen() {
   const { user: authUser } = useAuth();
   const { requireAccount } = useGuestAccess();
   const currentUserId = authUser?.id ?? "";
+  const queryClient = useQueryClient();
   const [section, setSection] = useState<FeedSection>("latest");
   const engagement = usePoemEngagement();
   const profileQuery = useQuery({
@@ -74,6 +76,17 @@ export function LineSpaceHomeScreen() {
     },
     [feedQuery.data]
   );
+  const openPoem = (poemId: string) => {
+    void prefetchPoem(queryClient, poemId, currentUserId);
+    router.push({ pathname: "/poem/[id]", params: { id: poemId } });
+  };
+  const openProfile = (userId: string) => {
+    void prefetchProfile(queryClient, userId);
+    router.push({
+      pathname: "/profile/[id]",
+      params: { id: userId }
+    } as unknown as Href);
+  };
 
   return (
     <AppScreen
@@ -115,17 +128,15 @@ export function LineSpaceHomeScreen() {
           <FeedCardReveal>
             <PoemCard
               poem={poem}
-              onAuthorPress={(userId) => router.push({ pathname: "/profile/[id]", params: { id: userId } } as unknown as Href)}
-              onCommentPress={(id) =>
-                router.push({ pathname: "/poem/[id]", params: { id } })
-              }
+              onAuthorPress={openProfile}
+              onCommentPress={openPoem}
               onContributionPress={(id) => {
                 if (requireAccount("share this post")) router.push({ pathname: "/poem/share/[id]", params: { id } } as unknown as Href);
               }}
               onLikePress={(id, isLiked) =>
                 engagement.setCollection(id, "liked", isLiked)
               }
-              onPress={(id) => router.push({ pathname: "/poem/[id]", params: { id } })}
+              onPress={openPoem}
               onSavePress={(id, isSaved) =>
                 engagement.setCollection(id, "saved", isSaved)
               }
