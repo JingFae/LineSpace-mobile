@@ -42,28 +42,58 @@ Starting only from the exact path chosen in Task A, act as a lightly participati
 co-author. Preserve every line id, line order, author boundary, primary image,
 theme, voice, and core meaning.
 
-You may make only small local adjustments that improve transitions between
-contributors:
-- person, tense, pronoun, or reference consistency;
-- word order and accidental repetition;
-- punctuation and line breaks inside the same contribution;
-- local rhythm, cadence, or rhyme;
-- a minimal connective word when strictly necessary.
+Your goal is to make the relay feel like one intentionally composed poem,
+while preserving the recognizable contribution, imagery, emotional intent,
+and authorship of every participant.
 
-You must not:
+The result should show a noticeable but bounded creative contribution.
+Do more than proofreading: actively strengthen the handoffs, internal echoes,
+rhythmic movement, and emotional progression across contributors.
+
+EDITING TARGET
+- Review every transition between adjacent contributions.
+- Aim to revise approximately 45–65% of the selected path’s lines when the
+  path contains three or more lines.
+- Each revision must solve a specific continuity, rhythm, imagery, voice,
+  or ending problem.
+- Preserve every lineId, line order, and author boundary.
+
+YOU MAY
+- rewrite a phrase or clause while preserving its central meaning;
+- add one short connective phrase inside a contribution;
+- echo an existing word, image, sound, or emotional gesture from another
+  line in the same selected path;
+- adjust person, tense, pronouns, reference, syntax, repetition,
+  punctuation, line breaks, rhythm, cadence, and rhyme;
+- lightly extend an existing image into a closely related image;
+- strengthen the ending by returning to an image or emotional gesture
+  already present in the selected path;
+- preserve individual voices while creating clearer relationships between them.
+
+FOR EACH LINE
+First identify its semantic anchors: the main image, action, emotional
+position, and intended ambiguity. A revision may reshape the language,
+but it must preserve those anchors.
+
+YOU MUST NOT
 - import or paraphrase content from another branch;
 - introduce a new major image, event, character, argument, or theme;
-- remove an author's complete contribution;
+- remove an author’s complete contribution;
 - merge contributions or transfer words between authors;
-- change the core meaning, emotional position, or intended ambiguity;
-- imitate a different poet or make the whole poem sound like one author;
-- conceal where a change occurred.
+- reverse the core meaning or emotional position of a contribution;
+- erase deliberate ambiguity;
+- flatten all contributors into one uniform voice;
+- conceal where AI changed the text.
 
-Use the poem's primary language. Change no more than 40% of the selected path's
-lines. Prefer fewer, smaller edits; an unchanged line is a successful outcome.
-For every selected-path line, return its exact lineId and its complete final text.
-Set changeNote to an empty string when unchanged. When changed, use one short,
-specific note naming what changed and where.
+Avoid cosmetic edits made only to satisfy the editing target.
+Prefer meaningful phrase- or clause-level harmonization over isolated
+punctuation corrections.
+
+For every selected-path line, return its exact lineId and complete final text.
+For unchanged lines, set changeNote to an empty string.
+For changed lines, make changeNote begin with one of:
+"Transition:", "Rhythm:", "Reference:", "Image echo:", or "Ending:".
+Briefly explain the AI contribution.
 
 Return only one valid JSON object:
 {
@@ -206,7 +236,7 @@ export async function requestThreadVersionRecommendation(
           }
         ],
         response_format: { type: "json_object" },
-        temperature: 0.15,
+        temperature: 0.5,
         max_tokens: 5_000,
         stream: false
       })
@@ -350,7 +380,7 @@ function normalizeResult(
     };
   });
 
-  const maximumChangedLines = Math.max(1, Math.ceil(selected.lines.length * 0.4));
+  const maximumChangedLines = Math.max(1, Math.ceil(selected.lines.length * 0.65));
   let changedCount = 0;
   const harmonizedLines = proposed.map((line, index) => {
     if (!line.changed) return line;
@@ -387,8 +417,8 @@ function isSafeLightEdit(original: string, proposed: string) {
   const originalUnits = [...normalizeForComparison(original)];
   const proposedUnits = [...normalizeForComparison(proposed)];
   if (originalUnits.length === 0 || proposedUnits.length === 0) return false;
-  if (proposedUnits.length > originalUnits.length * 1.35 + 8) return false;
-  if (proposedUnits.length < originalUnits.length * 0.65 - 2) return false;
+  if (proposedUnits.length > originalUnits.length * 1.6 + 8) return false;
+  if (proposedUnits.length < originalUnits.length * 0.5 - 2) return false;
   const common = longestCommonSubsequenceLength(originalUnits, proposedUnits);
   const preservation = common / Math.max(originalUnits.length, proposedUnits.length);
   return preservation >= 0.58;
