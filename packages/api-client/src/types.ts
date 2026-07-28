@@ -150,6 +150,8 @@ export type PoemDraft = {
     originalText?: string;
     /** Short, human-readable explanation of the AI edit. */
     aiChangeNote?: string;
+    /** Identifies a post created from the AI Harmonized version. */
+    aiHarmonized?: boolean;
   }>;
   media?: PoemDraftMedia;
   settings: PoemDraftSettings;

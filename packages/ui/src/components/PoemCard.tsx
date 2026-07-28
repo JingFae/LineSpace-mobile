@@ -77,6 +77,15 @@ export function PoemCard({
   onSavePress,
   onTagPress
 }: PoemCardProps) {
+  const displayedContributorCount =
+    poem.contributorsCount +
+    (poem.versionLines?.some(
+      (line) =>
+        line.aiHarmonized === true ||
+        (line.originalText !== undefined && line.originalText !== line.text)
+    )
+      ? 1
+      : 0);
   return (
     <View style={styles.root}>
       <Pressable
@@ -108,8 +117,8 @@ export function PoemCard({
           </Pressable>
           <Text numberOfLines={1} style={styles.contributors}>
             {poem.versionLines?.length
-              ? `thread | ${poem.contributorsCount} ${
-                  poem.contributorsCount === 1 ? "contributor" : "contributors"
+              ? `thread | ${displayedContributorCount} ${
+                  displayedContributorCount === 1 ? "contributor" : "contributors"
                 }`
               : poem.contributorsCount > 1
               ? `${poem.contributorsCount} contributors`

@@ -459,7 +459,14 @@ export function ThreadDetailScreen({
 
   return (
     <AppScreen scroll={false} padded={false} style={styles.safeArea} contentContainerStyle={styles.screen}>
-      <DetailTopBar title={selectionMode ? "Build my version" : "Thread"} />
+      <DetailTopBar
+        onBack={
+          selectionMode
+            ? () => router.back()
+            : () => router.replace(tabRoutes.thread)
+        }
+        title={selectionMode ? "Build my version" : "Thread"}
+      />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.detailContent, composerTarget && styles.composerOpenContentInset]}
@@ -689,11 +696,24 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
   );
 }
 
-function DetailTopBar({ title, large = false }: { title: string; large?: boolean }) {
+function DetailTopBar({
+  title,
+  large = false,
+  onBack
+}: {
+  title: string;
+  large?: boolean;
+  onBack?: () => void;
+}) {
   return (
     <View style={styles.detailTopBar}>
       <View style={styles.detailLeftActions}>
-        <Pressable accessibilityLabel="Back" hitSlop={12} onPress={() => router.back()} style={styles.headerButton}>
+        <Pressable
+          accessibilityLabel="Back"
+          hitSlop={12}
+          onPress={onBack ?? (() => router.back())}
+          style={styles.headerButton}
+        >
           <Text style={styles.backGlyph}>‹</Text>
         </Pressable>
       </View>

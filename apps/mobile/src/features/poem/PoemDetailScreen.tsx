@@ -21,6 +21,7 @@ import {
   CommentIcon,
   ContentTagRow,
   EmptyState,
+  LineSpaceAiAvatar,
   PoemEngagementBar,
   PoemLayoutCard,
   SearchIcon,
@@ -296,7 +297,7 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
         <>
           <CreditsPanel
             credits={getCredits(poem)}
-            contributorsCount={poem.contributorsCount}
+            contributorsCount={getDisplayedContributorsCount(poem)}
             isOpen={creditsOpen}
             onToggle={() => setCreditsOpen((value) => !value)}
           />
@@ -364,7 +365,7 @@ function DetailHeader({ poem, followed, followPending, showFollow, showManage, o
         <View style={styles.headerRight}>
           {poem.versionLines?.length ? (
             <Text numberOfLines={1} style={styles.versionOriginMeta}>
-              thread | {poem.contributorsCount} {poem.contributorsCount === 1 ? "contributor" : "contributors"}
+              thread | {getDisplayedContributorsCount(poem)} {getDisplayedContributorsCount(poem) === 1 ? "contributor" : "contributors"}
             </Text>
           ) : null}
           {showFollow ? (
@@ -695,12 +696,16 @@ function CreditPerson({
 }) {
   return (
     <View style={[styles.creditPerson, compact && styles.creditPersonCompact]}>
-      <Avatar
-        color={person.avatarColor}
-        imageSource={person.avatarUrl ? { uri: person.avatarUrl } : undefined}
-        label={person.displayName}
-        size={compact ? 22 : 28}
-      />
+      {person.handle.toLowerCase() === "linespace-ai" ? (
+        <LineSpaceAiAvatar size={compact ? 22 : 28} />
+      ) : (
+        <Avatar
+          color={person.avatarColor}
+          imageSource={person.avatarUrl ? { uri: person.avatarUrl } : undefined}
+          label={person.displayName}
+          size={compact ? 22 : 28}
+        />
+      )}
       <Text style={styles.creditHandle}>@{person.handle}</Text>
     </View>
   );
@@ -774,7 +779,7 @@ function ChevronDownIcon({ open }: { open: boolean }) {
 }
 
 function getCredits(poem: PoemSummary): NonNullable<PoemSummary["credits"]> {
-  return (
+  const credits =
     poem.credits ?? {
       startedBy: {
         handle: poem.author.handle.toUpperCase(),
@@ -784,8 +789,35 @@ function getCredits(poem: PoemSummary): NonNullable<PoemSummary["credits"]> {
       },
       commentContributors: [],
       quoteContributors: []
-    }
+    };
+  if (!isAiHarmonizedPost(poem)) return credits;
+  return {
+    ...credits,
+    commentContributors: [
+      ...credits.commentContributors.filter(
+        (person) => person.handle.toLowerCase() !== "linespace-ai"
+      ),
+      {
+        handle: "LineSpace-AI",
+        displayName: "LineSpace-AI",
+        avatarColor: "#111318"
+      }
+    ]
+  };
+}
+
+function isAiHarmonizedPost(poem: PoemSummary) {
+  return Boolean(
+    poem.versionLines?.some(
+      (line) =>
+        line.aiHarmonized === true ||
+        (line.originalText !== undefined && line.originalText !== line.text)
+    )
   );
+}
+
+function getDisplayedContributorsCount(poem: PoemSummary) {
+  return poem.contributorsCount + (isAiHarmonizedPost(poem) ? 1 : 0);
 }
 
 function formatPoemDate(value: string) {

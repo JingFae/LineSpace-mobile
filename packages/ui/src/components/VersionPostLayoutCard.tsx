@@ -2,12 +2,14 @@ import { Image, StyleSheet, Text, View, type ImageSourcePropType, type StyleProp
 import { colors, radius } from "@linespace/tokens";
 import { Avatar } from "./Avatar";
 import { ContentTagRow } from "./ContentTag";
+import { LineSpaceAiAvatar } from "./LineSpaceAiAvatar";
 
 export type VersionPostLineModel = {
   lineNumber: number;
   text: string;
   originalText?: string;
   aiChangeNote?: string;
+  aiHarmonized?: boolean;
   author: {
     id: string;
     displayName: string;
@@ -41,11 +43,18 @@ export function VersionPostLayoutCard({
   const contributors = [
     ...new Map(lines.map((line) => [line.author.id, line.author])).values()
   ];
-  const contributorNames =
-    contributors.map((contributor) => contributor.handle).join(", ") || publishedBy;
   const hasAiChanges = lines.some(
     (line) => line.originalText !== undefined && line.originalText !== line.text
   );
+  const hasAiContribution =
+    hasAiChanges || lines.some((line) => line.aiHarmonized === true);
+  const contributorNames = [
+    ...(contributors.length
+      ? contributors.map((contributor) => contributor.handle)
+      : [publishedBy]),
+    ...(hasAiContribution ? ["LineSpace-AI"] : [])
+  ].join(", ");
+  const contributorCount = contributors.length + (hasAiContribution ? 1 : 0);
   return (
     <View style={[styles.root, backgroundStyles[backgroundRole], style]}>
       {mediaSource ? <Image resizeMode="cover" source={mediaSource} style={styles.media} /> : null}
@@ -110,9 +119,20 @@ export function VersionPostLayoutCard({
                 />
               </View>
             ))}
+            {hasAiContribution ? (
+              <View
+                style={[
+                  styles.contributorAvatar,
+                  dark && styles.contributorAvatarDark,
+                  { marginLeft: contributors.length === 0 ? 0 : -8 }
+                ]}
+              >
+                <LineSpaceAiAvatar size={28} />
+              </View>
+            ) : null}
           </View>
           <Text style={[styles.contributorCount, { color: ink }]}>
-            {contributors.length} {contributors.length === 1 ? "contributor" : "contributors"}
+            {contributorCount} {contributorCount === 1 ? "contributor" : "contributors"}
           </Text>
         </View>
         <Text style={[styles.byline, { color: ink }]}>by {contributorNames}</Text>
@@ -149,10 +169,7 @@ const styles = StyleSheet.create({
     gap: 6,
     marginTop: -6,
     marginBottom: 14,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 12,
-    backgroundColor: "rgba(54,126,175,0.10)"
+    paddingVertical: 2
   },
   aiLegendSwatch: {
     width: 7,
@@ -165,8 +182,9 @@ const styles = StyleSheet.create({
   lineText: { fontFamily: "Georgia", fontSize: 18, lineHeight: 27 },
   aiText: {
     color: "#367EAF",
-    backgroundColor: "rgba(90,166,218,0.12)",
-    fontWeight: "600"
+    fontWeight: "600",
+    textDecorationColor: "rgba(54,126,175,0.28)",
+    textDecorationLine: "underline"
   },
   aiNoteRow: {
     flexDirection: "row",

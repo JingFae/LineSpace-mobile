@@ -871,7 +871,8 @@ function toVersionLines(
         : {}),
       ...(typeof row.aiChangeNote === "string"
         ? { aiChangeNote: row.aiChangeNote }
-        : {})
+        : {}),
+      ...(row.aiHarmonized === true ? { aiHarmonized: true } : {})
     }];
   });
   return lines.length ? lines : undefined;

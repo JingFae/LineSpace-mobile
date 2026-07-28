@@ -240,7 +240,8 @@ export class DraftRepository {
         authorId: line.author.id,
         ...(line.likes !== undefined ? { likes: line.likes } : {}),
         ...(line.originalText ? { originalText: line.originalText } : {}),
-        ...(line.aiChangeNote ? { aiChangeNote: line.aiChangeNote } : {})
+        ...(line.aiChangeNote ? { aiChangeNote: line.aiChangeNote } : {}),
+        ...(line.aiHarmonized ? { aiHarmonized: true } : {})
       }));
     }
     if (input.media !== undefined) patch.media = input.media;
@@ -658,7 +659,8 @@ function parseVersionLines(
           : {}),
         ...(typeof source.aiChangeNote === "string"
           ? { aiChangeNote: source.aiChangeNote }
-          : {})
+          : {}),
+        ...(source.aiHarmonized === true ? { aiHarmonized: true } : {})
       }
     ];
   });

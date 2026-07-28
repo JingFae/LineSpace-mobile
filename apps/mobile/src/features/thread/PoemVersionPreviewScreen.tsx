@@ -51,6 +51,7 @@ export function PoemVersionPreviewScreen({
   const [exportOpen, setExportOpen] = useState(false);
   const [notice, setNotice] = useState<ExportNotice | null>(null);
   const pagerRef = useRef<ScrollView | null>(null);
+  const visiblePageIndexRef = useRef(1);
   const exportCardRef = useRef<View | null>(null);
   const positionedInitialPageRef = useRef(false);
   const threadQuery = useQuery({
@@ -173,11 +174,22 @@ export function PoemVersionPreviewScreen({
       return;
     }
     positionedInitialPageRef.current = true;
+    visiblePageIndexRef.current = 1;
     setPageIndex(1);
     requestAnimationFrame(() => {
       pagerRef.current?.scrollTo({ x: pageWidth, y: 0, animated: false });
     });
   }, [pageWidth, versions.length]);
+
+  const syncVisiblePage = (offsetX: number) => {
+    if (pageWidth <= 0 || versions.length === 0) return;
+    const nextIndex = Math.max(
+      0,
+      Math.min(Math.round(offsetX / pageWidth), versions.length - 1)
+    );
+    visiblePageIndexRef.current = nextIndex;
+    setPageIndex((current) => (current === nextIndex ? current : nextIndex));
+  };
 
   const handleCopy = () => {
     if (!currentVersion) return;
@@ -216,29 +228,42 @@ export function PoemVersionPreviewScreen({
   };
 
   const handlePost = () => {
-    if (!currentVersion || !creativeThread) return;
+    const activeVersion =
+      versions[
+        Math.max(
+          0,
+          Math.min(visiblePageIndexRef.current, Math.max(versions.length - 1, 0))
+        )
+      ];
+    if (!activeVersion || !creativeThread) return;
     if (!canPostVersion) {
       setNotice({
-        id: `${currentVersion.id}:post-forbidden`,
+        id: `${activeVersion.id}:post-forbidden`,
         message: "Join this Thread before publishing one of its versions."
       });
       return;
     }
     const sortedContributors = [...new Map(
-      currentVersion.lines.map((line) => [line.author.id, line.author])
+      activeVersion.lines.map((line) => [line.author.id, line.author])
     ).values()].sort((left, right) => left.handle.localeCompare(right.handle));
+    const versionLines = activeVersion.lines.map((line) => ({
+      ...line,
+      ...(activeVersion.criterion === "harmonized"
+        ? { aiHarmonized: true }
+        : {})
+    }));
     router.push({
       pathname: "/(tabs)/compose",
       params: {
         type: "post",
-        session: `thread-version-${currentVersion.id}-${Date.now()}`,
-        sourceThreadId: currentVersion.threadId,
-        sourceVersionId: currentVersion.id,
-        generatedTitle: currentVersion.title,
-        fullPoemText: getFullPoemText(currentVersion),
+        session: `thread-version-${activeVersion.id}-${Date.now()}`,
+        sourceThreadId: activeVersion.threadId,
+        sourceVersionId: activeVersion.id,
+        generatedTitle: activeVersion.title,
+        fullPoemText: getFullPoemText(activeVersion),
         contributorIds: sortedContributors.map((person) => person.id).join(","),
         contributorHandles: sortedContributors.map((person) => person.handle).join(","),
-        versionLines: JSON.stringify(currentVersion.lines),
+        versionLines: JSON.stringify(versionLines),
         mediaUri: detail?.thread.media?.uri,
         mediaKind: detail?.thread.media?.kind,
         mediaId: creativeThread.mediaId,
@@ -342,10 +367,16 @@ export function PoemVersionPreviewScreen({
               horizontal
               pagingEnabled
               showsHorizontalScrollIndicator={false}
-              onMomentumScrollEnd={(event) => {
-                const nextIndex = Math.round(event.nativeEvent.contentOffset.x / pageWidth);
-                setPageIndex(Math.max(0, Math.min(nextIndex, versions.length - 1)));
-              }}
+              onMomentumScrollEnd={(event) =>
+                syncVisiblePage(event.nativeEvent.contentOffset.x)
+              }
+              onScroll={(event) =>
+                syncVisiblePage(event.nativeEvent.contentOffset.x)
+              }
+              onScrollEndDrag={(event) =>
+                syncVisiblePage(event.nativeEvent.contentOffset.x)
+              }
+              scrollEventThrottle={16}
               style={styles.versionPager}
             >
               {versions.map((version) => (
@@ -912,12 +943,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   harmonizedLineRow: {
-    marginHorizontal: -8,
-    paddingHorizontal: 8,
-    borderLeftWidth: 2,
-    borderLeftColor: "#4F94CB",
-    backgroundColor: "rgba(84, 153, 209, .08)",
-    borderRadius: 10
+    position: "relative"
   },
   artworkLineCopy: { flex: 1, minWidth: 0 },
   artworkLineHeader: {
@@ -929,8 +955,10 @@ const styles = StyleSheet.create({
   artworkLineLikes: { fontSize: 10, lineHeight: 14, fontWeight: "600" },
   artworkLine: { marginTop: 4, fontSize: 17, lineHeight: 25, fontFamily: "Georgia" },
   harmonizedText: {
-    color: "#174F79",
-    backgroundColor: "rgba(166, 220, 255, .82)"
+    color: "#2878A8",
+    fontWeight: "600",
+    textDecorationColor: "rgba(40, 120, 168, .30)",
+    textDecorationLine: "underline"
   },
   harmonizedChangeNote: {
     marginTop: 5,

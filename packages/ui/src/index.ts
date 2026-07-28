@@ -1,5 +1,6 @@
 export { AppScreen } from "./components/AppScreen";
 export { Avatar } from "./components/Avatar";
+export { LineSpaceAiAvatar } from "./components/LineSpaceAiAvatar";
 export {
   ProfileBadgeArtwork,
   type ProfileBadgeVariant
