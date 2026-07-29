@@ -9,7 +9,11 @@ import { colors, radius } from "@linespace/tokens";
 import { Avatar } from "./Avatar";
 import { PoemArtwork, type ArtworkTone } from "./PoemArtwork";
 import { PoemEngagementBar } from "./PoemEngagementBar";
-import { PoemLayoutCard } from "./PoemLayoutCard";
+import {
+  PoemLayoutCard,
+  type PoemBackgroundRole,
+  type PoemTypographyRole
+} from "./PoemLayoutCard";
 import { ContentTagRow } from "./ContentTag";
 import { VersionPostLayoutCard, type VersionPostLineModel } from "./VersionPostLayoutCard";
 
@@ -43,8 +47,8 @@ export type PoemCardModel = {
   artworkTone: ArtworkTone;
   artworkSource?: ImageSourcePropType;
   layout?: {
-    backgroundRole: "ruled" | "kraft" | "postcard" | "dark";
-    typographyRole: "serif" | "script" | "sans";
+    backgroundRole: PoemBackgroundRole;
+    typographyRole: PoemTypographyRole;
     stickerSymbols: string[];
     mediaSource?: ImageSourcePropType;
     mediaAspectRatio?: number;
@@ -148,6 +152,7 @@ export function PoemCard({
           <VersionPostLayoutCard
             backgroundRole={poem.layout?.backgroundRole}
             lines={poem.versionLines}
+            mediaAspectRatio={poem.layout?.mediaAspectRatio}
             mediaSource={poem.layout?.mediaSource}
             onTagPress={onTagPress}
             publishedBy={poem.author.displayName}

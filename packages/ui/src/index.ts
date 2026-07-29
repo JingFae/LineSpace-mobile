@@ -17,7 +17,12 @@ export {
   type AiTextSegment,
   type VersionPostLineModel
 } from "./components/VersionPostLayoutCard";
-export { PoemLayoutCard, type PoemLayoutCardModel } from "./components/PoemLayoutCard";
+export {
+  PoemLayoutCard,
+  type PoemBackgroundRole,
+  type PoemLayoutCardModel,
+  type PoemTypographyRole
+} from "./components/PoemLayoutCard";
 export { ContentTag, ContentTagRow } from "./components/ContentTag";
 export {
   ProfilePostCard,
@@ -51,6 +56,7 @@ export {
   SearchIcon,
   SettingsIcon,
   ShareIcon,
+  StickerIcon,
   TemplateIcon,
   TypographyIcon,
   type FigmaIconProps

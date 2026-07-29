@@ -262,6 +262,17 @@ async function main() {
   try {
     const catalog = await httpApi.getPoemDesignCatalog();
     assert(catalog.templates.length > 0, "The design catalog has no templates.");
+    assert(
+      catalog.templates.some((template) => template.id === "field-notes") &&
+        catalog.typography.some(
+          (typography) => typography.id === "songti-editorial"
+        ) &&
+        catalog.backgrounds.some(
+          (background) => background.id === "rice-paper"
+        ) &&
+        catalog.stickers.some((sticker) => sticker.id === "pressed-flower"),
+      "The expanded bilingual poem design catalog is incomplete."
+    );
 
     const profile = await httpApi.getUserProfile("user-lili");
     assert(profile, "The current mock user profile was not found over HTTP.");

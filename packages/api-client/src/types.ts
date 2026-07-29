@@ -61,13 +61,42 @@ export type DraftVisibility = "public" | "include" | "exclude";
 
 export type PoemDraftStatus = "editing" | "ready" | "published";
 
-export type PoemTypographyId = "literary-serif" | "handwritten" | "clean-sans";
+export type PoemTypographyId =
+  | "literary-serif"
+  | "handwritten"
+  | "clean-sans"
+  | "songti-editorial"
+  | "humanist-sans"
+  | "rounded-sans"
+  | "mono-notes";
 
-export type PoemBackgroundId = "letter-paper" | "kraft-paper" | "postcard" | "midnight";
+export type PoemBackgroundId =
+  | "letter-paper"
+  | "kraft-paper"
+  | "postcard"
+  | "midnight"
+  | "rice-paper"
+  | "graph-paper"
+  | "blush-paper"
+  | "museum-card";
 
-export type PoemTemplateId = "quiet-letter" | "night-whisper" | "travel-postcard";
+export type PoemTemplateId =
+  | "quiet-letter"
+  | "night-whisper"
+  | "travel-postcard"
+  | "ink-archive"
+  | "field-notes"
+  | "soft-margin"
+  | "museum-label";
 
-export type PoemStickerId = "botanical" | "moon" | "postmark";
+export type PoemStickerId =
+  | "botanical"
+  | "moon"
+  | "postmark"
+  | "pressed-flower"
+  | "paperclip"
+  | "asterism"
+  | "washi";
 
 export type PoemLayoutConfig = {
   templateId: PoemTemplateId;
@@ -90,13 +119,26 @@ export type PoemTemplateOption = PoemDesignOption<PoemTemplateId, "template"> & 
 
 export type PoemDesignCatalog = {
   templates: PoemTemplateOption[];
-  typography: Array<PoemDesignOption<PoemTypographyId, "serif" | "script" | "sans">>;
-  backgrounds: Array<
-    PoemDesignOption<PoemBackgroundId, "ruled" | "kraft" | "postcard" | "dark">
+  typography: Array<
+    PoemDesignOption<
+      PoemTypographyId,
+      "serif" | "script" | "sans" | "editorial" | "rounded" | "mono"
+    >
   >;
-  stickers: Array<PoemDesignOption<PoemStickerId, "botanical" | "moon" | "postmark"> & {
-    symbol: string;
-  }>;
+  backgrounds: Array<
+    PoemDesignOption<
+      PoemBackgroundId,
+      "ruled" | "kraft" | "postcard" | "dark" | "rice" | "grid" | "blush" | "museum"
+    >
+  >;
+  stickers: Array<
+    PoemDesignOption<
+      PoemStickerId,
+      "botanical" | "moon" | "postmark" | "flower" | "paperclip" | "star" | "tape"
+    > & {
+      symbol: string;
+    }
+  >;
 };
 
 export type PoemDraftMedia = {

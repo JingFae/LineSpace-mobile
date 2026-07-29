@@ -3,6 +3,7 @@ import { colors, radius } from "@linespace/tokens";
 import { Avatar } from "./Avatar";
 import { ContentTagRow } from "./ContentTag";
 import { LineSpaceAiAvatar } from "./LineSpaceAiAvatar";
+import type { PoemBackgroundRole } from "./PoemLayoutCard";
 
 export type VersionPostLineModel = {
   lineNumber: number;
@@ -26,6 +27,7 @@ export function VersionPostLayoutCard({
   publishedBy,
   backgroundRole = "ruled",
   mediaSource,
+  mediaAspectRatio,
   onTagPress,
   style
 }: {
@@ -33,8 +35,9 @@ export function VersionPostLayoutCard({
   lines: VersionPostLineModel[];
   tags: string[];
   publishedBy: string;
-  backgroundRole?: "ruled" | "kraft" | "postcard" | "dark";
+  backgroundRole?: PoemBackgroundRole;
   mediaSource?: ImageSourcePropType;
+  mediaAspectRatio?: number;
   onTagPress?: (tag: string) => void;
   style?: StyleProp<ViewStyle>;
 }) {
@@ -57,87 +60,99 @@ export function VersionPostLayoutCard({
   const contributorCount = contributors.length + (hasAiContribution ? 1 : 0);
   return (
     <View style={[styles.root, backgroundStyles[backgroundRole], style]}>
-      {mediaSource ? <Image resizeMode="cover" source={mediaSource} style={styles.media} /> : null}
-      {mediaSource ? <View style={[styles.mediaWash, dark && styles.mediaWashDark]} /> : null}
-      <Text style={[styles.title, { color: ink }]}>{title || "untitled line"}</Text>
-      <View style={styles.lineStack}>
-        {lines.map((line) => {
-          const segments = line.originalText
-            ? buildAiTextSegments(line.originalText, line.text)
-            : [{ text: line.text, ai: false }];
-          return (
-            <View key={`${line.lineNumber}-${line.author.id}-${line.text}`}>
-              <Text style={[styles.lineText, { color: ink }]}>
-                {segments.map((segment, index) => (
-                  <Text
-                    key={`${line.lineNumber}:${index}`}
-                    style={segment.ai ? styles.aiText : undefined}
-                  >
-                    {segment.text}
-                  </Text>
-                ))}
-              </Text>
-            </View>
-          );
-        })}
-      </View>
-      {tags.length ? <ContentTagRow onTagPress={onTagPress} tags={tags} /> : null}
-      <View style={[styles.contributorFooter, dark && styles.contributorFooterDark]}>
-        <View style={styles.contributorSummary}>
-          <View style={styles.contributorStack}>
-            {contributors.map((contributor, index) => (
-              <View
-                key={contributor.id}
-                style={[
-                  styles.contributorAvatar,
-                  dark && styles.contributorAvatarDark,
-                  { marginLeft: index === 0 ? 0 : -8 }
-                ]}
-              >
-                <Avatar
-                  color={contributor.avatarColor}
-                  imageSource={
-                    contributor.avatarUrl ? { uri: contributor.avatarUrl } : undefined
-                  }
-                  label={contributor.displayName}
-                  size={28}
-                />
+      {mediaSource ? (
+        <Image
+          accessibilityLabel="Attached poem image"
+          resizeMode="cover"
+          source={mediaSource}
+          style={[styles.media, { height: getMediaHeight(mediaAspectRatio) }]}
+        />
+      ) : null}
+      <View style={styles.body}>
+        <Text style={[styles.title, { color: ink }]}>{title || "untitled line"}</Text>
+        <View style={styles.lineStack}>
+          {lines.map((line) => {
+            const segments = line.originalText
+              ? buildAiTextSegments(line.originalText, line.text)
+              : [{ text: line.text, ai: false }];
+            return (
+              <View key={`${line.lineNumber}-${line.author.id}-${line.text}`}>
+                <Text style={[styles.lineText, { color: ink }]}>
+                  {segments.map((segment, index) => (
+                    <Text
+                      key={`${line.lineNumber}:${index}`}
+                      style={segment.ai ? styles.aiText : undefined}
+                    >
+                      {segment.text}
+                    </Text>
+                  ))}
+                </Text>
               </View>
-            ))}
-            {hasAiContribution ? (
-              <View
-                style={[
-                  styles.contributorAvatar,
-                  dark && styles.contributorAvatarDark,
-                  { marginLeft: contributors.length === 0 ? 0 : -8 }
-                ]}
-              >
-                <LineSpaceAiAvatar size={28} />
-              </View>
-            ) : null}
-          </View>
-          <Text style={[styles.contributorCount, { color: ink }]}>
-            {contributorCount} {contributorCount === 1 ? "contributor" : "contributors"}
-          </Text>
+            );
+          })}
         </View>
-        <Text style={[styles.byline, { color: ink }]}>by {contributorNames}</Text>
-        {hasAiChanges ? (
-          <View style={styles.aiLegend}>
-            <View style={styles.aiLegendSwatch} />
-            <Text style={styles.aiLegendText}>Blue text was harmonized by AI</Text>
+        {tags.length ? <ContentTagRow onTagPress={onTagPress} tags={tags} /> : null}
+        <View style={[styles.contributorFooter, dark && styles.contributorFooterDark]}>
+          <View style={styles.contributorSummary}>
+            <View style={styles.contributorStack}>
+              {contributors.map((contributor, index) => (
+                <View
+                  key={contributor.id}
+                  style={[
+                    styles.contributorAvatar,
+                    dark && styles.contributorAvatarDark,
+                    { marginLeft: index === 0 ? 0 : -8 }
+                  ]}
+                >
+                  <Avatar
+                    color={contributor.avatarColor}
+                    imageSource={
+                      contributor.avatarUrl ? { uri: contributor.avatarUrl } : undefined
+                    }
+                    label={contributor.displayName}
+                    size={28}
+                  />
+                </View>
+              ))}
+              {hasAiContribution ? (
+                <View
+                  style={[
+                    styles.contributorAvatar,
+                    dark && styles.contributorAvatarDark,
+                    { marginLeft: contributors.length === 0 ? 0 : -8 }
+                  ]}
+                >
+                  <LineSpaceAiAvatar size={28} />
+                </View>
+              ) : null}
+            </View>
+            <Text style={[styles.contributorCount, { color: ink }]}>
+              {contributorCount} {contributorCount === 1 ? "contributor" : "contributors"}
+            </Text>
           </View>
-        ) : null}
+          <Text style={[styles.byline, { color: ink }]}>by {contributorNames}</Text>
+          {hasAiChanges ? (
+            <View style={styles.aiLegend}>
+              <View style={styles.aiLegendSwatch} />
+              <Text style={styles.aiLegendText}>Blue text was harmonized by AI</Text>
+            </View>
+          ) : null}
+        </View>
       </View>
     </View>
   );
 }
 
-const backgroundStyles = StyleSheet.create({
+const backgroundStyles: Record<PoemBackgroundRole, ViewStyle> = {
   ruled: { backgroundColor: "#F6F2EA" },
   kraft: { backgroundColor: "#D8C5A6" },
   postcard: { backgroundColor: "#E7EEF0" },
-  dark: { backgroundColor: "#17191E" }
-});
+  dark: { backgroundColor: "#17191E" },
+  rice: { backgroundColor: "#F3EBDD" },
+  grid: { backgroundColor: "#EAF1F1" },
+  blush: { backgroundColor: "#F3E7E3" },
+  museum: { backgroundColor: "#F1EFE8" }
+};
 
 const styles = StyleSheet.create({
   root: {
@@ -145,13 +160,15 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     borderWidth: StyleSheet.hairlineWidth,
     overflow: "hidden",
-    paddingHorizontal: 20,
-    paddingVertical: 24,
     position: "relative"
   },
-  media: { ...StyleSheet.absoluteFillObject, height: "100%", opacity: 0.3, width: "100%" },
-  mediaWash: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(255,255,255,0.48)" },
-  mediaWashDark: { backgroundColor: "rgba(0,0,0,0.46)" },
+  media: {
+    width: "100%",
+    backgroundColor: colors.surfaceMuted,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(21,21,21,0.12)"
+  },
+  body: { paddingHorizontal: 20, paddingVertical: 24 },
   title: { fontFamily: "Georgia", fontSize: 27, fontWeight: "700", lineHeight: 34, marginBottom: 15 },
   aiLegend: {
     alignSelf: "flex-start",
@@ -202,6 +219,13 @@ const styles = StyleSheet.create({
   contributorCount: { marginLeft: 10, fontSize: 11, fontWeight: "700", opacity: 0.62 },
   byline: { marginTop: 9, fontSize: 11, fontWeight: "600", lineHeight: 16, opacity: 0.68 }
 });
+
+function getMediaHeight(aspectRatio?: number) {
+  if (!aspectRatio) return 210;
+  if (aspectRatio >= 1.65) return 176;
+  if (aspectRatio >= 1.05) return 218;
+  return 282;
+}
 
 export type AiTextSegment = { text: string; ai: boolean };
 

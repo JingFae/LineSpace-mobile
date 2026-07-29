@@ -905,14 +905,22 @@ function toLayout(value: unknown): PoemLayoutConfig | undefined {
   if (
     templateId !== "quiet-letter" &&
     templateId !== "night-whisper" &&
-    templateId !== "travel-postcard"
+    templateId !== "travel-postcard" &&
+    templateId !== "ink-archive" &&
+    templateId !== "field-notes" &&
+    templateId !== "soft-margin" &&
+    templateId !== "museum-label"
   ) {
     return undefined;
   }
   if (
     typographyId !== "literary-serif" &&
     typographyId !== "handwritten" &&
-    typographyId !== "clean-sans"
+    typographyId !== "clean-sans" &&
+    typographyId !== "songti-editorial" &&
+    typographyId !== "humanist-sans" &&
+    typographyId !== "rounded-sans" &&
+    typographyId !== "mono-notes"
   ) {
     return undefined;
   }
@@ -920,13 +928,23 @@ function toLayout(value: unknown): PoemLayoutConfig | undefined {
     backgroundId !== "letter-paper" &&
     backgroundId !== "kraft-paper" &&
     backgroundId !== "postcard" &&
-    backgroundId !== "midnight"
+    backgroundId !== "midnight" &&
+    backgroundId !== "rice-paper" &&
+    backgroundId !== "graph-paper" &&
+    backgroundId !== "blush-paper" &&
+    backgroundId !== "museum-card"
   ) {
     return undefined;
   }
   const stickerIds = arrayOfStrings(layout.stickerIds).filter(
     (item): item is PoemLayoutConfig["stickerIds"][number] =>
-      item === "botanical" || item === "moon" || item === "postmark"
+      item === "botanical" ||
+      item === "moon" ||
+      item === "postmark" ||
+      item === "pressed-flower" ||
+      item === "paperclip" ||
+      item === "asterism" ||
+      item === "washi"
   );
   return {
     templateId,

@@ -5,17 +5,20 @@ import type { ReactNode, Ref } from "react";
 import {
   ActivityIndicator,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
-  type ImageSourcePropType
+  type ImageSourcePropType,
+  type TextStyle
 } from "react-native";
 import {
   AppScreen,
   BackgroundPaperIcon,
   PoemLayoutCard,
+  StickerIcon,
   TemplateIcon,
   TypographyIcon
 } from "@linespace/ui";
@@ -25,6 +28,7 @@ import type {
   PoemDesignCatalog,
   PoemDraft,
   PoemLayoutConfig,
+  PoemStickerId,
   PoemTypographyId,
   PoemDraftSettings
 } from "@linespace/api-client";
@@ -44,7 +48,7 @@ type ComposePreviewScreenProps = {
   params: Record<string, SearchParamValue>;
 };
 
-type LayoutTool = "template" | "typography" | "background";
+type LayoutTool = "template" | "typography" | "background" | "sticker";
 
 export function ComposePreviewScreen({ params }: ComposePreviewScreenProps) {
   const queryClient = useQueryClient();
@@ -373,6 +377,7 @@ function LayoutWorkspace({
         <ToolButton active={activeTool === "template"} label="Template" onPress={() => onToolChange("template")}><TemplateIcon /></ToolButton>
         <ToolButton active={activeTool === "typography"} label="Typography" onPress={() => onToolChange("typography")}><TypographyIcon /></ToolButton>
         <ToolButton active={activeTool === "background"} label="Paper" onPress={() => onToolChange("background")}><BackgroundPaperIcon /></ToolButton>
+        <ToolButton active={activeTool === "sticker"} label="Sticker" onPress={() => onToolChange("sticker")}><StickerIcon /></ToolButton>
       </View>
     </View>
   );
@@ -389,12 +394,55 @@ function OptionTray({
   layout: PoemLayoutConfig;
   onSelectLayout: (layout: PoemLayoutConfig) => void;
 }) {
-  const options = activeTool === "template" ? catalog.templates : activeTool === "typography" ? catalog.typography : catalog.backgrounds;
+  const options =
+    activeTool === "template"
+      ? catalog.templates
+      : activeTool === "typography"
+        ? catalog.typography
+        : activeTool === "background"
+          ? catalog.backgrounds
+          : catalog.stickers;
   return (
     <View style={styles.optionTray}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.optionContent}>
         {options.map((option) => {
-          const selected = activeTool === "template" ? option.id === layout.templateId : activeTool === "typography" ? option.id === layout.typographyId : option.id === layout.backgroundId;
+          const template =
+            activeTool === "template"
+              ? (option as PoemDesignCatalog["templates"][number])
+              : undefined;
+          const paperRole =
+            activeTool === "background"
+              ? (option.role as PoemDesignCatalog["backgrounds"][number]["role"])
+              : template
+                ? catalog.backgrounds.find(
+                    (background) =>
+                      background.id === template.layout.backgroundId
+                  )?.role
+                : undefined;
+          const previewTypographyRole =
+            activeTool === "typography"
+              ? (option.role as PoemDesignCatalog["typography"][number]["role"])
+              : template
+                ? catalog.typography.find(
+                    (typography) =>
+                      typography.id === template.layout.typographyId
+                  )?.role
+                : undefined;
+          const previewSticker =
+            template?.layout.stickerIds.length
+              ? catalog.stickers.find(
+                  (sticker) =>
+                    sticker.id === template.layout.stickerIds[0]
+                )?.symbol
+              : undefined;
+          const selected =
+            activeTool === "template"
+              ? option.id === layout.templateId
+              : activeTool === "typography"
+                ? option.id === layout.typographyId
+                : activeTool === "background"
+                  ? option.id === layout.backgroundId
+                  : layout.stickerIds.includes(option.id as PoemStickerId);
           return (
             <Pressable
               key={option.id}
@@ -405,14 +453,49 @@ function OptionTray({
                   onSelectLayout({ ...(option as PoemDesignCatalog["templates"][number]).layout, stickerIds: [...(option as PoemDesignCatalog["templates"][number]).layout.stickerIds] });
                 } else if (activeTool === "typography") {
                   onSelectLayout({ ...layout, typographyId: option.id as PoemTypographyId });
-                } else {
+                } else if (activeTool === "background") {
                   onSelectLayout({ ...layout, backgroundId: option.id as PoemBackgroundId });
+                } else {
+                  const stickerId = option.id as PoemStickerId;
+                  onSelectLayout({
+                    ...layout,
+                    stickerIds: layout.stickerIds.includes(stickerId)
+                      ? layout.stickerIds.filter((id) => id !== stickerId)
+                      : [...layout.stickerIds, stickerId].slice(-2)
+                  });
                 }
               }}
               style={[styles.optionCard, selected && styles.optionCardSelected]}
             >
               <View style={[styles.swatch, { backgroundColor: option.swatch }]}>
-                {activeTool === "typography" ? <Text style={styles.swatchLetter}>Aa</Text> : null}
+                {paperRole ? <PaperSwatchTexture role={paperRole} /> : null}
+                {previewTypographyRole ? (
+                  <Text
+                    style={[
+                      styles.swatchLetter,
+                      typographyPreviewStyles[previewTypographyRole],
+                      activeTool === "template" &&
+                        paperRole !== "dark" &&
+                        styles.swatchTemplateInk
+                    ]}
+                  >
+                    中 Aa
+                  </Text>
+                ) : activeTool === "sticker" ? (
+                  <Text style={styles.swatchSticker}>
+                    {"symbol" in option ? option.symbol : ""}
+                  </Text>
+                ) : null}
+                {activeTool === "template" && previewSticker ? (
+                  <Text
+                    style={[
+                      styles.swatchTemplateSticker,
+                      paperRole !== "dark" && styles.swatchTemplateInk
+                    ]}
+                  >
+                    {previewSticker}
+                  </Text>
+                ) : null}
               </View>
               <Text numberOfLines={1} style={styles.optionLabel}>{option.label}</Text>
               <Text numberOfLines={1} style={styles.optionDescription}>{option.description}</Text>
@@ -420,6 +503,68 @@ function OptionTray({
           );
         })}
       </ScrollView>
+    </View>
+  );
+}
+
+function PaperSwatchTexture({
+  role
+}: {
+  role: PoemDesignCatalog["backgrounds"][number]["role"];
+}) {
+  if (role === "ruled") {
+    return (
+      <View pointerEvents="none" style={styles.swatchTexture}>
+        {[12, 23, 34].map((top) => (
+          <View key={top} style={[styles.swatchRule, { top }]} />
+        ))}
+      </View>
+    );
+  }
+  if (role === "grid") {
+    return (
+      <View pointerEvents="none" style={styles.swatchTexture}>
+        {[11, 22, 33].map((top) => (
+          <View key={`h-${top}`} style={[styles.swatchGridHorizontal, { top }]} />
+        ))}
+        {[28, 52, 76].map((left) => (
+          <View key={`v-${left}`} style={[styles.swatchGridVertical, { left }]} />
+        ))}
+      </View>
+    );
+  }
+  if (role === "postcard") {
+    return (
+      <View pointerEvents="none" style={styles.swatchTexture}>
+        <View style={styles.swatchPostcardTop} />
+        <View style={styles.swatchPostcardBottom} />
+      </View>
+    );
+  }
+  if (role === "dark") {
+    return (
+      <View pointerEvents="none" style={styles.swatchTexture}>
+        <View style={styles.swatchMoon} />
+      </View>
+    );
+  }
+  if (role === "rice" || role === "kraft") {
+    return (
+      <View pointerEvents="none" style={styles.swatchTexture}>
+        <Text style={styles.swatchFibres}>╱  ╲   ╱  ╲</Text>
+      </View>
+    );
+  }
+  if (role === "blush") {
+    return (
+      <View pointerEvents="none" style={styles.swatchTexture}>
+        <View style={styles.swatchBlush} />
+      </View>
+    );
+  }
+  return (
+    <View pointerEvents="none" style={styles.swatchTexture}>
+      <View style={styles.swatchMuseumFrame} />
     </View>
   );
 }
@@ -441,6 +586,43 @@ function formatPoemDate(value: string) {
   const date = new Date(value);
   return `${date.getFullYear()}/${`${date.getMonth() + 1}`.padStart(2, "0")}/${`${date.getDate()}`.padStart(2, "0")}`;
 }
+
+const cjkSerifPreview = Platform.select({
+  ios: "Songti SC",
+  android: "serif",
+  web: '"Noto Serif SC", "Source Han Serif SC", "Songti SC", Georgia, serif',
+  default: "Georgia"
+});
+const cjkSansPreview = Platform.select({
+  ios: "PingFang SC",
+  android: "sans-serif",
+  web: '"Noto Sans SC", "Source Han Sans SC", "PingFang SC", system-ui, sans-serif',
+  default: "System"
+});
+const cjkMonoPreview = Platform.select({
+  ios: "Menlo",
+  android: "monospace",
+  web: '"Noto Sans Mono CJK SC", "SFMono-Regular", Consolas, monospace',
+  default: "monospace"
+});
+const typographyPreviewStyles: Record<
+  PoemDesignCatalog["typography"][number]["role"],
+  TextStyle
+> = {
+  serif: { fontFamily: "Georgia", fontStyle: "italic" },
+  script: {
+    fontFamily: Platform.select({
+      ios: "Snell Roundhand",
+      android: "cursive",
+      web: "cursive",
+      default: "Georgia"
+    })
+  },
+  sans: { fontFamily: cjkSansPreview },
+  editorial: { fontFamily: cjkSerifPreview },
+  rounded: { fontFamily: cjkSansPreview, fontWeight: "600" },
+  mono: { fontFamily: cjkMonoPreview }
+};
 
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.profileCanvas },
@@ -468,11 +650,24 @@ const styles = StyleSheet.create({
   optionCard: { width: 118, padding: 8, borderRadius: 14, borderWidth: 1, borderColor: "transparent", backgroundColor: colors.surface },
   optionCardSelected: { borderColor: colors.ink },
   swatch: { height: 45, borderRadius: 9, alignItems: "center", justifyContent: "center" },
-  swatchLetter: { color: colors.white, fontFamily: "Georgia", fontSize: 18, fontStyle: "italic" },
+  swatchLetter: { color: colors.white, fontSize: 16 },
+  swatchSticker: { color: colors.white, fontSize: 24, lineHeight: 28 },
+  swatchTemplateInk: { color: "rgba(21,21,21,0.78)" },
+  swatchTemplateSticker: { position: "absolute", right: 7, top: 4, color: "rgba(255,255,255,0.78)", fontSize: 12 },
+  swatchTexture: { ...StyleSheet.absoluteFillObject, overflow: "hidden", borderRadius: 9 },
+  swatchRule: { position: "absolute", left: 0, right: 0, height: StyleSheet.hairlineWidth, backgroundColor: "rgba(62,90,102,0.22)" },
+  swatchGridHorizontal: { position: "absolute", left: 0, right: 0, height: StyleSheet.hairlineWidth, backgroundColor: "rgba(64,104,108,0.20)" },
+  swatchGridVertical: { position: "absolute", top: 0, bottom: 0, width: StyleSheet.hairlineWidth, backgroundColor: "rgba(64,104,108,0.16)" },
+  swatchPostcardTop: { position: "absolute", left: 0, right: 0, top: 3, height: 3, backgroundColor: "rgba(157,93,77,0.55)" },
+  swatchPostcardBottom: { position: "absolute", left: 0, right: 0, bottom: 3, height: 3, backgroundColor: "rgba(68,107,132,0.48)" },
+  swatchMoon: { position: "absolute", right: -8, top: -10, width: 52, height: 52, borderRadius: 26, backgroundColor: "rgba(242,231,199,0.12)" },
+  swatchFibres: { position: "absolute", left: 4, top: 12, color: "rgba(73,54,39,0.19)", fontSize: 13, letterSpacing: 3 },
+  swatchBlush: { position: "absolute", right: -12, bottom: -15, width: 66, height: 66, borderRadius: 33, backgroundColor: "rgba(194,119,136,0.15)" },
+  swatchMuseumFrame: { position: "absolute", left: 5, right: 5, top: 5, bottom: 5, borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(53,61,62,0.30)" },
   optionLabel: { marginTop: 6, color: colors.ink, fontSize: 11, lineHeight: 14, fontWeight: "500" },
   optionDescription: { marginTop: 1, color: colors.profileMuted, fontSize: 8, lineHeight: 11 },
-  toolbar: { height: 72, paddingHorizontal: 28, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line, backgroundColor: colors.white, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  toolButton: { minWidth: 78, alignItems: "center", justifyContent: "center" },
+  toolbar: { height: 72, paddingHorizontal: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line, backgroundColor: colors.white, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  toolButton: { minWidth: 68, alignItems: "center", justifyContent: "center" },
   toolIcon: { width: 42, height: 38, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   toolIconActive: { backgroundColor: colors.surfacePressed },
   toolLabel: { marginTop: 2, color: colors.tabMuted, fontSize: 9, lineHeight: 12 },

@@ -427,6 +427,7 @@ function PoemDetailContent({
         <VersionPostLayoutCard
           backgroundRole={layoutPresentation?.backgroundRole}
           lines={poem.versionLines ?? []}
+          mediaAspectRatio={layoutPresentation?.mediaAspectRatio}
           mediaSource={layoutPresentation?.mediaSource}
           onTagPress={(tag) => router.push({ pathname: "/tags/[tag]", params: { tag, section: "posts" } } as never)}
           publishedBy={poem.author.displayName}

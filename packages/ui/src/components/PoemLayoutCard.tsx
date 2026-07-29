@@ -20,10 +20,28 @@ export type PoemLayoutCardModel = {
   startedAtLabel: string;
 };
 
+export type PoemBackgroundRole =
+  | "ruled"
+  | "kraft"
+  | "postcard"
+  | "dark"
+  | "rice"
+  | "grid"
+  | "blush"
+  | "museum";
+
+export type PoemTypographyRole =
+  | "serif"
+  | "script"
+  | "sans"
+  | "editorial"
+  | "rounded"
+  | "mono";
+
 type PoemLayoutCardProps = {
   poem: PoemLayoutCardModel;
-  backgroundRole: "ruled" | "kraft" | "postcard" | "dark";
-  typographyRole: "serif" | "script" | "sans";
+  backgroundRole: PoemBackgroundRole;
+  typographyRole: PoemTypographyRole;
   stickerSymbols?: string[];
   mediaSource?: ImageSourcePropType;
   mediaAspectRatio?: number;
@@ -111,22 +129,94 @@ function PaperTexture({ role }: { role: PoemLayoutCardProps["backgroundRole"] })
   if (role === "postcard") {
     return <View pointerEvents="none" style={styles.texture}><View style={styles.postcardTop} /><View style={styles.postcardBottom} /><View style={styles.postcardStamp}><Text style={styles.postcardStampText}>LINE</Text></View></View>;
   }
-  return <View pointerEvents="none" style={styles.texture}><View style={styles.moonGlow} /></View>;
+  if (role === "dark") {
+    return <View pointerEvents="none" style={styles.texture}><View style={styles.moonGlow} /></View>;
+  }
+  if (role === "rice") {
+    return (
+      <View pointerEvents="none" style={styles.texture}>
+        <View style={styles.riceWash} />
+        <View style={styles.riceEdge} />
+        <Text style={styles.riceFibres}>╱  ╲   ╱     ╲  ╱   ╲</Text>
+      </View>
+    );
+  }
+  if (role === "grid") {
+    return (
+      <View pointerEvents="none" style={styles.texture}>
+        {Array.from({ length: 15 }, (_, index) => (
+          <View key={`h-${index}`} style={[styles.gridHorizontal, { top: 20 + index * 28 }]} />
+        ))}
+        {Array.from({ length: 11 }, (_, index) => (
+          <View key={`v-${index}`} style={[styles.gridVertical, { left: 18 + index * 32 }]} />
+        ))}
+        <View style={styles.gridMargin} />
+      </View>
+    );
+  }
+  if (role === "blush") {
+    return (
+      <View pointerEvents="none" style={styles.texture}>
+        <View style={styles.blushHalo} />
+        <View style={styles.blushMargin} />
+      </View>
+    );
+  }
+  return (
+    <View pointerEvents="none" style={styles.texture}>
+      <View style={styles.museumFrame} />
+      <Text style={styles.museumIndex}>LS / ARCHIVE</Text>
+    </View>
+  );
 }
 
 const scriptFamily = Platform.select({ ios: "Snell Roundhand", android: "cursive", web: "cursive", default: "Georgia" });
+const serifFamily = Platform.select({
+  ios: "Songti SC",
+  android: "serif",
+  web: '"Noto Serif SC", "Source Han Serif SC", "Songti SC", Georgia, serif',
+  default: "Georgia"
+});
+const sansFamily = Platform.select({
+  ios: "PingFang SC",
+  android: "sans-serif",
+  web: '"Noto Sans SC", "Source Han Sans SC", "PingFang SC", system-ui, sans-serif',
+  default: "System"
+});
+const monoFamily = Platform.select({
+  ios: "Menlo",
+  android: "monospace",
+  web: '"Noto Sans Mono CJK SC", "SFMono-Regular", Consolas, monospace',
+  default: "monospace"
+});
 
 const typographyStyles: Record<PoemLayoutCardProps["typographyRole"], TextStyle> = {
   serif: { fontFamily: "Georgia", fontStyle: "italic" },
   script: { fontFamily: scriptFamily, fontStyle: "normal" },
-  sans: { fontFamily: "System", fontStyle: "normal" }
+  sans: { fontFamily: sansFamily, fontStyle: "normal" },
+  editorial: { fontFamily: serifFamily, fontStyle: "normal" },
+  rounded: {
+    fontFamily: sansFamily,
+    fontStyle: "normal",
+    fontWeight: "500",
+    letterSpacing: 0.2
+  },
+  mono: {
+    fontFamily: monoFamily,
+    fontStyle: "normal",
+    letterSpacing: 0.1
+  }
 };
 
 const backgroundStyles: Record<PoemLayoutCardProps["backgroundRole"], ViewStyle> = {
   ruled: { backgroundColor: "#F4EFE2" },
   kraft: { backgroundColor: "#C6A476" },
   postcard: { backgroundColor: "#EADBC5" },
-  dark: { backgroundColor: "#213142" }
+  dark: { backgroundColor: "#213142" },
+  rice: { backgroundColor: "#F3EBDD" },
+  grid: { backgroundColor: "#EAF1F1" },
+  blush: { backgroundColor: "#F3E7E3" },
+  museum: { backgroundColor: "#F1EFE8" }
 };
 
 function getMediaHeight(aspectRatio?: number) {
@@ -148,6 +238,16 @@ const styles = StyleSheet.create({
   postcardStamp: { position: "absolute", right: 18, top: 20, width: 48, height: 38, borderWidth: 1, borderColor: "rgba(118,72,57,0.52)", alignItems: "center", justifyContent: "center", transform: [{ rotate: "5deg" }] },
   postcardStampText: { color: "rgba(118,72,57,0.62)", fontSize: 9, letterSpacing: 1 },
   moonGlow: { position: "absolute", right: -25, top: -20, width: 150, height: 150, borderRadius: 75, backgroundColor: "rgba(242,231,199,0.08)" },
+  riceWash: { position: "absolute", left: -46, top: -24, width: 150, height: 190, borderRadius: 90, backgroundColor: "rgba(118,104,82,0.05)" },
+  riceEdge: { position: "absolute", left: 19, top: 0, bottom: 0, width: StyleSheet.hairlineWidth, backgroundColor: "rgba(116,91,68,0.16)" },
+  riceFibres: { position: "absolute", right: 12, bottom: 20, color: "rgba(88,72,56,0.11)", fontSize: 17, letterSpacing: 4, transform: [{ rotate: "-9deg" }] },
+  gridHorizontal: { position: "absolute", left: 0, right: 0, height: StyleSheet.hairlineWidth, backgroundColor: "rgba(75,121,126,0.13)" },
+  gridVertical: { position: "absolute", top: 0, bottom: 0, width: StyleSheet.hairlineWidth, backgroundColor: "rgba(75,121,126,0.11)" },
+  gridMargin: { position: "absolute", left: 44, top: 0, bottom: 0, width: 1, backgroundColor: "rgba(191,93,91,0.20)" },
+  blushHalo: { position: "absolute", right: -52, bottom: -40, width: 190, height: 190, borderRadius: 95, backgroundColor: "rgba(202,139,151,0.10)" },
+  blushMargin: { position: "absolute", left: 22, top: 0, bottom: 0, width: 2, backgroundColor: "rgba(181,119,132,0.13)" },
+  museumFrame: { position: "absolute", left: 12, right: 12, top: 12, bottom: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(58,65,66,0.22)" },
+  museumIndex: { position: "absolute", right: 21, top: 18, color: "rgba(58,65,66,0.40)", fontSize: 8, fontWeight: "600", letterSpacing: 1.4 },
   media: {
     width: "100%",
     backgroundColor: colors.surfaceMuted,

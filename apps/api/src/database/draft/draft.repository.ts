@@ -103,6 +103,58 @@ const poemDesignCatalog: PoemDesignCatalog = {
         backgroundId: "postcard",
         stickerIds: ["postmark"]
       }
+    },
+    {
+      id: "ink-archive",
+      label: "Ink archive",
+      description: "Rice paper, editorial Songti and a pressed flower.",
+      role: "template",
+      swatch: "#F3EBDD",
+      layout: {
+        templateId: "ink-archive",
+        typographyId: "songti-editorial",
+        backgroundId: "rice-paper",
+        stickerIds: ["pressed-flower"]
+      }
+    },
+    {
+      id: "field-notes",
+      label: "Field notes",
+      description: "A crisp research grid with mono notes and a paperclip.",
+      role: "template",
+      swatch: "#EAF1F1",
+      layout: {
+        templateId: "field-notes",
+        typographyId: "mono-notes",
+        backgroundId: "graph-paper",
+        stickerIds: ["paperclip", "asterism"]
+      }
+    },
+    {
+      id: "soft-margin",
+      label: "Soft margin",
+      description: "Blush stationery with rounded type and a strip of tape.",
+      role: "template",
+      swatch: "#F3E7E3",
+      layout: {
+        templateId: "soft-margin",
+        typographyId: "rounded-sans",
+        backgroundId: "blush-paper",
+        stickerIds: ["washi"]
+      }
+    },
+    {
+      id: "museum-label",
+      label: "Museum label",
+      description: "A restrained archive card for image-led poems.",
+      role: "template",
+      swatch: "#F1EFE8",
+      layout: {
+        templateId: "museum-label",
+        typographyId: "humanist-sans",
+        backgroundId: "museum-card",
+        stickerIds: ["postmark", "paperclip"]
+      }
     }
   ],
   typography: [
@@ -126,6 +178,34 @@ const poemDesignCatalog: PoemDesignCatalog = {
       description: "A restrained modern voice.",
       role: "sans",
       swatch: "#626262"
+    },
+    {
+      id: "songti-editorial",
+      label: "Songti editorial",
+      description: "Bilingual serif rhythm for Chinese and English.",
+      role: "editorial",
+      swatch: "#302A25"
+    },
+    {
+      id: "humanist-sans",
+      label: "Humanist",
+      description: "Open, readable forms across Chinese and English.",
+      role: "sans",
+      swatch: "#40515B"
+    },
+    {
+      id: "rounded-sans",
+      label: "Soft rounded",
+      description: "A friendly bilingual voice with gentle weight.",
+      role: "rounded",
+      swatch: "#8A5E68"
+    },
+    {
+      id: "mono-notes",
+      label: "Research mono",
+      description: "A note-taking rhythm with CJK-safe fallback.",
+      role: "mono",
+      swatch: "#3E6262"
     }
   ],
   backgrounds: [
@@ -156,6 +236,34 @@ const poemDesignCatalog: PoemDesignCatalog = {
       description: "Deep blue for luminous text.",
       role: "dark",
       swatch: "#213142"
+    },
+    {
+      id: "rice-paper",
+      label: "Rice paper",
+      description: "Quiet warm fibres and an ink-wash edge.",
+      role: "rice",
+      swatch: "#F3EBDD"
+    },
+    {
+      id: "graph-paper",
+      label: "Research grid",
+      description: "A pale scientific notebook grid.",
+      role: "grid",
+      swatch: "#EAF1F1"
+    },
+    {
+      id: "blush-paper",
+      label: "Blush paper",
+      description: "Soft rose stationery with a calm margin.",
+      role: "blush",
+      swatch: "#F3E7E3"
+    },
+    {
+      id: "museum-card",
+      label: "Archive card",
+      description: "Neutral stock with a precise inset frame.",
+      role: "museum",
+      swatch: "#F1EFE8"
     }
   ],
   stickers: [
@@ -182,6 +290,38 @@ const poemDesignCatalog: PoemDesignCatalog = {
       role: "postmark",
       swatch: "#9D5D4D",
       symbol: "\u2709"
+    },
+    {
+      id: "pressed-flower",
+      label: "Pressed flower",
+      description: "A delicate botanical keepsake.",
+      role: "flower",
+      swatch: "#9A6E78",
+      symbol: "\u2740"
+    },
+    {
+      id: "paperclip",
+      label: "Paperclip",
+      description: "A clean archival clip.",
+      role: "paperclip",
+      swatch: "#65757D",
+      symbol: "\u2318"
+    },
+    {
+      id: "asterism",
+      label: "Asterism",
+      description: "A small constellation mark.",
+      role: "star",
+      swatch: "#677E83",
+      symbol: "\u2726"
+    },
+    {
+      id: "washi",
+      label: "Washi tape",
+      description: "A soft strip of paper tape.",
+      role: "tape",
+      swatch: "#C58B93",
+      symbol: "\u25B0"
     }
   ]
 };
@@ -584,14 +724,22 @@ function parseLayout(value: unknown): PoemLayoutConfig {
   if (
     source.templateId === "quiet-letter" ||
     source.templateId === "night-whisper" ||
-    source.templateId === "travel-postcard"
+    source.templateId === "travel-postcard" ||
+    source.templateId === "ink-archive" ||
+    source.templateId === "field-notes" ||
+    source.templateId === "soft-margin" ||
+    source.templateId === "museum-label"
   ) {
     layout.templateId = source.templateId;
   }
   if (
     source.typographyId === "literary-serif" ||
     source.typographyId === "handwritten" ||
-    source.typographyId === "clean-sans"
+    source.typographyId === "clean-sans" ||
+    source.typographyId === "songti-editorial" ||
+    source.typographyId === "humanist-sans" ||
+    source.typographyId === "rounded-sans" ||
+    source.typographyId === "mono-notes"
   ) {
     layout.typographyId = source.typographyId;
   }
@@ -599,13 +747,23 @@ function parseLayout(value: unknown): PoemLayoutConfig {
     source.backgroundId === "letter-paper" ||
     source.backgroundId === "kraft-paper" ||
     source.backgroundId === "postcard" ||
-    source.backgroundId === "midnight"
+    source.backgroundId === "midnight" ||
+    source.backgroundId === "rice-paper" ||
+    source.backgroundId === "graph-paper" ||
+    source.backgroundId === "blush-paper" ||
+    source.backgroundId === "museum-card"
   ) {
     layout.backgroundId = source.backgroundId;
   }
   layout.stickerIds = arrayOfStrings(source.stickerIds).filter(
     (item): item is PoemLayoutConfig["stickerIds"][number] =>
-      item === "botanical" || item === "moon" || item === "postmark"
+      item === "botanical" ||
+      item === "moon" ||
+      item === "postmark" ||
+      item === "pressed-flower" ||
+      item === "paperclip" ||
+      item === "asterism" ||
+      item === "washi"
   );
   return layout;
 }

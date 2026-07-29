@@ -265,3 +265,13 @@ export function TypographyIcon({ width = 36, height = 34, color = "#000000" }: F
     </Svg>
   );
 }
+
+export function StickerIcon({ width = 36, height = 34, color = "#000000" }: FigmaIconProps) {
+  return (
+    <Svg width={width} height={height} viewBox="0 0 36 34">
+      <Path d="M18 0.5C27.7 0.5 35.5 7.9 35.5 17C35.5 26.1 27.7 33.5 18 33.5C8.3 33.5 0.5 26.1 0.5 17C0.5 7.9 8.3 0.5 18 0.5Z" fill="none" stroke={color} />
+      <Path d="M18 8.5L20.2 14.8L27 17L20.2 19.2L18 25.5L15.8 19.2L9 17L15.8 14.8L18 8.5Z" fill="none" stroke={color} strokeWidth={1.35} strokeLinejoin="round" />
+      <Circle cx={25.5} cy={10.5} r={1.4} fill={color} />
+    </Svg>
+  );
+}

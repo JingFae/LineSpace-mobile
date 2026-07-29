@@ -52,6 +52,58 @@ export const mockPoemDesignCatalog: PoemDesignCatalog = {
         backgroundId: "postcard",
         stickerIds: ["postmark"]
       }
+    },
+    {
+      id: "ink-archive",
+      label: "Ink archive",
+      description: "Rice paper, editorial Songti and a pressed flower.",
+      role: "template",
+      swatch: "#F3EBDD",
+      layout: {
+        templateId: "ink-archive",
+        typographyId: "songti-editorial",
+        backgroundId: "rice-paper",
+        stickerIds: ["pressed-flower"]
+      }
+    },
+    {
+      id: "field-notes",
+      label: "Field notes",
+      description: "A crisp research grid with mono notes and a paperclip.",
+      role: "template",
+      swatch: "#EAF1F1",
+      layout: {
+        templateId: "field-notes",
+        typographyId: "mono-notes",
+        backgroundId: "graph-paper",
+        stickerIds: ["paperclip", "asterism"]
+      }
+    },
+    {
+      id: "soft-margin",
+      label: "Soft margin",
+      description: "Blush stationery with rounded type and a strip of tape.",
+      role: "template",
+      swatch: "#F3E7E3",
+      layout: {
+        templateId: "soft-margin",
+        typographyId: "rounded-sans",
+        backgroundId: "blush-paper",
+        stickerIds: ["washi"]
+      }
+    },
+    {
+      id: "museum-label",
+      label: "Museum label",
+      description: "A restrained archive card for image-led poems.",
+      role: "template",
+      swatch: "#F1EFE8",
+      layout: {
+        templateId: "museum-label",
+        typographyId: "humanist-sans",
+        backgroundId: "museum-card",
+        stickerIds: ["postmark", "paperclip"]
+      }
     }
   ],
   typography: [
@@ -75,6 +127,34 @@ export const mockPoemDesignCatalog: PoemDesignCatalog = {
       description: "A restrained modern voice.",
       role: "sans",
       swatch: "#626262"
+    },
+    {
+      id: "songti-editorial",
+      label: "Songti editorial",
+      description: "Bilingual serif rhythm for Chinese and English.",
+      role: "editorial",
+      swatch: "#302A25"
+    },
+    {
+      id: "humanist-sans",
+      label: "Humanist",
+      description: "Open, readable forms across Chinese and English.",
+      role: "sans",
+      swatch: "#40515B"
+    },
+    {
+      id: "rounded-sans",
+      label: "Soft rounded",
+      description: "A friendly bilingual voice with gentle weight.",
+      role: "rounded",
+      swatch: "#8A5E68"
+    },
+    {
+      id: "mono-notes",
+      label: "Research mono",
+      description: "A note-taking rhythm with CJK-safe fallback.",
+      role: "mono",
+      swatch: "#3E6262"
     }
   ],
   backgrounds: [
@@ -105,6 +185,34 @@ export const mockPoemDesignCatalog: PoemDesignCatalog = {
       description: "Deep blue for luminous text.",
       role: "dark",
       swatch: "#213142"
+    },
+    {
+      id: "rice-paper",
+      label: "Rice paper",
+      description: "Quiet warm fibres and an ink-wash edge.",
+      role: "rice",
+      swatch: "#F3EBDD"
+    },
+    {
+      id: "graph-paper",
+      label: "Research grid",
+      description: "A pale scientific notebook grid.",
+      role: "grid",
+      swatch: "#EAF1F1"
+    },
+    {
+      id: "blush-paper",
+      label: "Blush paper",
+      description: "Soft rose stationery with a calm margin.",
+      role: "blush",
+      swatch: "#F3E7E3"
+    },
+    {
+      id: "museum-card",
+      label: "Archive card",
+      description: "Neutral stock with a precise inset frame.",
+      role: "museum",
+      swatch: "#F1EFE8"
     }
   ],
   stickers: [
@@ -130,7 +238,39 @@ export const mockPoemDesignCatalog: PoemDesignCatalog = {
       description: "A simple correspondence stamp.",
       role: "postmark",
       swatch: "#9D5D4D",
-      symbol: "✦"
+      symbol: "\u2709"
+    },
+    {
+      id: "pressed-flower",
+      label: "Pressed flower",
+      description: "A delicate botanical keepsake.",
+      role: "flower",
+      swatch: "#9A6E78",
+      symbol: "\u2740"
+    },
+    {
+      id: "paperclip",
+      label: "Paperclip",
+      description: "A clean archival clip.",
+      role: "paperclip",
+      swatch: "#65757D",
+      symbol: "\u2318"
+    },
+    {
+      id: "asterism",
+      label: "Asterism",
+      description: "A small constellation mark.",
+      role: "star",
+      swatch: "#677E83",
+      symbol: "\u2726"
+    },
+    {
+      id: "washi",
+      label: "Washi tape",
+      description: "A soft strip of paper tape.",
+      role: "tape",
+      swatch: "#C58B93",
+      symbol: "\u25B0"
     }
   ]
 };

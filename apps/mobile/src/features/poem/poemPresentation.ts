@@ -8,8 +8,16 @@ import type {
 import type { ImageSourcePropType } from "react-native";
 
 export type PoemLayoutPresentation = {
-  backgroundRole: "ruled" | "kraft" | "postcard" | "dark";
-  typographyRole: "serif" | "script" | "sans";
+  backgroundRole:
+    | "ruled"
+    | "kraft"
+    | "postcard"
+    | "dark"
+    | "rice"
+    | "grid"
+    | "blush"
+    | "museum";
+  typographyRole: "serif" | "script" | "sans" | "editorial" | "rounded" | "mono";
   stickerSymbols: string[];
   mediaSource?: ImageSourcePropType;
   mediaAspectRatio?: number;
@@ -22,7 +30,11 @@ const backgroundRoles: Record<
   "letter-paper": "ruled",
   "kraft-paper": "kraft",
   postcard: "postcard",
-  midnight: "dark"
+  midnight: "dark",
+  "rice-paper": "rice",
+  "graph-paper": "grid",
+  "blush-paper": "blush",
+  "museum-card": "museum"
 };
 
 const typographyRoles: Record<
@@ -31,13 +43,21 @@ const typographyRoles: Record<
 > = {
   "literary-serif": "serif",
   handwritten: "script",
-  "clean-sans": "sans"
+  "clean-sans": "sans",
+  "songti-editorial": "editorial",
+  "humanist-sans": "sans",
+  "rounded-sans": "rounded",
+  "mono-notes": "mono"
 };
 
 const stickerSymbols: Record<PoemStickerId, string> = {
   botanical: "❦",
   moon: "☾",
-  postmark: "✦"
+  postmark: "\u2709",
+  "pressed-flower": "\u2740",
+  paperclip: "\u2318",
+  asterism: "\u2726",
+  washi: "\u25B0"
 };
 
 export function getPoemLayoutPresentation(
