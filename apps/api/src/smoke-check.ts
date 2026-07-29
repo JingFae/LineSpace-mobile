@@ -424,6 +424,16 @@ async function main() {
         relayLine3Detail.current.lineNumber === 3,
       "Relay line numbers or parent path changed across the HTTP boundary."
     );
+    const sharedAiVersions = await httpApi.getThreadAiVersions(
+      publishedRelay.thread.id
+    );
+    assert(
+      sharedAiVersions.threadId === publishedRelay.thread.id &&
+        sharedAiVersions.status === "ready" &&
+        Boolean(sharedAiVersions.recommended?.selectedVersionId) &&
+        Array.isArray(sharedAiVersions.harmonized?.lines),
+      "Shared Thread AI versions did not cross the HTTP boundary."
+    );
 
     const feed = await httpApi.listFeed({
       section: "latest",

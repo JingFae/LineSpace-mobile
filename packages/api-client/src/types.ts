@@ -930,6 +930,40 @@ export type ThreadDetail = {
   allContinuations?: ThreadContinuation[];
 };
 
+export type ThreadAiVersionStatus =
+  | "pending"
+  | "processing"
+  | "ready"
+  | "failed";
+
+export type ThreadAiHarmonizedLine = {
+  lineId: string;
+  text: string;
+  changeNote: string;
+  changed: boolean;
+};
+
+export type ThreadAiVersions = {
+  threadId: string;
+  sourceRevision: number;
+  snapshotRevision?: number;
+  status: ThreadAiVersionStatus;
+  isStale: boolean;
+  promptVersion: string;
+  model: string;
+  recommended?: {
+    selectedVersionId: string;
+    rationale: string;
+    confidence: number;
+  };
+  harmonized?: {
+    rationale: string;
+    lines: ThreadAiHarmonizedLine[];
+  };
+  generatedAt?: string;
+  errorCode?: string;
+};
+
 export type ContinuationDetail = {
   thread: PoetryThread;
   path: ThreadContinuation[];

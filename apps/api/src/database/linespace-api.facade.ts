@@ -44,6 +44,7 @@ import type {
   ShareThreadToGroupInput,
   ThreadContinuation,
   ThreadDetail,
+  ThreadAiVersions,
   ThreadFeedQuery,
   ThreadShareResult,
   ThreadShareTarget,
@@ -81,10 +82,14 @@ import { PostRepository } from "./post/post.repository.js";
 import type { ProfileRepository } from "./profile/profile.repository.js";
 import { createSupabaseProfileRepository } from "./profile/supabase-profile.repository.js";
 import { ThreadRepository } from "./thread/thread.repository.js";
+import { ThreadAiVersionRepository } from "./thread/thread-ai-version.repository.js";
+import { THREAD_VERSION_AI_PROMPT_VERSION } from "../ai/thread-version-recommendation.js";
+import { communitySparkModel } from "../ai/community-spark.js";
 
 export class SupabaseLineSpaceApi implements LineSpaceApi {
   private readonly posts: PostRepository;
   private readonly threads: ThreadRepository;
+  private readonly threadAiVersions: ThreadAiVersionRepository;
   private readonly drafts: DraftRepository;
   private readonly inbox: InboxRepository;
   private readonly contentDiscovery: ContentDiscoveryQuery;
@@ -96,6 +101,7 @@ export class SupabaseLineSpaceApi implements LineSpaceApi {
   ) {
     this.posts = new PostRepository(client);
     this.threads = new ThreadRepository(client);
+    this.threadAiVersions = new ThreadAiVersionRepository(client);
     this.drafts = new DraftRepository(client, this.posts, this.threads);
     this.inbox = new InboxRepository(client);
     this.contentDiscovery = new ContentDiscoveryQuery(
@@ -247,6 +253,14 @@ export class SupabaseLineSpaceApi implements LineSpaceApi {
 
   getThread(threadId: string, _viewerId?: string): Promise<ThreadDetail | null> {
     return this.threads.getThread(threadId);
+  }
+
+  getThreadAiVersions(threadId: string): Promise<ThreadAiVersions> {
+    return this.threadAiVersions.getThreadAiVersions(
+      threadId,
+      THREAD_VERSION_AI_PROMPT_VERSION,
+      communitySparkModel()
+    );
   }
 
   updateThread(input: UpdateThreadInput) {

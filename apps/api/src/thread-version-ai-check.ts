@@ -133,6 +133,12 @@ try {
     messages?: Array<{ role?: string; content?: string }>;
     response_format?: { type?: string };
   };
+  const providerInput = JSON.parse(
+    providerBody.messages?.[1]?.content ?? "{}"
+  ) as {
+    branchNodes?: Array<{ lineId?: string; text?: string }>;
+    candidateVersions?: Array<{ id?: string; lineIds?: string[]; lines?: unknown }>;
+  };
 
   assert(
     capturedUrl === "https://api.deepseek.example/chat/completions" &&
@@ -140,8 +146,13 @@ try {
         "Bearer test-thread-version-key" &&
       providerBody.model === "deepseek-v4-flash" &&
       providerBody.messages?.[0]?.role === "system" &&
+      providerInput.branchNodes?.length === 5 &&
+      providerInput.candidateVersions?.every(
+        (candidate) =>
+          Array.isArray(candidate.lineIds) && candidate.lines === undefined
+      ) &&
       providerBody.response_format?.type === "json_object",
-    "Thread Version AI did not reuse the Community Spark DeepSeek configuration."
+    "Thread Version AI did not use DeepSeek with the deduplicated branch payload."
   );
   assert(
     normalized.selectedVersionId === "path-b",

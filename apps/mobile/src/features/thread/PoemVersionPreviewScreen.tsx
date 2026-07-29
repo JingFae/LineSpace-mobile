@@ -31,6 +31,7 @@ import {
   buildPoemVersions,
   getFullPoemText,
   getThreadMedia,
+  getVersionContentHash,
   threadMediaPresets,
   type PoemVersionCriterion,
   type PoemVersionViewModel,
@@ -73,38 +74,44 @@ export function PoemVersionPreviewScreen({
     () => (detail ? buildPoemVersions(detail.thread, allContinuations) : []),
     [allContinuations, detail]
   );
-  const recommendationQuery = useQuery({
-    queryKey: ["thread-version-recommendation", threadId, versionSignature(baseVersions)],
+  const threadContentSignature = useMemo(
+    () =>
+      detail
+        ? getVersionContentHash(
+            JSON.stringify({
+              title: detail.thread.title ?? "",
+              startingContent: detail.thread.startingContent ?? "",
+              rules: detail.thread.rules ?? detail.thread.content,
+              nodes: allContinuations.map((continuation) => ({
+                id: continuation.id,
+                parentId: continuation.parentContinuationId ?? null,
+                text: continuation.content
+              }))
+            })
+          )
+        : "",
+    [allContinuations, detail]
+  );
+  const aiVersionsQuery = useQuery({
+    queryKey: ["thread-ai-versions", threadId, threadContentSignature],
     enabled: Boolean(detail && baseVersions.length),
-    retry: false,
-    queryFn: () =>
-      lineSpaceApi.requestAiAssist({
-        intent: "moderation-preview",
-        locale: "en",
-        poemId: threadId,
-        text: JSON.stringify({
-          task: "recommend-thread-version",
-          thread: {
-            id: detail?.thread.id,
-            title: detail?.thread.title,
-            rules: detail?.thread.rules
-          },
-          candidateVersions: baseVersions.map((version) => ({
-            id: version.id,
-            lineCount: version.lines.length,
-            totalLikes: version.totalLikeScore,
-            lines: version.lines.map((line) => ({
-              lineId: line.id,
-              lineNumber: line.lineNumber,
-              text: line.text,
-              authorId: line.author.id,
-              likes: line.likes,
-              parentContinuationId: line.parentContinuationId
-            }))
-          }))
-        })
-      })
+    retry: 1,
+    staleTime: 5 * 60_000,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "pending" ||
+        status === "processing"
+        ? 2_500
+        : false;
+    },
+    queryFn: () => lineSpaceApi.getThreadAiVersions(threadId!)
   });
+  const aiSnapshotPending = Boolean(
+    aiVersionsQuery.isLoading ||
+      (!aiVersionsQuery.data?.recommended &&
+        (aiVersionsQuery.data?.status === "pending" ||
+          aiVersionsQuery.data?.status === "processing"))
+  );
   const selectedCustomIds = useMemo(
     () => (customSelectionIds ?? "").split(",").map((id) => id.trim()).filter(Boolean),
     [customSelectionIds]
@@ -112,24 +119,38 @@ export function PoemVersionPreviewScreen({
   const versions = useMemo(() => {
     if (!detail || baseVersions.length === 0) return [];
     const mostPopular = [...baseVersions].sort(compareMostPopular)[0]!;
-    const aiResult = parseVersionAiResult(recommendationQuery.data?.suggestions[0]);
+    const aiResult = aiVersionsQuery.data;
+    const storedContinuationIds =
+      aiResult?.harmonized?.lines
+        .map((line) => line.lineId)
+        .filter((lineId) =>
+          allContinuations.some((continuation) => continuation.id === lineId)
+        ) ?? [];
     const recommendedBase =
-      baseVersions.find((version) => version.id === aiResult?.selectedVersionId) ??
-      mostPopular;
+      baseVersions.find(
+        (version) => version.id === aiResult?.recommended?.selectedVersionId
+      ) ??
+      (storedContinuationIds.length
+        ? buildCustomPoemVersion(
+            detail.thread,
+            allContinuations,
+            storedContinuationIds
+          )
+        : mostPopular);
     const recommended = {
       ...recommendedBase,
       id: `${recommendedBase.id}:recommended`,
       criterion: "recommended" as const,
-      aiRationale: aiResult?.recommendedRationale
+      aiRationale: aiResult?.recommended?.rationale
     };
     const harmonizedLinesById = new Map(
-      aiResult?.harmonizedLines.map((line) => [line.lineId, line]) ?? []
+      aiResult?.harmonized?.lines.map((line) => [line.lineId, line]) ?? []
     );
     const harmonized = {
       ...recommendedBase,
       id: `${recommendedBase.id}:harmonized`,
       criterion: "harmonized" as const,
-      aiRationale: aiResult?.harmonizedRationale,
+      aiRationale: aiResult?.harmonized?.rationale,
       lines: recommendedBase.lines.map((line) => {
         const aiLine = harmonizedLinesById.get(line.id);
         if (!aiLine?.changed || aiLine.text === line.text) return { ...line };
@@ -156,7 +177,7 @@ export function PoemVersionPreviewScreen({
     allContinuations,
     baseVersions,
     detail,
-    recommendationQuery.data?.suggestions,
+    aiVersionsQuery.data,
     selectedCustomIds
   ]);
   const currentVersion = versions[Math.min(pageIndex, Math.max(versions.length - 1, 0))];
@@ -406,8 +427,11 @@ export function PoemVersionPreviewScreen({
                         <Text style={styles.versionDescription}>
                           {criterionDescription(
                             version.criterion,
-                            recommendationQuery.isFetching,
-                            recommendationQuery.isError
+                            aiSnapshotPending,
+                            aiVersionsQuery.isError ||
+                              (aiVersionsQuery.data?.status === "failed" &&
+                                !aiVersionsQuery.data.recommended),
+                            Boolean(aiVersionsQuery.data?.isStale)
                           )}
                         </Text>
                         {version.aiRationale ? (
@@ -423,7 +447,7 @@ export function PoemVersionPreviewScreen({
                     </View>
                     <View style={styles.artworkLoadingFrame}>
                       <PoemArtwork version={version} media={media} />
-                      {recommendationQuery.isFetching &&
+                      {aiSnapshotPending &&
                       (version.criterion === "recommended" ||
                         version.criterion === "harmonized") ? (
                         <AiVersionLoadingOverlay criterion={version.criterion} />
@@ -656,12 +680,6 @@ function PreviewMenu({
   );
 }
 
-function versionSignature(versions: readonly PoemVersionViewModel[]) {
-  return versions
-    .map((version) => `${version.id}:${version.updatedAt}:${version.totalLikeScore}`)
-    .join("|");
-}
-
 function compareMostPopular(left: PoemVersionViewModel, right: PoemVersionViewModel) {
   return (
     right.totalLikeScore - left.totalLikeScore ||
@@ -681,88 +699,26 @@ function criterionLabel(criterion?: PoemVersionCriterion) {
 function criterionDescription(
   criterion: PoemVersionCriterion | undefined,
   aiLoading: boolean,
-  aiUnavailable: boolean
+  aiUnavailable: boolean,
+  aiStale: boolean
 ) {
   if (criterion === "recommended") {
     if (aiUnavailable) return "AI is unavailable; the most popular intact path is shown.";
+    if (aiStale) return "Showing the previous shared path while new contributions are reviewed.";
     return aiLoading
-      ? "AI is reading every branch without rewriting it."
+      ? "Preparing one shared recommendation for every reader."
       : "The most coherent existing path, with every word preserved.";
   }
   if (criterion === "harmonized") {
     if (aiUnavailable) return "AI is unavailable; the recommended path remains unchanged.";
+    if (aiStale) return "Showing the previous shared edit while the new relay is harmonized.";
     return aiLoading
-      ? "Preparing a restrained, traceable edit of the recommended path."
+      ? "Preparing one shared, traceable edit in the background."
       : "Small transition edits only; blue marks every AI-authored change.";
   }
   if (criterion === "mostPopular") return "The path with the highest combined likes.";
   if (criterion === "custom") return "Your one-choice-per-line edit.";
   return "The most coherent existing path, with every word preserved.";
-}
-
-type ParsedVersionAiResult = {
-  selectedVersionId?: string;
-  recommendedRationale?: string;
-  harmonizedRationale?: string;
-  harmonizedLines: Array<{
-    lineId: string;
-    text: string;
-    changeNote: string;
-    changed: boolean;
-  }>;
-};
-
-function parseVersionAiResult(value?: string): ParsedVersionAiResult | undefined {
-  if (!value) return undefined;
-  try {
-    const parsed = JSON.parse(value) as {
-      selectedVersionId?: unknown;
-      recommendedRationale?: unknown;
-      rationale?: unknown;
-      harmonizedRationale?: unknown;
-      harmonizedLines?: unknown;
-    };
-    return {
-      selectedVersionId:
-        typeof parsed.selectedVersionId === "string"
-          ? parsed.selectedVersionId
-          : undefined,
-      recommendedRationale:
-        typeof parsed.recommendedRationale === "string"
-          ? parsed.recommendedRationale
-          : typeof parsed.rationale === "string"
-            ? parsed.rationale
-            : undefined,
-      harmonizedRationale:
-        typeof parsed.harmonizedRationale === "string"
-          ? parsed.harmonizedRationale
-          : undefined,
-      harmonizedLines: normalizeHarmonizedLines(parsed.harmonizedLines)
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-function normalizeHarmonizedLines(value: unknown): ParsedVersionAiResult["harmonizedLines"] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((line) => {
-    if (!line || typeof line !== "object") return [];
-    const item = line as Record<string, unknown>;
-    if (
-      typeof item.lineId !== "string" ||
-      typeof item.text !== "string" ||
-      typeof item.changed !== "boolean"
-    ) {
-      return [];
-    }
-    return [{
-      lineId: item.lineId,
-      text: item.text,
-      changeNote: typeof item.changeNote === "string" ? item.changeNote : "",
-      changed: item.changed
-    }];
-  });
 }
 
 const styles = StyleSheet.create({

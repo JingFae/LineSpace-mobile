@@ -36,7 +36,6 @@ import {
 } from "./auth/index.js";
 import { DomainRepositoryError } from "./database/core/errors.js";
 import { ProfileRepositoryError } from "./database/profile/profile.errors.js";
-import { requestThreadVersionRecommendation } from "./ai/thread-version-recommendation.js";
 import {
   communitySparkKeySource,
   communitySparkModel,
@@ -45,6 +44,12 @@ import {
   requestCreativeSpark,
   requestCommunitySpark
 } from "./ai/community-spark.js";
+import {
+  drainThreadAiVersionJobs,
+  enqueueThreadAiVersionRefresh,
+  processThreadAiVersionAfterDebounce,
+  processThreadAiVersionJob
+} from "./ai/thread-version-worker.js";
 
 let lineSpaceRepositoryPromise:
   | Promise<typeof import("./database/linespace-repository.js")>
@@ -56,12 +61,16 @@ export type ApiResponse = {
   body: unknown;
 };
 
+export type ApiRequestContext = AuthRequestContext & {
+  waitUntil?: (promise: Promise<unknown>) => void;
+};
+
 export async function handleApiRequest(
   method: string,
   pathname: string,
   searchParams: URLSearchParams,
   body?: unknown,
-  context: AuthRequestContext = {}
+  context: ApiRequestContext = {}
 ): Promise<ApiResponse> {
   if (method === "GET" && pathname === "/health") {
     return json(200, { ok: true, service: "linespace-api" });
@@ -82,8 +91,43 @@ export async function handleApiRequest(
       communitySparkProvider: communitySparkProvider(),
       communitySparkKeySource: communitySparkKeySource(),
       threadVersionAiConfigured: isCommunitySparkConfigured(),
-      threadVersionAiModel: communitySparkModel()
+      threadVersionAiModel: communitySparkModel(),
+      threadVersionBackgroundConfigured: Boolean(
+        authConfigured &&
+          (process.env.CRON_SECRET ||
+            process.env.INTERNAL_THREAD_VERSION_SECRET)
+      )
     });
+  }
+
+  if (
+    method === "GET" &&
+    pathname === "/internal/thread-ai-jobs/drain"
+  ) {
+    if (!isAuthorizedBackgroundRequest(context)) {
+      return json(401, { code: "THREAD_VERSION_WORKER_UNAUTHORIZED" });
+    }
+    const processed = await drainThreadAiVersionJobs();
+    return json(200, { ok: true, processed });
+  }
+
+  if (
+    method === "POST" &&
+    pathname === "/internal/thread-ai-jobs/rebuild"
+  ) {
+    if (!isAuthorizedBackgroundRequest(context)) {
+      return json(401, { code: "THREAD_VERSION_WORKER_UNAUTHORIZED" });
+    }
+    const request = body as { threadId?: unknown } | undefined;
+    if (typeof request?.threadId !== "string" || !request.threadId) {
+      return json(400, { code: "THREAD_ID_REQUIRED" });
+    }
+    await enqueueThreadAiVersionRefresh(request.threadId, 0);
+    scheduleBackgroundTask(
+      context,
+      processThreadAiVersionJob(request.threadId, true)
+    );
+    return json(202, { ok: true, threadId: request.threadId });
   }
 
   const authRoute = await handleAuthRoute(method, pathname, body, context);
@@ -209,6 +253,22 @@ export async function handleApiRequest(
         );
       }
 
+      if (threadRoute.resource === "ai-versions" && method === "GET") {
+        const versions = await api.getThreadAiVersions(threadRoute.threadId);
+        if (
+          isDatabaseBacked &&
+          versions.status === "pending"
+        ) {
+          scheduleBackgroundTask(
+            context,
+            enqueueThreadAiVersionRefresh(threadRoute.threadId, 0).then(() =>
+              processThreadAiVersionJob(threadRoute.threadId, true)
+            )
+          );
+        }
+        return json(200, versions);
+      }
+
       if (threadRoute.resource === "thread" && method === "PUT") {
         const actor = await authenticateRequest(context);
         if (!actor.ok) return actor.response;
@@ -223,11 +283,18 @@ export async function handleApiRequest(
         ) {
           return json(400, { code: "INVALID_THREAD_UPDATE" });
         }
-        return json(200, await api.updateThread({
+        const thread = await api.updateThread({
           ...request,
           threadId: threadRoute.threadId,
           userId: actor.user.id
-        }));
+        });
+        if (isDatabaseBacked) {
+          scheduleBackgroundTask(
+            context,
+            processThreadAiVersionAfterDebounce(thread.id)
+          );
+        }
+        return json(200, thread);
       }
 
       if (threadRoute.resource === "thread" && method === "DELETE") {
@@ -246,14 +313,18 @@ export async function handleApiRequest(
         if (typeof request?.content !== "string") {
           return json(400, { code: "INVALID_THREAD_CONTINUATION" });
         }
-        return json(
-          201,
-          await api.createThreadContinuation({
-            threadId: threadRoute.threadId,
-            ...request,
-            userId: actor.user.id
-          })
-        );
+        const continuation = await api.createThreadContinuation({
+          threadId: threadRoute.threadId,
+          ...request,
+          userId: actor.user.id
+        });
+        if (isDatabaseBacked) {
+          scheduleBackgroundTask(
+            context,
+            processThreadAiVersionAfterDebounce(continuation.threadId)
+          );
+        }
+        return json(201, continuation);
       }
 
       if (threadRoute.resource === "like" && method === "PUT") {
@@ -328,7 +399,17 @@ export async function handleApiRequest(
           })
         );
       }
-    } catch {
+    } catch (error) {
+      if (threadRoute.resource === "ai-versions") {
+        console.error("Thread AI snapshot read failed", {
+          threadId: threadRoute.threadId,
+          message: error instanceof Error ? error.message : "unknown"
+        });
+        return json(503, {
+          code: "THREAD_AI_SNAPSHOT_UNAVAILABLE",
+          message: "The shared Thread versions are temporarily unavailable."
+        });
+      }
       return json(404, { code: "THREAD_NOT_FOUND" });
     }
   }
@@ -353,14 +434,18 @@ export async function handleApiRequest(
         if (typeof request?.content !== "string") {
           return json(400, { code: "INVALID_CONTINUATION_CREATE" });
         }
-        return json(
-          201,
-          await api.createContinuation({
-            continuationId: continuationRoute.continuationId,
-            ...request,
-            userId: actor.user.id
-          })
-        );
+        const continuation = await api.createContinuation({
+          continuationId: continuationRoute.continuationId,
+          ...request,
+          userId: actor.user.id
+        });
+        if (isDatabaseBacked) {
+          scheduleBackgroundTask(
+            context,
+            processThreadAiVersionAfterDebounce(continuation.threadId)
+          );
+        }
+        return json(201, continuation);
       }
 
       if (continuationRoute.resource === "like" && method === "PUT") {
@@ -1236,20 +1321,11 @@ export async function handleApiRequest(
         message: "Thread Version AI requires a valid, bounded branch structure."
       });
     }
-    try {
-      return json(
-        200,
-        await requestThreadVersionRecommendation(request as AiAssistRequest)
-      );
-    } catch (error) {
-      const code = error instanceof Error ? error.message : "LLM_NOT_CONFIGURED";
-      return json(503, {
-        code: code.startsWith("LLM_") ? code : "LLM_REQUEST_FAILED",
-        message:
-          "AI recommendation is unavailable. The version page will use its deterministic fallback.",
-        intent: request.intent
-      });
-    }
+    return json(410, {
+      code: "THREAD_VERSION_AI_BACKGROUND_ONLY",
+      message:
+        "Thread Version AI is generated from shared background snapshots."
+    });
   }
 
   return json(404, { code: "NOT_FOUND" });
@@ -1372,7 +1448,14 @@ type ParsedCollectionRoute = {
 
 type ParsedThreadRoute = {
   threadId: string;
-  resource: "thread" | "continuations" | "like" | "save" | "share" | "share-recipients";
+  resource:
+    | "thread"
+    | "ai-versions"
+    | "continuations"
+    | "like"
+    | "save"
+    | "share"
+    | "share-recipients";
 };
 
 function parseThreadVersionPublishRoute(
@@ -1401,6 +1484,7 @@ function parseThreadRoute(pathname: string): ParsedThreadRoute | null {
     segments.length === 4 &&
     (
       resource === "continuations" ||
+      resource === "ai-versions" ||
       resource === "like" ||
       resource === "save" ||
       resource === "share" ||
@@ -1410,6 +1494,29 @@ function parseThreadRoute(pathname: string): ParsedThreadRoute | null {
     return { threadId: segments[2], resource };
   }
   return null;
+}
+
+function scheduleBackgroundTask(
+  context: ApiRequestContext,
+  promise: Promise<unknown>
+) {
+  const guarded = promise.catch((error) => {
+    console.error("Background task failed", error);
+  });
+  if (context.waitUntil) {
+    context.waitUntil(guarded);
+    return;
+  }
+  void guarded;
+}
+
+function isAuthorizedBackgroundRequest(context: ApiRequestContext) {
+  const token = parseBearerToken(context.authorization);
+  const allowed = [
+    process.env.CRON_SECRET,
+    process.env.INTERNAL_THREAD_VERSION_SECRET
+  ].filter((value): value is string => Boolean(value));
+  return Boolean(token && allowed.includes(token));
 }
 
 type ParsedContinuationRoute = {

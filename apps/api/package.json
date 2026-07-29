@@ -12,6 +12,7 @@
   "dependencies": {
     "@linespace/api-client": "workspace:*",
     "@supabase/supabase-js": "^2.110.5",
+    "@vercel/functions": "^3.7.6",
     "tsx": "^4.19.2"
   },
   "devDependencies": {

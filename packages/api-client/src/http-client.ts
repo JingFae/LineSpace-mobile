@@ -46,6 +46,7 @@ import type {
   StorageUploadTarget,
   SavePoemDraftInput,
   ThreadContinuation,
+  ThreadAiVersions,
   ThreadDetail,
   ThreadFeedQuery,
   ThreadShareResult,
@@ -460,6 +461,12 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     const suffix = params.size > 0 ? `?${params.toString()}` : "";
     return this.getJson<ThreadDetail | null>(
       `/v1/threads/${encodeURIComponent(threadId)}${suffix}`
+    );
+  }
+
+  async getThreadAiVersions(threadId: string): Promise<ThreadAiVersions> {
+    return this.getJson<ThreadAiVersions>(
+      `/v1/threads/${encodeURIComponent(threadId)}/ai-versions`
     );
   }
 

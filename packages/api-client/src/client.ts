@@ -60,6 +60,7 @@ import type {
   SavePoemDraftInput,
   PoemSummary,
   ThreadContinuation,
+  ThreadAiVersions,
   ThreadDetail,
   ThreadFeedQuery,
   ThreadShareResult,
@@ -137,6 +138,7 @@ export interface LineSpaceApi {
   ): Promise<UserConnectionPage>;
   listThreads(query?: ThreadFeedQuery): Promise<PoetryThread[]>;
   getThread(threadId: string, viewerId?: string): Promise<ThreadDetail | null>;
+  getThreadAiVersions(threadId: string): Promise<ThreadAiVersions>;
   updateThread(input: UpdateThreadInput): Promise<PoetryThread>;
   deleteThread(input: DeleteThreadInput): Promise<DeleteThreadResult>;
   getContinuationDetail(
@@ -1482,6 +1484,59 @@ export class MockLineSpaceApi implements LineSpaceApi {
     };
   }
 
+  async getThreadAiVersions(threadId: string): Promise<ThreadAiVersions> {
+    const thread = this.threads.find((item) => item.id === threadId);
+    if (!thread) throw new Error("Thread not found");
+    const continuations = this.continuations.filter(
+      (item) => item.threadId === threadId
+    );
+    const paths = collectMockLeafPaths(continuations);
+    const startingText = thread.startingContent?.trim() || thread.content.trim();
+    const candidates = paths.map((path) => {
+      const lines = [
+        { id: `${thread.id}:starting-content`, text: startingText },
+        ...path.map((line) => ({ id: line.id, text: line.content }))
+      ];
+      const leaf = path[path.length - 1];
+      return {
+        id: leaf
+          ? `${thread.id}:${leaf.id}:${mockVersionContentHash(
+              lines.map((line) => line.text).join("\n")
+            )}`
+          : `${thread.id}:initial`,
+        lines,
+        likes: path.reduce((total, line) => total + line.metrics.likes, 0)
+      };
+    });
+    const selected = [...candidates].sort(
+      (left, right) => right.likes - left.likes || left.id.localeCompare(right.id)
+    )[0]!;
+    return {
+      threadId,
+      sourceRevision: continuations.length + 1,
+      snapshotRevision: continuations.length + 1,
+      status: "ready",
+      isStale: false,
+      promptVersion: "thread-version-ai-v1",
+      model: "mock",
+      recommended: {
+        selectedVersionId: selected.id,
+        rationale: "This shared mock snapshot preserves the clearest existing path.",
+        confidence: 0.8
+      },
+      harmonized: {
+        rationale: "The selected path is already cohesive, so its wording remains unchanged.",
+        lines: selected.lines.map((line) => ({
+          lineId: line.id,
+          text: line.text,
+          changeNote: "",
+          changed: false
+        }))
+      },
+      generatedAt: new Date().toISOString()
+    };
+  }
+
   async updateThread(input: UpdateThreadInput): Promise<PoetryThread> {
     const thread = this.threads.find((item) => item.id === input.threadId);
     if (!thread || thread.author.id !== input.userId) throw new Error("Thread access denied");
@@ -2589,6 +2644,48 @@ function cloneThread(thread: PoetryThread): PoetryThread {
     metrics: { ...thread.metrics },
     viewer: { ...thread.viewer }
   };
+}
+
+function collectMockLeafPaths(
+  continuations: readonly ThreadContinuation[]
+): ThreadContinuation[][] {
+  const children = new Map<string, ThreadContinuation[]>();
+  const roots: ThreadContinuation[] = [];
+  for (const continuation of continuations) {
+    if (!continuation.parentContinuationId) {
+      roots.push(continuation);
+      continue;
+    }
+    const siblings = children.get(continuation.parentContinuationId) ?? [];
+    siblings.push(continuation);
+    children.set(continuation.parentContinuationId, siblings);
+  }
+  const stable = (items: readonly ThreadContinuation[]) =>
+    [...items].sort(
+      (left, right) =>
+        Date.parse(left.createdAt) - Date.parse(right.createdAt) ||
+        left.id.localeCompare(right.id)
+    );
+  const paths: ThreadContinuation[][] = [];
+  const visit = (node: ThreadContinuation, path: ThreadContinuation[]) => {
+    const next = [...path, node];
+    const descendants = stable(children.get(node.id) ?? []);
+    if (descendants.length === 0) {
+      paths.push(next);
+      return;
+    }
+    for (const descendant of descendants) visit(descendant, next);
+  };
+  for (const root of stable(roots)) visit(root, []);
+  return paths.length ? paths : [[]];
+}
+
+function mockVersionContentHash(text: string) {
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash * 31 + text.charCodeAt(index)) >>> 0;
+  }
+  return hash.toString(36);
 }
 
 function createTransientProfile(userId: string): UserProfileDetails {

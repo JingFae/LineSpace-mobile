@@ -81,6 +81,10 @@ const guestPublicContentMigration = await readFile(
   new URL("20260723000200_guest_public_content_access.sql", canonicalMigrationsUrl),
   "utf8"
 );
+const threadAiSnapshotsMigration = await readFile(
+  new URL("20260729000100_thread_ai_version_snapshots.sql", canonicalMigrationsUrl),
+  "utf8"
+);
 const profileRepository = await readFile(
   new URL("../profile/supabase-profile.repository.ts", import.meta.url),
   "utf8"
@@ -112,6 +116,24 @@ for (const required of [
   assert(
     required.test(stableThreadLinesMigration),
     `Stable thread line migration is missing ${required}.`
+  );
+}
+for (const required of [
+  /add\s+column\s+if\s+not\s+exists\s+content_revision/i,
+  /create\s+table\s+if\s+not\s+exists\s+public\.thread_ai_version_snapshots/i,
+  /create\s+table\s+if\s+not\s+exists\s+public\.thread_ai_generation_jobs/i,
+  /create\s+or\s+replace\s+function\s+public\.enqueue_thread_ai_generation/i,
+  /create\s+or\s+replace\s+function\s+public\.claim_thread_ai_generation_job/i,
+  /for\s+update\s+skip\s+locked/i,
+  /thread_continuations_bump_thread_revision_insert/i,
+  /thread_continuations_bump_thread_revision_update/i,
+  /thread_continuations_bump_thread_revision_delete/i,
+  /grant\s+select\s+on\s+table\s+public\.thread_ai_version_snapshots\s+to\s+anon,\s*authenticated/i,
+  /grant\s+all\s+on\s+table\s+public\.thread_ai_version_snapshots,[\s\S]*public\.thread_ai_generation_jobs\s+to\s+service_role/i
+] as const) {
+  assert(
+    required.test(threadAiSnapshotsMigration),
+    `Thread AI snapshot migration is missing ${required}.`
   );
 }
 for (const required of [

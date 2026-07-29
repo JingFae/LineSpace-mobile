@@ -35,7 +35,14 @@ const server = createServer(async (request, response) => {
     url.pathname,
     url.searchParams,
     body,
-    { authorization: request.headers.authorization }
+    {
+      authorization: request.headers.authorization,
+      waitUntil: (promise) => {
+        void promise.catch((error) => {
+          console.error("Local background task failed", error);
+        });
+      }
+    }
   );
 
   response.writeHead(result.status, {

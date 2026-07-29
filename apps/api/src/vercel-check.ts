@@ -54,12 +54,14 @@ const readiness = await readinessResponse.json() as {
   communitySparkModel?: string;
   communitySparkProvider?: string;
   communitySparkKeySource?: "DEEPSEEK_API_KEY" | "OPENAI_API_KEY" | null;
+  threadVersionBackgroundConfigured?: boolean;
 };
 assert(
   readiness.service === "linespace-api" &&
     typeof readiness.authConfigured === "boolean" &&
     typeof readiness.communitySparkConfigured === "boolean" &&
     Boolean(readiness.communitySparkModel) &&
+    typeof readiness.threadVersionBackgroundConfigured === "boolean" &&
     readiness.communitySparkProvider === "deepseek" &&
     (readiness.communitySparkKeySource === null ||
       readiness.communitySparkKeySource === "DEEPSEEK_API_KEY" ||
@@ -83,6 +85,7 @@ assert(
 const config = JSON.parse(
   await readFile(new URL("../../../vercel.json", import.meta.url), "utf8")
 ) as {
+  crons?: Array<{ path?: string; schedule?: string }>;
   rewrites?: Array<{ source?: string; destination?: string }>;
 };
 const rootPackage = JSON.parse(
@@ -104,6 +107,18 @@ assert(
 assert(
   !functionEntry.includes('import { handleApiRequest } from "../apps/api/src/routes.js"'),
   "The Vercel Function must not statically bridge its runtime to the ESM route module."
+);
+assert(
+  functionEntry.includes("waitUntil: keepVercelTaskAlive"),
+  "The Vercel Function must keep Thread AI background work alive after responding."
+);
+assert(
+  config.crons?.some(
+    (cron) =>
+      cron.path === "/api/internal/thread-ai-jobs/drain" &&
+      cron.schedule === "0 3 * * *"
+  ),
+  "The durable Thread AI job queue is missing its Vercel Cron fallback."
 );
 assert(
   config.rewrites?.[0]?.source === "/api/:path*" &&

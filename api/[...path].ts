@@ -1,3 +1,5 @@
+import { keepVercelTaskAlive } from "../apps/api/src/vercel-background.js";
+
 let routeModulePromise: Promise<typeof import("../apps/api/src/routes.js")> | undefined;
 
 const corsHeaders = {
@@ -39,7 +41,10 @@ export default {
       pathname,
       url.searchParams,
       body,
-      { authorization: request.headers.get("authorization") ?? undefined }
+      {
+        authorization: request.headers.get("authorization") ?? undefined,
+        waitUntil: keepVercelTaskAlive
+      }
     );
 
     return jsonResponse(result.status, result.body);
