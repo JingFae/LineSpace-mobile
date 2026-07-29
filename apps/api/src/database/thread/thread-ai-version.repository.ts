@@ -40,6 +40,8 @@ export class ThreadAiVersionRepository {
         .order("source_revision", { ascending: false })
         .limit(20)
     ]);
+    logSnapshotReadError(threadId, "thread-revision", threadResult.error);
+    logSnapshotReadError(threadId, "snapshots", snapshotsResult.error);
     ensureDatabaseResult(threadResult.error);
     ensureDatabaseResult(snapshotsResult.error);
     const thread = threadResult.data as { content_revision?: number } | null;
@@ -88,6 +90,27 @@ export class ThreadAiVersionRepository {
       ...(current?.error_code ? { errorCode: current.error_code } : {})
     };
   }
+}
+
+function logSnapshotReadError(
+  threadId: string,
+  source: "thread-revision" | "snapshots",
+  error: {
+    code?: string;
+    message?: string;
+    details?: string;
+    hint?: string;
+  } | null
+) {
+  if (!error) return;
+  console.error("Thread AI snapshot database read failed", {
+    threadId,
+    source,
+    code: error.code,
+    message: error.message,
+    details: error.details,
+    hint: error.hint
+  });
 }
 
 type StoredThreadAiResult = {

@@ -82,7 +82,7 @@ const guestPublicContentMigration = await readFile(
   "utf8"
 );
 const threadAiSnapshotsMigration = await readFile(
-  new URL("20260729000100_thread_ai_version_snapshots.sql", canonicalMigrationsUrl),
+  new URL("20260729000200_thread_ai_version_snapshots.sql", canonicalMigrationsUrl),
   "utf8"
 );
 const profileRepository = await readFile(
@@ -104,6 +104,13 @@ const canonicalMigrationFiles = (await readdir(canonicalMigrationsUrl))
 assert(
   canonicalMigrationFiles.length === new Set(canonicalMigrationFiles).size,
   "Canonical Supabase migration names must be unique."
+);
+const canonicalMigrationVersions = canonicalMigrationFiles.map(
+  (fileName) => fileName.split("_", 1)[0]
+);
+assert(
+  canonicalMigrationVersions.length === new Set(canonicalMigrationVersions).size,
+  "Canonical Supabase migration versions must be unique."
 );
 
 for (const required of [
