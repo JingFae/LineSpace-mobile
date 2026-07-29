@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode, Ref } from "react";
 import {
   ActivityIndicator,
-  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -15,7 +14,6 @@ import {
 } from "react-native";
 import {
   AppScreen,
-  Avatar,
   BackgroundPaperIcon,
   PoemLayoutCard,
   TemplateIcon,
@@ -277,6 +275,9 @@ function ComposeExportCanvas({
     .map((id) => catalog.stickers.find((item) => item.id === id)?.symbol)
     .filter((symbol): symbol is string => Boolean(symbol));
   const lines = draft.body.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const displayLines = draft.versionLines?.length
+    ? draft.versionLines.map((line) => line.text)
+    : lines;
   const mediaSource: ImageSourcePropType | undefined =
     draft.media?.kind === "image" ? { uri: draft.media.uri } : undefined;
 
@@ -288,32 +289,25 @@ function ComposeExportCanvas({
       style={styles.exportCaptureStage}
     >
       <View collapsable={false} ref={exportRef} style={styles.exportCaptureCard}>
-        {draft.versionLines?.length ? (
-          <VersionLayoutCard
-            backgroundColor={background.swatch}
-            draft={draft}
-            mediaSource={mediaSource}
-            typographyColor={typography.swatch}
-          />
-        ) : (
-          <PoemLayoutCard
-            backgroundRole={background.role}
-            mediaAspectRatio={getMediaAspectRatio(draft.media)}
-            mediaSource={mediaSource}
-            poem={{
-              title: draft.title || "untitled line",
-              lines: lines.length > 0 ? lines : ["A line is waiting to be written."],
-              tags: draft.tags,
-              byline:
-                draft.byline ||
-                draft.collaborators[0]?.user.displayName ||
-                "writer",
-              startedAtLabel: formatPoemDate(draft.createdAt)
-            }}
-            stickerSymbols={stickerSymbols}
-            typographyRole={typography.role}
-          />
-        )}
+        <PoemLayoutCard
+          backgroundRole={background.role}
+          mediaAspectRatio={getMediaAspectRatio(draft.media)}
+          mediaSource={mediaSource}
+          poem={{
+            title: draft.title || "untitled line",
+            lines: displayLines.length > 0
+              ? displayLines
+              : ["A line is waiting to be written."],
+            tags: draft.tags,
+            byline:
+              draft.byline ||
+              draft.collaborators[0]?.user.displayName ||
+              "writer",
+            startedAtLabel: formatPoemDate(draft.createdAt)
+          }}
+          stickerSymbols={stickerSymbols}
+          typographyRole={typography.role}
+        />
       </View>
     </View>
   );
@@ -340,27 +334,24 @@ function LayoutWorkspace({
     .map((id) => catalog.stickers.find((item) => item.id === id)?.symbol)
     .filter((symbol): symbol is string => Boolean(symbol));
   const lines = draft.body.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const displayLines = draft.versionLines?.length
+    ? draft.versionLines.map((line) => line.text)
+    : lines;
   const mediaSource: ImageSourcePropType | undefined =
     draft.media?.kind === "image" ? { uri: draft.media.uri } : undefined;
 
   return (
     <View style={styles.workspace}>
       <ScrollView contentContainerStyle={styles.canvas} showsVerticalScrollIndicator={false}>
-        {draft.versionLines?.length ? (
-          <VersionLayoutCard
-            backgroundColor={background.swatch}
-            draft={draft}
-            mediaSource={mediaSource}
-            style={styles.previewCard}
-            typographyColor={typography.swatch}
-          />
-        ) : <PoemLayoutCard
+        <PoemLayoutCard
           backgroundRole={background.role}
           mediaAspectRatio={getMediaAspectRatio(draft.media)}
           mediaSource={mediaSource}
           poem={{
             title: draft.title || "untitled line",
-            lines: lines.length > 0 ? lines : ["A line is waiting to be written."],
+            lines: displayLines.length > 0
+              ? displayLines
+              : ["A line is waiting to be written."],
             tags: draft.tags,
             byline: draft.byline || draft.collaborators[0]?.user.displayName || "writer",
             startedAtLabel: formatPoemDate(draft.createdAt)
@@ -368,7 +359,7 @@ function LayoutWorkspace({
           stickerSymbols={stickerSymbols}
           style={styles.previewCard}
           typographyRole={typography.role}
-        />}
+        />
       </ScrollView>
 
       <OptionTray
@@ -383,52 +374,6 @@ function LayoutWorkspace({
         <ToolButton active={activeTool === "typography"} label="Typography" onPress={() => onToolChange("typography")}><TypographyIcon /></ToolButton>
         <ToolButton active={activeTool === "background"} label="Paper" onPress={() => onToolChange("background")}><BackgroundPaperIcon /></ToolButton>
       </View>
-    </View>
-  );
-}
-
-function VersionLayoutCard({
-  draft,
-  mediaSource,
-  backgroundColor,
-  typographyColor,
-  style
-}: {
-  draft: PoemDraft;
-  mediaSource?: ImageSourcePropType;
-  backgroundColor: string;
-  typographyColor: string;
-  style?: object;
-}) {
-  const lines = draft.versionLines ?? [];
-  return (
-    <View style={[styles.versionLayoutCard, { backgroundColor }, style]}>
-      {mediaSource ? <Image resizeMode="cover" source={mediaSource} style={styles.versionLayoutImage} /> : null}
-      <View style={styles.versionLayoutWash} />
-      <Text style={[styles.versionLayoutTitle, { color: typographyColor }]}>
-        {draft.title || "untitled line"}
-      </Text>
-      {lines.map((line) => (
-        <View key={`${line.lineNumber}-${line.author.id}`} style={styles.versionLayoutLine}>
-          <Avatar
-            color={line.author.avatarColor}
-            imageSource={line.author.avatarUrl ? { uri: line.author.avatarUrl } : undefined}
-            label={line.author.displayName}
-            size={28}
-          />
-          <View style={styles.versionLayoutLineCopy}>
-            <Text style={[styles.versionLayoutAuthor, { color: typographyColor }]}>
-              {line.lineNumber}. @{line.author.handle}
-            </Text>
-            <Text style={[styles.versionLayoutText, { color: typographyColor }]}>
-              {line.text}
-            </Text>
-          </View>
-        </View>
-      ))}
-      <Text style={[styles.versionLayoutByline, { color: typographyColor }]}>
-        by {draft.byline}
-      </Text>
     </View>
   );
 }
@@ -498,44 +443,6 @@ function formatPoemDate(value: string) {
 }
 
 const styles = StyleSheet.create({
-  versionLayoutCard: {
-    position: "relative",
-    overflow: "hidden",
-    width: "100%",
-    minHeight: 520,
-    paddingHorizontal: 24,
-    paddingVertical: 30,
-    borderRadius: 26
-  },
-  versionLayoutImage: { ...StyleSheet.absoluteFillObject, width: "100%", height: "100%", opacity: 0.32 },
-  versionLayoutWash: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(255,255,255,.32)" },
-  versionLayoutTitle: {
-    position: "relative",
-    marginBottom: 18,
-    fontFamily: "Georgia",
-    fontSize: 30,
-    lineHeight: 37,
-    fontWeight: "700"
-  },
-  versionLayoutLine: {
-    position: "relative",
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-    paddingVertical: 9
-  },
-  versionLayoutLineCopy: { flex: 1, minWidth: 0 },
-  versionLayoutAuthor: { fontSize: 11, lineHeight: 14, fontWeight: "700", opacity: 0.72 },
-  versionLayoutText: { marginTop: 4, fontFamily: "Georgia", fontSize: 17, lineHeight: 25 },
-  versionLayoutByline: {
-    position: "relative",
-    marginTop: 22,
-    paddingTop: 14,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(0,0,0,.22)",
-    fontSize: 11,
-    fontWeight: "600"
-  },
   safeArea: { backgroundColor: colors.profileCanvas },
   screen: { flex: 1, paddingBottom: 0, backgroundColor: colors.profileCanvas },
   exportCaptureStage: {

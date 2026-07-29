@@ -14,7 +14,14 @@ import {
   useWindowDimensions,
   View
 } from "react-native";
-import { AppScreen, Avatar, EmptyState, MoreIcon, ShareIcon } from "@linespace/ui";
+import {
+  AppScreen,
+  Avatar,
+  EmptyState,
+  MoreIcon,
+  ShareIcon,
+  buildAiTextSegments
+} from "@linespace/ui";
 import { colors, radius, spacing } from "@linespace/tokens";
 import { currentUserId, lineSpaceApi } from "@/services/lineSpaceApi";
 import { exportPoemCard } from "@/utils/poemCardExport";
@@ -414,7 +421,14 @@ export function PoemVersionPreviewScreen({
                         <Text style={styles.totalLikesLabel}>total likes</Text>
                       </View>
                     </View>
-                    <PoemArtwork version={version} media={media} />
+                    <View style={styles.artworkLoadingFrame}>
+                      <PoemArtwork version={version} media={media} />
+                      {recommendationQuery.isFetching &&
+                      (version.criterion === "recommended" ||
+                        version.criterion === "harmonized") ? (
+                        <AiVersionLoadingOverlay criterion={version.criterion} />
+                      ) : null}
+                    </View>
                     <Pressable
                       accessibilityRole="button"
                       onPress={openCustomBuilder}
@@ -523,7 +537,7 @@ function PoemArtwork({
       ) : null}
       {version.lines.map((line) => {
         const segments = line.originalText
-          ? buildHarmonizedTextSegments(line.originalText, line.text)
+          ? buildAiTextSegments(line.originalText, line.text)
           : [{ text: line.text, ai: false }];
         return (
           <View
@@ -584,6 +598,41 @@ function PoemArtwork({
         <Text style={[styles.artworkMeta, { color: media.mutedTextColor }]}>
           {version.lines.length} lines · {version.totalLikeScore} likes
         </Text>
+      </View>
+    </View>
+  );
+}
+
+function AiVersionLoadingOverlay({
+  criterion
+}: {
+  criterion: "recommended" | "harmonized";
+}) {
+  const harmonizing = criterion === "harmonized";
+  return (
+    <View
+      accessibilityLabel={
+        harmonizing
+          ? "AI is harmonizing this poem path"
+          : "AI is choosing the recommended poem path"
+      }
+      accessibilityRole="progressbar"
+      style={styles.aiLoadingOverlay}
+    >
+      <View style={styles.aiLoadingCard}>
+        <View style={styles.aiLoadingSpinner}>
+          <ActivityIndicator color="#73AEDD" size="small" />
+        </View>
+        <View style={styles.aiLoadingCopy}>
+          <Text style={styles.aiLoadingTitle}>
+            {harmonizing ? "Harmonizing this path…" : "Choosing the clearest path…"}
+          </Text>
+          <Text style={styles.aiLoadingBody}>
+            {harmonizing
+              ? "Preserving every voice while smoothing the transitions."
+              : "Comparing every branch without rewriting anyone’s words."}
+          </Text>
+        </View>
       </View>
     </View>
   );
@@ -716,103 +765,6 @@ function normalizeHarmonizedLines(value: unknown): ParsedVersionAiResult["harmon
   });
 }
 
-type HarmonizedTextSegment = {
-  text: string;
-  ai: boolean;
-};
-
-function buildHarmonizedTextSegments(
-  original: string,
-  harmonized: string
-): HarmonizedTextSegment[] {
-  if (original === harmonized) return [{ text: harmonized, ai: false }];
-  const before = [...original];
-  const after = [...harmonized];
-  if (before.length > 500 || after.length > 500) {
-    return buildPrefixSuffixSegments(before, after);
-  }
-
-  const table = Array.from(
-    { length: before.length + 1 },
-    () => new Uint16Array(after.length + 1)
-  );
-  for (let left = before.length - 1; left >= 0; left -= 1) {
-    for (let right = after.length - 1; right >= 0; right -= 1) {
-      table[left]![right] =
-        before[left] === after[right]
-          ? table[left + 1]![right + 1]! + 1
-          : Math.max(table[left + 1]![right]!, table[left]![right + 1]!);
-    }
-  }
-
-  const segments: HarmonizedTextSegment[] = [];
-  let left = 0;
-  let right = 0;
-  while (left < before.length && right < after.length) {
-    if (before[left] === after[right]) {
-      appendTextSegment(segments, before[left]!, false);
-      left += 1;
-      right += 1;
-    } else if (table[left]![right + 1]! >= table[left + 1]![right]!) {
-      appendTextSegment(segments, after[right]!, true);
-      right += 1;
-    } else {
-      left += 1;
-    }
-  }
-  while (right < after.length) {
-    appendTextSegment(segments, after[right]!, true);
-    right += 1;
-  }
-  return segments.length ? segments : [{ text: harmonized, ai: true }];
-}
-
-function buildPrefixSuffixSegments(
-  before: string[],
-  after: string[]
-): HarmonizedTextSegment[] {
-  let prefix = 0;
-  while (
-    prefix < before.length &&
-    prefix < after.length &&
-    before[prefix] === after[prefix]
-  ) {
-    prefix += 1;
-  }
-  let suffix = 0;
-  while (
-    suffix < before.length - prefix &&
-    suffix < after.length - prefix &&
-    before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
-  ) {
-    suffix += 1;
-  }
-  const segments: HarmonizedTextSegment[] = [];
-  if (prefix) segments.push({ text: after.slice(0, prefix).join(""), ai: false });
-  const changed = after.slice(prefix, after.length - suffix).join("");
-  if (changed) segments.push({ text: changed, ai: true });
-  if (suffix) {
-    segments.push({
-      text: after.slice(after.length - suffix).join(""),
-      ai: false
-    });
-  }
-  return segments.length ? segments : [{ text: after.join(""), ai: true }];
-}
-
-function appendTextSegment(
-  segments: HarmonizedTextSegment[],
-  text: string,
-  ai: boolean
-) {
-  const previous = segments[segments.length - 1];
-  if (previous?.ai === ai) {
-    previous.text += text;
-  } else {
-    segments.push({ text, ai });
-  }
-}
-
 const styles = StyleSheet.create({
   previewScreen: { backgroundColor: "#11151D" },
   previewRoot: { flex: 1, backgroundColor: "#11151D" },
@@ -892,6 +844,55 @@ const styles = StyleSheet.create({
   },
   totalLikesValue: { color: colors.white, fontSize: 18, fontWeight: "700" },
   totalLikesLabel: { color: "rgba(255,255,255,.54)", fontSize: 9 },
+  artworkLoadingFrame: {
+    position: "relative",
+    overflow: "hidden",
+    borderRadius: 28
+  },
+  aiLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    borderRadius: 28,
+    backgroundColor: "rgba(17,21,29,.72)"
+  },
+  aiLoadingCard: {
+    width: "100%",
+    maxWidth: 300,
+    minHeight: 92,
+    paddingHorizontal: 17,
+    paddingVertical: 15,
+    borderRadius: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 13,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(115,174,221,.34)",
+    backgroundColor: "rgba(17,21,29,.94)"
+  },
+  aiLoadingSpinner: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(115,174,221,.12)"
+  },
+  aiLoadingCopy: { flex: 1, minWidth: 0 },
+  aiLoadingTitle: {
+    color: colors.white,
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "700"
+  },
+  aiLoadingBody: {
+    marginTop: 4,
+    color: "rgba(255,255,255,.62)",
+    fontSize: 10,
+    lineHeight: 15
+  },
   artwork: {
     position: "relative",
     overflow: "hidden",

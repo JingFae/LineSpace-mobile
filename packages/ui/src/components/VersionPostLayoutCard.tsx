@@ -60,18 +60,11 @@ export function VersionPostLayoutCard({
       {mediaSource ? <Image resizeMode="cover" source={mediaSource} style={styles.media} /> : null}
       {mediaSource ? <View style={[styles.mediaWash, dark && styles.mediaWashDark]} /> : null}
       <Text style={[styles.title, { color: ink }]}>{title || "untitled line"}</Text>
-      {hasAiChanges ? (
-        <View style={styles.aiLegend}>
-          <View style={styles.aiLegendSwatch} />
-          <Text style={styles.aiLegendText}>Blue text was harmonized by AI</Text>
-        </View>
-      ) : null}
       <View style={styles.lineStack}>
         {lines.map((line) => {
           const segments = line.originalText
             ? buildAiTextSegments(line.originalText, line.text)
             : [{ text: line.text, ai: false }];
-          const aiEdited = segments.some((segment) => segment.ai);
           return (
             <View key={`${line.lineNumber}-${line.author.id}-${line.text}`}>
               <Text style={[styles.lineText, { color: ink }]}>
@@ -84,14 +77,6 @@ export function VersionPostLayoutCard({
                   </Text>
                 ))}
               </Text>
-              {aiEdited ? (
-                <View style={styles.aiNoteRow}>
-                  <View style={styles.aiNoteDot} />
-                  <Text style={styles.aiNote}>
-                    AI harmonized{line.aiChangeNote ? ` · ${line.aiChangeNote}` : ""}
-                  </Text>
-                </View>
-              ) : null}
             </View>
           );
         })}
@@ -136,6 +121,12 @@ export function VersionPostLayoutCard({
           </Text>
         </View>
         <Text style={[styles.byline, { color: ink }]}>by {contributorNames}</Text>
+        {hasAiChanges ? (
+          <View style={styles.aiLegend}>
+            <View style={styles.aiLegendSwatch} />
+            <Text style={styles.aiLegendText}>Blue text was harmonized by AI</Text>
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -167,8 +158,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    marginTop: -6,
-    marginBottom: 14,
+    marginTop: 9,
     paddingVertical: 2
   },
   aiLegendSwatch: {
@@ -186,15 +176,6 @@ const styles = StyleSheet.create({
     textDecorationColor: "rgba(54,126,175,0.28)",
     textDecorationLine: "underline"
   },
-  aiNoteRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    marginTop: 3,
-    marginBottom: 2
-  },
-  aiNoteDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: "#367EAF" },
-  aiNote: { color: "#367EAF", fontSize: 9, lineHeight: 12, fontWeight: "700" },
   contributorFooter: {
     borderTopColor: "rgba(21,21,21,0.18)",
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -222,12 +203,15 @@ const styles = StyleSheet.create({
   byline: { marginTop: 9, fontSize: 11, fontWeight: "600", lineHeight: 16, opacity: 0.68 }
 });
 
-type AiTextSegment = { text: string; ai: boolean };
+export type AiTextSegment = { text: string; ai: boolean };
 
-function buildAiTextSegments(original: string, harmonized: string): AiTextSegment[] {
+export function buildAiTextSegments(
+  original: string,
+  harmonized: string
+): AiTextSegment[] {
   if (original === harmonized) return [{ text: harmonized, ai: false }];
-  const before = [...original];
-  const after = [...harmonized];
+  const before = tokenizeForAiDiff(original);
+  const after = tokenizeForAiDiff(harmonized);
   if (before.length > 500 || after.length > 500) {
     return buildPrefixSuffixSegments(before, after);
   }
@@ -265,6 +249,12 @@ function buildAiTextSegments(original: string, harmonized: string): AiTextSegmen
     right += 1;
   }
   return segments.length ? segments : [{ text: harmonized, ai: true }];
+}
+
+function tokenizeForAiDiff(value: string) {
+  return value.match(
+    /\s+|[\u3400-\u9FFF\u3040-\u30FF\uAC00-\uD7AF]|[\p{L}\p{N}]+(?:['’\-][\p{L}\p{N}]+)*|[^\s]/gu
+  ) ?? [];
 }
 
 function buildPrefixSuffixSegments(

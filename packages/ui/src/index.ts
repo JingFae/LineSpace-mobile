@@ -13,6 +13,8 @@ export { PoemArtwork, type ArtworkTone } from "./components/PoemArtwork";
 export { PoemCard, type PoemCardModel } from "./components/PoemCard";
 export {
   VersionPostLayoutCard,
+  buildAiTextSegments,
+  type AiTextSegment,
   type VersionPostLineModel
 } from "./components/VersionPostLayoutCard";
 export { PoemLayoutCard, type PoemLayoutCardModel } from "./components/PoemLayoutCard";
