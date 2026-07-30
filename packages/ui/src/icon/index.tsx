@@ -133,6 +133,21 @@ export function ShareIcon({ width = 28, height = 28, color = "#000000" }: FigmaI
   return <Svg width={width} height={height} viewBox="0 0 28 28"><Path d={sharePath} fill={color} /></Svg>;
 }
 
+export function SendIcon({ width = 24, height = 24, color = "#000000" }: FigmaIconProps) {
+  return (
+    <Svg width={width} height={height} viewBox="0 0 24 24">
+      <Path
+        d="M21.35 2.65L10.47 13.53M21.35 2.65L14.46 21.35L10.47 13.53M21.35 2.65L2.65 9.54L10.47 13.53"
+        fill="none"
+        stroke={color}
+        strokeWidth={1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
 export function ContinueIcon({ width = 28, height = 28, color = "#000000" }: FigmaIconProps) {
   return (
     <Svg width={width} height={height} viewBox="0 0 28 28">

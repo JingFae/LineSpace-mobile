@@ -54,6 +54,7 @@ export {
   ReadPostIcon,
   SaveIcon,
   SearchIcon,
+  SendIcon,
   SettingsIcon,
   ShareIcon,
   StickerIcon,

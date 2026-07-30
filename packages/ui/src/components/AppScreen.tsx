@@ -25,6 +25,7 @@ export function AppScreen({
   style,
   contentContainerStyle
 }: AppScreenProps) {
+  const ScreenRoot = Platform.OS === "web" ? View : SafeAreaView;
   const contentStyle = [
     styles.content,
     !scroll && styles.fixedContent,
@@ -33,7 +34,7 @@ export function AppScreen({
   ];
 
   return (
-    <SafeAreaView style={[styles.safeArea, style]}>
+    <ScreenRoot style={[styles.safeArea, style]}>
       <View style={styles.deviceFrame}>
         {scroll ? (
           <ScrollView
@@ -46,7 +47,7 @@ export function AppScreen({
           <View style={contentStyle}>{children}</View>
         )}
       </View>
-    </SafeAreaView>
+    </ScreenRoot>
   );
 }
 

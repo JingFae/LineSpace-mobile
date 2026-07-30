@@ -28,6 +28,7 @@ import {
   EmptyState,
   LikeIcon,
   SaveIcon,
+  SendIcon,
   ShareIcon
 } from "@linespace/ui";
 import { colors, radius, spacing, typography } from "@linespace/tokens";
@@ -1825,12 +1826,11 @@ function ContinueComposer({
             {isPending ? (
               <ActivityIndicator color={colors.white} size="small" />
             ) : (
-              <ShareIcon color={canSubmit ? colors.white : colors.profileMuted} width={19} height={19} />
+              <SendIcon color={canSubmit ? colors.white : colors.profileMuted} width={20} height={20} />
             )}
           </Pressable>
         </View>
         {isError ? <Text style={styles.inlineComposerError}>This continuation could not be published. Try again.</Text> : null}
-        {Platform.OS === "web" ? <KeyboardPlaceholder onDismiss={onClose} /> : null}
       </Animated.View>
     </View>
   );
@@ -1852,44 +1852,6 @@ function ComposerContextPreview({
         <Text style={styles.composerContextAuthor}>@{author}</Text>
       </Text>
       <Text numberOfLines={3} style={styles.composerContextText}>{text}</Text>
-    </View>
-  );
-}
-
-function KeyboardPlaceholder({ onDismiss }: { onDismiss: () => void }) {
-  const rows = [
-    ["", "", "", "", "", "", "", "", "", ""],
-    ["", "", "", "", "", "", "", "", ""],
-    ["wide", "", "", "", "", "", "", "wide"],
-    ["globe", "space", "return"]
-  ];
-
-  return (
-    <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.keyboardPlaceholder}>
-      <View style={styles.keyboardSuggestionRow}>
-        {Array.from({ length: 7 }).map((_, index) => (
-          <View key={`suggestion-${index}`} style={styles.keyboardSuggestionKey} />
-        ))}
-        <Pressable accessibilityLabel="Hide keyboard" accessibilityRole="button" onPress={onDismiss} style={styles.keyboardDismissKey}>
-          <View style={styles.keyboardDismissMark} />
-        </Pressable>
-      </View>
-      {rows.map((row, rowIndex) => (
-        <View key={`keyboard-row-${rowIndex}`} style={styles.keyboardRow}>
-          {row.map((kind, index) => (
-            <View
-              key={`${rowIndex}-${index}`}
-              style={[
-                styles.keyboardKey,
-                kind === "wide" && styles.keyboardWideKey,
-                kind === "globe" && styles.keyboardGlobeKey,
-                kind === "space" && styles.keyboardSpaceKey,
-                kind === "return" && styles.keyboardReturnKey
-              ]}
-            />
-          ))}
-        </View>
-      ))}
     </View>
   );
 }
@@ -2616,7 +2578,7 @@ const styles = StyleSheet.create({
   feedContent: { paddingBottom: 96 },
   pageLoader: { alignItems: "center", paddingVertical: spacing.lg },
   detailContent: { paddingBottom: 86 },
-  composerOpenContentInset: { paddingBottom: 390 },
+  composerOpenContentInset: { paddingBottom: 150 },
   threadCard: {
     paddingHorizontal: spacing.lg,
     paddingVertical: 10,
@@ -3151,56 +3113,6 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     color: colors.accent
   },
-  keyboardPlaceholder: {
-    paddingHorizontal: 8,
-    paddingTop: 7,
-    paddingBottom: 13,
-    backgroundColor: "#D8D9DD"
-  },
-  keyboardSuggestionRow: {
-    height: 35,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between"
-  },
-  keyboardSuggestionKey: {
-    width: 34,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: "rgba(255,255,255,0.74)"
-  },
-  keyboardDismissKey: {
-    width: 34,
-    height: 28,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.42)"
-  },
-  keyboardDismissMark: {
-    width: 14,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.inkSoft
-  },
-  keyboardRow: {
-    minHeight: 44,
-    marginTop: 7,
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 6
-  },
-  keyboardKey: {
-    flex: 1,
-    maxWidth: 37,
-    height: 42,
-    borderRadius: 8,
-    backgroundColor: colors.surface
-  },
-  keyboardWideKey: { flex: 1.35, maxWidth: 52, backgroundColor: "#EEF0F3" },
-  keyboardGlobeKey: { flex: 0.92, maxWidth: 43, backgroundColor: "#EEF0F3" },
-  keyboardSpaceKey: { flex: 4.2, maxWidth: 210 },
-  keyboardReturnKey: { flex: 1.8, maxWidth: 78, backgroundColor: "#EEF0F3" },
   emptyContinuation: { paddingHorizontal: 24, paddingVertical: 28, alignItems: "center" },
   emptyTitle: { textAlign: "center", fontSize: 16, lineHeight: 22, color: colors.profileMuted },
   emptyButton: { marginTop: 14, minHeight: 42, borderRadius: 21, paddingHorizontal: 18, justifyContent: "center", backgroundColor: colors.ink },
