@@ -1511,21 +1511,28 @@ export class MockLineSpaceApi implements LineSpaceApi {
     const selected = [...candidates].sort(
       (left, right) => right.likes - left.likes || left.id.localeCompare(right.id)
     )[0]!;
+    const usesChinese = /\p{Script=Han}/u.test(
+      [thread.title, thread.rules, ...selected.lines.map((line) => line.text)].join("\n")
+    );
     return {
       threadId,
       sourceRevision: continuations.length + 1,
       snapshotRevision: continuations.length + 1,
       status: "ready",
       isStale: false,
-      promptVersion: "thread-version-ai-v1",
+      promptVersion: "thread-version-ai-v2-multilingual",
       model: "mock",
       recommended: {
         selectedVersionId: selected.id,
-        rationale: "This shared mock snapshot preserves the clearest existing path.",
+        rationale: usesChinese
+          ? "这条路径在意象、情绪与诗句衔接上最为连贯。"
+          : "This shared mock snapshot preserves the clearest existing path.",
         confidence: 0.8
       },
       harmonized: {
-        rationale: "The selected path is already cohesive, so its wording remains unchanged.",
+        rationale: usesChinese
+          ? "这条路径本身已经较为和谐，因此保留了每位作者的原句。"
+          : "The selected path is already cohesive, so its wording remains unchanged.",
         lines: selected.lines.map((line) => ({
           lineId: line.id,
           text: line.text,

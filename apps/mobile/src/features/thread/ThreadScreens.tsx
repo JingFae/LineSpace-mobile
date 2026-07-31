@@ -551,7 +551,7 @@ export function ThreadDetailScreen({
                     setSelectedByLine((current) => {
                       const next = { ...current };
                       if (next[lineNumber] === target.id) delete next[lineNumber];
-                      else next[lineNumber] = target.id;
+                      else if (!next[lineNumber]) next[lineNumber] = target.id;
                       return next;
                     })
                   }
@@ -1050,6 +1050,10 @@ function ContinuationTreeNodeView({
   const lastChildCenter = childConnectors.at(-1)?.center;
   const childAvatarCenterX = treeBranchIndent + continuationHorizontalPadding + level1AvatarSize / 2;
   const parentAvatarCenterX = continuationHorizontalPadding + avatarSize / 2;
+  const selectedContinuationId = selectedByLine[node.row.lineNumber];
+  const selectionDisabled = Boolean(
+    selectedContinuationId && selectedContinuationId !== node.row.continuation.id
+  );
 
   return (
     <View style={styles.continuationTreeNode}>
@@ -1092,7 +1096,8 @@ function ContinuationTreeNodeView({
           onShare={onShare}
           onShowContinuations={onShowContinuations}
           selectionMode={selectionMode}
-          selected={selectedByLine[node.row.lineNumber] === node.row.continuation.id}
+          selected={selectedContinuationId === node.row.continuation.id}
+          selectionDisabled={selectionDisabled}
           onSelect={onSelect}
         />
       </View>
@@ -1137,6 +1142,7 @@ function ContinuationCard({
   onShowContinuations,
   selectionMode = false,
   selected = false,
+  selectionDisabled = false,
   onSelect
 }: {
   row: ContinuationVisibleRow;
@@ -1148,11 +1154,33 @@ function ContinuationCard({
   onShowContinuations?: (continuation: ThreadContinuation) => void;
   selectionMode?: boolean;
   selected?: boolean;
+  selectionDisabled?: boolean;
   onSelect?: (continuation: ThreadContinuation, lineNumber: number) => void;
 }) {
   const { continuation } = row;
   const avatarSize = row.isExpandedDescendant ? level1AvatarSize : level0AvatarSize;
   const avatarColumnWidth = row.isExpandedDescendant ? level1AvatarSize : level0AvatarSize;
+  const disabledProgress = useRef(new Animated.Value(selectionDisabled ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(disabledProgress, {
+      toValue: selectionDisabled ? 1 : 0,
+      duration: 180,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: false
+    }).start();
+  }, [disabledProgress, selectionDisabled]);
+
+  const disabledCircleStyle = {
+    backgroundColor: disabledProgress.interpolate({
+      inputRange: [0, 1],
+      outputRange: [colors.surface, "#D8D6D1"]
+    }),
+    borderColor: disabledProgress.interpolate({
+      inputRange: [0, 1],
+      outputRange: [colors.profileMuted, "#C9C6C0"]
+    })
+  };
 
   return (
     <View
@@ -1193,14 +1221,27 @@ function ContinuationCard({
             <View style={styles.continuationLineActions}>
               {selectionMode ? (
                 <Pressable
-                  accessibilityLabel={`Select line ${row.lineNumber}`}
+                  accessibilityLabel={
+                    selectionDisabled
+                      ? `Line ${row.lineNumber} already has a selected option`
+                      : `Select line ${row.lineNumber}`
+                  }
                   accessibilityRole="checkbox"
-                  accessibilityState={{ checked: selected }}
+                  accessibilityState={{ checked: selected, disabled: selectionDisabled }}
+                  disabled={selectionDisabled}
                   hitSlop={10}
                   onPress={() => onSelect?.(continuation, row.lineNumber)}
-                  style={[styles.versionSelectCircle, selected && styles.versionSelectCircleActive]}
+                  style={styles.versionSelectButton}
                 >
-                  {selected ? <Text style={styles.versionSelectCheck}>✓</Text> : null}
+                  <Animated.View
+                    style={[
+                      styles.versionSelectCircle,
+                      disabledCircleStyle,
+                      selected && styles.versionSelectCircleActive
+                    ]}
+                  >
+                    {selected ? <Text style={styles.versionSelectCheck}>✓</Text> : null}
+                  </Animated.View>
                 </Pressable>
               ) : null}
               <View style={styles.lineNumberPill}>
@@ -1210,6 +1251,7 @@ function ContinuationCard({
           </View>
           <Pressable
             accessibilityRole="button"
+            disabled={selectionDisabled}
             onPress={() =>
               selectionMode
                 ? onSelect?.(continuation, row.lineNumber)
@@ -2915,6 +2957,12 @@ const styles = StyleSheet.create({
   continuationAuthorName: { flexShrink: 1, maxWidth: "78%", fontSize: 15, lineHeight: 20, fontWeight: "700", color: colors.ink },
   continuationTime: { flexShrink: 0, marginLeft: 7, fontSize: 14, lineHeight: 19, color: colors.profileMuted },
   continuationOpenArea: { maxWidth: "100%" },
+  versionSelectButton: {
+    width: 25,
+    height: 25,
+    marginRight: 7,
+    borderRadius: 13
+  },
   versionSelectCircle: {
     width: 25,
     height: 25,
