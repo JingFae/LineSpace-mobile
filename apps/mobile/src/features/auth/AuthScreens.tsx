@@ -106,6 +106,10 @@ export function RegisterScreen() {
       setError("Username must contain 3–32 characters.");
       return;
     }
+    if ([...password].length < 6) {
+      setError("Password must contain at least 6 characters.");
+      return;
+    }
     setError(null);
     setSubmitting(true);
     try {
@@ -140,6 +144,7 @@ export function RegisterScreen() {
         value={username}
       />
       <PasswordField
+        helper="At least 6 characters; any characters"
         onChangeText={setPassword}
         onSubmitEditing={submit}
         returnKeyType="done"
@@ -236,16 +241,21 @@ function AuthField({
 }
 
 function PasswordField({
+  helper,
   showPassword,
   setShowPassword,
   ...props
 }: {
+  helper?: string;
   showPassword: boolean;
   setShowPassword: (value: boolean) => void;
 } & React.ComponentProps<typeof TextInput>) {
   return (
     <View style={styles.field}>
-      <Text style={styles.label}>password</Text>
+      <View style={styles.labelRow}>
+        <Text style={styles.label}>password</Text>
+        {helper ? <Text style={styles.helper}>{helper}</Text> : null}
+      </View>
       <View style={styles.passwordRow}>
         <TextInput
           accessibilityLabel="password"

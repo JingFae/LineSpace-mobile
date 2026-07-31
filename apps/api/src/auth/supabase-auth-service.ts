@@ -195,7 +195,7 @@ export class SupabaseAuthService implements AuthService {
         throw new ApiAuthError(
           "WEAK_PASSWORD",
           422,
-          "Password does not meet the configured security requirements."
+          "Password must contain at least 6 characters."
         );
       }
       throw this.providerUnavailableError();
@@ -232,7 +232,7 @@ export class SupabaseAuthService implements AuthService {
       return new ApiAuthError(
         "WEAK_PASSWORD",
         422,
-        "Password does not meet the configured security requirements."
+        "Password must contain at least 6 characters."
       );
     }
     return new ApiAuthError(

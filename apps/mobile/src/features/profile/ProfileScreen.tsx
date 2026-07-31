@@ -1197,12 +1197,8 @@ function PasswordChangeSheet({
       setError("New password and confirmation do not match.");
       return;
     }
-    if (currentPassword === newPassword) {
-      setError("Choose a password different from your current password.");
-      return;
-    }
-    if (newPassword.length < 8 || newPassword.length > 128 || !/[a-z]/.test(newPassword) || !/[A-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
-      setError("Use 8–128 characters with uppercase, lowercase, and a number.");
+    if ([...newPassword].length < 6) {
+      setError("Password must contain at least 6 characters.");
       return;
     }
     setError(null);
@@ -1251,7 +1247,7 @@ function PasswordChangeSheet({
                 <Text style={styles.passwordVisibilityText}>{showPasswords ? "Hide passwords" : "Show passwords"}</Text>
               </Pressable>
               {error ? <Text style={styles.passwordError}>{error}</Text> : null}
-              <Text style={styles.passwordHint}>8–128 characters · uppercase · lowercase · number</Text>
+              <Text style={styles.passwordHint}>At least 6 characters; no uppercase, number, or symbol required.</Text>
               <Pressable
                 accessibilityRole="button"
                 disabled={submitting || !currentPassword || !newPassword || !confirmPassword}

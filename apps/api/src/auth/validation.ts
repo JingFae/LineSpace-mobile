@@ -84,9 +84,6 @@ export function parsePasswordChange(body: unknown): ValidatedPasswordChange {
   if (source.newPassword !== source.confirmPassword) {
     throw invalidInput("Password confirmation does not match.");
   }
-  if (source.currentPassword === source.newPassword) {
-    throw invalidInput("Choose a password different from your current password.");
-  }
   validatePassword(source.newPassword);
   return { currentPassword: source.currentPassword, newPassword: source.newPassword };
 }
@@ -138,18 +135,11 @@ function validateUsername(value: string) {
 }
 
 function validatePassword(password: string) {
-  const length = [...password].length;
-  const strongEnough =
-    length >= 8 &&
-    length <= 128 &&
-    /[a-z]/.test(password) &&
-    /[A-Z]/.test(password) &&
-    /[0-9]/.test(password);
-  if (!strongEnough) {
+  if ([...password].length < 6) {
     throw new ApiAuthError(
       "WEAK_PASSWORD",
       422,
-      "Password must be 8 to 128 characters and include uppercase, lowercase, and numeric characters."
+      "Password must contain at least 6 characters."
     );
   }
 }

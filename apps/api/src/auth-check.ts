@@ -147,13 +147,26 @@ async function main() {
     "Duplicate username returned the wrong code."
   );
 
-  const weakPassword = "weak";
-  const weak = await request(auth, "POST", "/v1/auth/register", {
-    username: "weak-poet",
-    password: weakPassword
+  const shortPassword = "short";
+  const short = await request(auth, "POST", "/v1/auth/register", {
+    username: "short-password-poet",
+    password: shortPassword
   });
-  assert(weak.status === 422, "Weak password was not rejected.");
-  assert(!JSON.stringify(weak.body).includes(weakPassword), "Weak password leaked in response.");
+  assert(short.status === 422, "A password shorter than 6 characters was accepted.");
+  assert(
+    (short.body as { code?: string }).code === "WEAK_PASSWORD",
+    "A short password returned the wrong error code."
+  );
+
+  const simplePassword = "simple";
+  const simple = await request(auth, "POST", "/v1/auth/register", {
+    username: "simple-poet",
+    password: simplePassword
+  });
+  assert(
+    simple.status === 201,
+    "A 6-character password without character-class complexity was rejected."
+  );
 
   const wrongExisting = await request(auth, "POST", "/v1/auth/login", {
     username: "lili",
@@ -270,7 +283,7 @@ async function main() {
   assert(crossUserProfile.status === 403, "Cross-user profile write was not rejected.");
 
   process.stdout.write(
-    "Auth check passed: registration, case-insensitive uniqueness, weak passwords, generic login errors, refresh, logout, JWT validation, and write ownership.\n"
+    "Auth check passed: registration, case-insensitive uniqueness, 6-character password minimum without character-class rules, generic login errors, refresh, logout, JWT validation, and write ownership.\n"
   );
 }
 
@@ -347,7 +360,7 @@ async function checkUsernameOnlySupabaseRegistration() {
   const service = new SupabaseAuthService(() => publicClient, adminClient);
   const registered = await service.register({
     username: "new-poet",
-    password: "ValidPass123"
+    password: "simple"
   });
 
   const internalEmail = createdAttributes?.email;
@@ -359,6 +372,10 @@ async function checkUsernameOnlySupabaseRegistration() {
   assert(
     createdAttributes?.email_confirm === true,
     "Username registration did not auto-confirm the internal Auth identity."
+  );
+  assert(
+    createdAttributes?.password === "simple",
+    "Username registration changed or rejected a password without character-class complexity."
   );
   assert(
     signedInEmail === internalEmail,

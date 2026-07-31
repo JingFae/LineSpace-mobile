@@ -25,6 +25,9 @@ enabled = false
 
 [auth]
 site_url = "http://localhost:8081"
+# Supabase Auth requires at least 6 characters. LineSpace adds no character-class rules.
+minimum_password_length = 6
+password_requirements = ""
 
 [auth.email]
 # LineSpace registration is owned by the server-side username/password API.

@@ -117,7 +117,7 @@ Expo 会在打包时内联 `EXPO_PUBLIC_*` 变量。修改后应重新启动开�
 - 在托管平台的密钥管理中保存服务端密钥，不提交 `.env`。
 - 前端 API 地址必须使用 HTTPS。
 - Supabase Service Role 和 OpenAI Key 只能出现在独立后端运行环境。
-- 生产 Supabase Auth 应关闭公开 Email Signups 和 Confirm Email，并启用足够强的密码策略、泄漏密码保护（若套餐支持）和登录限流。
+- 生产 Supabase Auth 应关闭公开 Email Signups 和 Confirm Email。为与当前产品规则一致，在 Authentication 的密码设置中将 Minimum password length 设为 Supabase 最低支持的 `6`、Required characters 设为 None，并关闭 Leaked password protection；仍应保留登录和注册限流。LineSpace 代码不再额外要求大小写、数字、特殊字符或新旧密码不同。
 - 登录错误统一返回 `Invalid username or password.`，日志不得记录注册或登录请求体。
 - 当前 Vercel 项目只构建静态前端，配置服务端变量不会使 `apps/api` 自动上线。
 

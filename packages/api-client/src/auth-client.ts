@@ -146,7 +146,7 @@ function safeMessage(code: AuthClientErrorCode, path: string) {
   }
   if (code === "INVALID_CREDENTIALS") return "Invalid username or password.";
   if (code === "USERNAME_TAKEN") return "That username is unavailable.";
-  if (code === "WEAK_PASSWORD") return "Choose a stronger password.";
+  if (code === "WEAK_PASSWORD") return "Password must contain at least 6 characters.";
   if (code === "INVALID_REFRESH_TOKEN" || code === "INVALID_TOKEN") {
     return "Your session has expired. Please sign in again.";
   }
