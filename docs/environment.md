@@ -14,8 +14,7 @@
 | `SUPABASE_URL` | 认证 API 必需 | `apps/api` | Supabase 项目 URL |
 | `SUPABASE_PUBLISHABLE_KEY` | 认证 API 必需 | `apps/api` | 服务端调用公开 Auth API 的首选 Publishable Key |
 | `SUPABASE_ANON_KEY` | 兼容可选 | `apps/api` | 旧项目的公开 Anon Key；仅在未设置 Publishable Key 时作为回退 |
-| `SUPABASE_SERVICE_ROLE_KEY` | 认证 API 必需 | 只能由 `apps/api` 读取 | 解析 username 到 Auth 用户及撤销 Session；严禁进入客户端 |
-| `AUTH_EMAIL_REDIRECT_URL` | 可选 | `apps/api` | 注册确认邮件完成后返回 LineSpace 的地址，必须加入 Supabase Redirect URLs；Web 与 Native 应按部署环境分别配置 |
+| `SUPABASE_SERVICE_ROLE_KEY` | 认证 API 必需 | 只能由 `apps/api` 读取 | 创建用户名账号、解析认证身份及撤销 Session；严禁进入客户端 |
 | `DEEPSEEK_API_KEY` | Community Spark 必需 | 只能由 `apps/api` 读取 | DeepSeek 服务端密钥；不得进入 Expo 客户端 |
 | `DEEPSEEK_BASE_URL` | 可选 | `apps/api` | DeepSeek OpenAI-compatible API 根地址，默认 `https://api.deepseek.com` |
 | `DEEPSEEK_COMMUNITY_SPARK_MODEL` | 可选 | `apps/api` | Community Spark 模型，默认 `deepseek-v4-flash` |
@@ -28,14 +27,19 @@
 `.env`，再以 `apps/api/.env` 中的值覆盖。将 `DEEPSEEK_API_KEY` 写在其中任意
 一个文件即可；不要写入 `apps/mobile/.env`，因为它会被打包到客户端。
 
-## 邮箱确认回跳
+## 用户名注册
 
-Supabase Dashboard → Authentication → URL Configuration → Redirect URLs 至少加入当前环境的两类地址：
+注册接口只接收 `username` 和 `password`。服务端使用 Service Role 创建一个已经
+确认的 Supabase Auth 用户，并为 Supabase 的密码认证生成不可投递、不会返回客户端
+的内部邮箱标识。创建成功后接口立即用该身份签发 Session，因此没有确认邮件、确认
+页面或 Redirect URL。
 
-- Web 本地：`http://localhost:8081/auth/confirm`；生产：`https://<web-domain>/auth/confirm`。
-- Native：`linespace://auth/confirm`（若使用 Expo Go/开发客户端，也把实际 dev scheme 地址加入允许列表）。
+本地 `supabase/config.toml` 已关闭公开 Email Signups 和 Email Confirmations。
+托管项目也应在 Authentication → Sign In / Providers → Email 中关闭公开 Email
+Signups 和 Confirm Email，确保账号只能通过 LineSpace 服务端用户名注册入口创建。
 
-`AUTH_EMAIL_REDIRECT_URL` 是后端注册时传给 Supabase `signUp` 的单一回跳地址。Web 部署使用 Web 地址，Native 独立构建使用 `linespace://auth/confirm`；切换环境后重启 API，使变量生效。当前服务端 Supabase JS 客户端使用 implicit flow：确认回跳页读取 fragment 中的短期 Session、立即从 Web 地址栏清除 fragment，再调用 LineSpace `/v1/auth/me` 验证并建立本地 Session。失败或过期链接只显示通用错误，并提供返回登录/重新注册入口。
+因为产品不收集真实邮箱，当前不提供“邮件找回密码”。用户只能在已登录状态下使用
+当前密码修改密码；后续如需找回能力，应单独设计恢复码、受信设备或绑定邮箱流程。
 
 ## Mock 模式
 
@@ -61,7 +65,6 @@ PORT=4000
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_PUBLISHABLE_KEY=sb_publishable_example
 SUPABASE_SERVICE_ROLE_KEY=server-only-secret
-AUTH_EMAIL_REDIRECT_URL=http://localhost:8081/auth/confirm
 ```
 
 分别启动：
@@ -89,7 +92,7 @@ supabase/migrations/20260716000400_auth_trigger_idempotent.sql
 - 对规范化后的 `handle` 建立大小写不敏感唯一索引；
 - 注册时通过 `auth.users` trigger 创建 LineSpace 业务用户；
 - 启用 `public.users` RLS：资料可读，用户只能修改自己的可编辑资料字段；
-- 邮箱、密码哈希和认证 Session 继续由 Supabase Auth 管理，不写入业务表。
+- 内部认证标识、密码哈希和认证 Session 继续由 Supabase Auth 管理，不写入业务表。
 
 迁移会在现有 handle 不符合 `3-32` 位规则，或存在大小写不敏感重复值时主动失败。应先清理冲突，不要删除唯一性检查来绕过失败。
 
@@ -114,7 +117,7 @@ Expo 会在打包时内联 `EXPO_PUBLIC_*` 变量。修改后应重新启动开�
 - 在托管平台的密钥管理中保存服务端密钥，不提交 `.env`。
 - 前端 API 地址必须使用 HTTPS。
 - Supabase Service Role 和 OpenAI Key 只能出现在独立后端运行环境。
-- 生产 Supabase Auth 应启用邮箱确认、足够强的密码策略、泄漏密码保护（若套餐支持）和登录限流。
+- 生产 Supabase Auth 应关闭公开 Email Signups 和 Confirm Email，并启用足够强的密码策略、泄漏密码保护（若套餐支持）和登录限流。
 - 登录错误统一返回 `Invalid username or password.`，日志不得记录注册或登录请求体。
 - 当前 Vercel 项目只构建静态前端，配置服务端变量不会使 `apps/api` 自动上线。
 
@@ -190,7 +193,6 @@ configuration, never through the Expo bundle:
 SUPABASE_URL=https://<project-ref>.supabase.co
 SUPABASE_PUBLISHABLE_KEY=<publishable-key>
 SUPABASE_SERVICE_ROLE_KEY=<server-only-service-role-key>
-AUTH_EMAIL_REDIRECT_URL=https://<web-domain>/auth/confirm
 ```
 
 `SUPABASE_SERVICE_ROLE_KEY`, database passwords, and connection strings must
@@ -228,8 +230,8 @@ EXPO_PUBLIC_USE_MOCKS=false
 EXPO_PUBLIC_API_BASE_URL=https://<api-project-domain>/api
 ```
 
-Configure `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`,
-`SUPABASE_SERVICE_ROLE_KEY`, and `AUTH_EMAIL_REDIRECT_URL` only on the API
+Configure `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and
+`SUPABASE_SERVICE_ROLE_KEY` only on the API
 project. After changing either `EXPO_PUBLIC_*` value, rebuild the Web project;
 Expo embeds these values at build time. The authenticated business user ID
 comes from `/v1/auth/login`, `/v1/auth/refresh`, or `/v1/auth/me` and is then

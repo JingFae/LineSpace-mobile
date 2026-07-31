@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createClient, type Session, type SupabaseClient, type User } from "@supabase/supabase-js";
 import type {
   AuthRegistrationResult,
@@ -24,8 +25,7 @@ type UserIdentityRow = {
 export class SupabaseAuthService implements AuthService {
   constructor(
     private readonly createPublicClient: () => SupabaseClient,
-    private readonly adminClient: SupabaseClient,
-    private readonly emailRedirectTo?: string
+    private readonly adminClient: SupabaseClient
   ) {}
 
   async register(input: ValidatedRegistration): Promise<AuthRegistrationResult> {
@@ -34,37 +34,53 @@ export class SupabaseAuthService implements AuthService {
       throw new ApiAuthError("USERNAME_TAKEN", 409, "This username is unavailable.");
     }
 
-    const { data, error } = await this.createPublicClient().auth.signUp({
-      email: input.email,
-      password: input.password,
-      options: {
-        ...(this.emailRedirectTo ? { emailRedirectTo: this.emailRedirectTo } : {}),
-        data: {
+    const internalEmail = createInternalAuthEmail(input.username);
+    const { data: created, error: createError } =
+      await this.adminClient.auth.admin.createUser({
+        email: internalEmail,
+        password: input.password,
+        email_confirm: true,
+        user_metadata: {
           username: input.username,
           handle: input.username,
           display_name: input.username
         }
+      });
+
+    if (createError || !created.user) {
+      throw this.registrationError(createError);
+    }
+
+    try {
+      const profile = await this.findProfileByAuthUserId(created.user.id);
+      if (!profile) {
+        throw new ApiAuthError(
+          "REGISTRATION_FAILED",
+          503,
+          "Registration could not be completed."
+        );
       }
-    });
 
-    if (error || !data.user) {
-      throw this.registrationError(error);
+      const { data: signedIn, error: signInError } =
+        await this.createPublicClient().auth.signInWithPassword({
+          email: internalEmail,
+          password: input.password
+        });
+      if (signInError || !signedIn.session || !signedIn.user) {
+        throw this.registrationError(signInError);
+      }
+
+      return {
+        user: mapAuthUser(profile, signedIn.user),
+        session: mapSession(signedIn.session),
+        emailConfirmationRequired: false
+      };
+    } catch (error) {
+      // Registration must not leave an unusable Auth identity or business
+      // profile behind when profile provisioning or initial sign-in fails.
+      await this.adminClient.auth.admin.deleteUser(created.user.id).catch(() => undefined);
+      throw error;
     }
-
-    const profile = await this.findProfileByAuthUserId(data.user.id);
-    if (!profile) {
-      throw new ApiAuthError(
-        "REGISTRATION_FAILED",
-        503,
-        "Registration could not be completed."
-      );
-    }
-
-    return {
-      user: mapAuthUser(profile, data.user),
-      session: data.session ? mapSession(data.session) : null,
-      emailConfirmationRequired: data.session === null
-    };
   }
 
   async login(input: ValidatedLogin): Promise<AuthSessionResult> {
@@ -75,15 +91,39 @@ export class SupabaseAuthService implements AuthService {
 
     const { data: adminData, error: adminError } =
       await this.adminClient.auth.admin.getUserById(profile.auth_user_id);
-    const email = adminData.user?.email;
-    if (adminError || !email) {
+    let authUser = adminData.user;
+    if (adminError || !authUser?.email) {
       throw invalidCredentialsError();
     }
 
-    const { data, error } = await this.createPublicClient().auth.signInWithPassword({
+    const email = authUser.email;
+    let signInResult = await this.createPublicClient().auth.signInWithPassword({
       email,
       password: input.password
     });
+
+    // A correct password for an older account can still reach the provider's
+    // email_not_confirmed state. Only then migrate that identity to the new
+    // no-confirmation policy and retry the same credential once.
+    if (
+      providerErrorCode(signInResult.error) === "email_not_confirmed" &&
+      !authUser.email_confirmed_at
+    ) {
+      const { data: confirmed, error: confirmError } =
+        await this.adminClient.auth.admin.updateUserById(authUser.id, {
+          email_confirm: true
+        });
+      if (confirmError || !confirmed.user?.email) {
+        throw invalidCredentialsError();
+      }
+      authUser = confirmed.user;
+      signInResult = await this.createPublicClient().auth.signInWithPassword({
+        email,
+        password: input.password
+      });
+    }
+
+    const { data, error } = signInResult;
     if (error || !data.session || !data.user) {
       throw invalidCredentialsError();
     }
@@ -240,17 +280,13 @@ export function getServerAuthService(): AuthService {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
-      detectSessionInUrl: false,
-      // Email confirmation callbacks are consumed by the Expo client, which
-      // immediately removes the documented token fragment before validating /me.
-      flowType: "implicit"
+      detectSessionInUrl: false
     }
   } as const;
 
   defaultService = new SupabaseAuthService(
     () => createClient(url, publishableKey, serverAuthOptions),
-    createClient(url, serviceRoleKey, serverAuthOptions),
-    process.env.AUTH_EMAIL_REDIRECT_URL
+    createClient(url, serviceRoleKey, serverAuthOptions)
   );
   return defaultService;
 }
@@ -270,11 +306,22 @@ function mapAuthUser(profile: UserIdentityRow, user: User): AuthUser {
     id: profile.id,
     authUserId: user.id,
     username: profile.handle,
-    email: user.email ?? "",
+    // Supabase password auth still stores an internal, non-deliverable email
+    // identifier. It is an implementation detail and must not enter the product
+    // profile or client-visible account data.
+    email: "",
     displayName: profile.display_name,
-    emailConfirmed: Boolean(user.email_confirmed_at),
+    emailConfirmed: true,
     createdAt: profile.created_at
   };
+}
+
+function createInternalAuthEmail(username: string) {
+  const digest = createHash("sha256")
+    .update(`linespace:${username}`, "utf8")
+    .digest("hex")
+    .slice(0, 48);
+  return `u-${digest}@users.linespace.invalid`;
 }
 
 function providerErrorCode(error: unknown) {

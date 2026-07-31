@@ -12,7 +12,7 @@ LineSpace 是一个面向 iOS、Android 和移动 Web 的诗歌社交与创意�
 ### 已落地的产品能力
 
 - 访客模式：无需登录即可浏览公开 Feed、Post、Thread、搜索、标签和公开资料；涉及发布、互动、保存、关注、分享或 Inbox 时再引导登录。
-- Supabase Auth 认证：注册、登录、邮箱确认回跳、刷新、退出、`/me` 和修改密码。
+- Supabase Auth 认证：用户名/密码注册与登录、刷新、退出、`/me` 和修改密码；产品不收集注册邮箱，也不要求邮箱确认。
 - Thread Relay：创建主题与首行，按父子关系继续写作，展开完整分支树，查看稳定行号，并从 Thread 版本中继续创作或发布为个人 Post。
 - Thread 版本：支持推荐、最高赞、最长路径和自定义版本；版本预览支持分享、Web 图片/PDF 导出，以及可选 AI 版本推荐。
 - Post / Poem：标题、正文、标签、提及、图片/视频、草稿、发布、评论/回复、喜欢、收藏、分享和作者删除。
@@ -28,7 +28,7 @@ LineSpace 是一个面向 iOS、Android 和移动 Web 的诗歌社交与创意�
 
 - Mock 模式使用 `packages/api-client` 的进程内数据，适合 UI 和 Feature 开发。
 - HTTP 模式在 Supabase 环境完整配置时使用 PostgreSQL/RLS Repository；服务端未配置数据库时会回退到 Mock，生产环境应通过 readiness 检查阻止这种误配置。
-- 本仓库没有生产 Supabase 凭据，因此本地检查不能替代生产注册、邮箱确认、云端迁移和真实数据的端到端验证。
+- 本仓库没有生产 Supabase 凭据，因此本地检查不能替代生产注册、云端迁移和真实数据的端到端验证。
 - 实时协作传输、审核策略、分布式限流和完整可观测性尚未接入；当前协作能力是草稿操作/邀请与持久化边界，不是 Realtime 同步编辑器。
 - Community Spark 需要服务端 `DEEPSEEK_API_KEY`；Thread 版本 AI 推荐为可选能力，未配置 AI 密钥时保留确定性版本选择或可重试的降级状态。
 - Web Refresh Token 使用 `sessionStorage`，Access Token 只驻留内存；生产部署仍应配置 CSP、严格脚本控制和服务端限流。
@@ -109,7 +109,6 @@ API 服务端至少需要：
 SUPABASE_URL=http://127.0.0.1:55421
 SUPABASE_PUBLISHABLE_KEY=<publishable-key>
 SUPABASE_SERVICE_ROLE_KEY=<server-only-key>
-AUTH_EMAIL_REDIRECT_URL=http://localhost:8081/auth/confirm
 ```
 
 本地 Supabase 端口来自 `supabase/config.toml`：API/PostgREST `55421`、PostgreSQL `55432`、Studio `55423`、Mailpit `55424`。
@@ -134,7 +133,6 @@ LineSpace-mobile/
 │  ├─ mobile/                         # Expo Router 应用、Feature Screens、认证和导航
 │  │  ├─ app/                         # 文件路由适配层，只处理参数、导航和 Route Guard
 │  │  │  ├─ (tabs)/                   # Thread、Post/Discover、Compose、Inbox、Profile
-│  │  │  ├─ auth/confirm.tsx          # 邮箱确认回跳
 │  │  │  ├─ poem/                     # Post 详情与分享
 │  │  │  ├─ profile/                  # 资料、编辑与草稿
 │  │  │  ├─ thread/                   # Thread、继续创作、分享与版本
@@ -192,7 +190,7 @@ apps/api    ──> packages/api-client
 
 - `app/` 是 Expo Router 的适配层，只读取路由参数、配置公开/受保护路由并渲染 Feature Screen。
 - `src/features/` 按 `auth`、`compose`、`feed`、`discovery`、`inbox`、`poem`、`profile`、`thread` 拆分产品域。
-- `src/auth/` 负责 Session 恢复、访客模式、邮箱确认、刷新、退出和平台差异化 Token 存储。
+- `src/auth/` 负责 Session 恢复、访客模式、刷新、退出和平台差异化 Token 存储。
 - Feature 只依赖 `lineSpaceApi`、Auth hooks、共享 UI 和 tokens，不直接调用 `fetch`、Supabase 或服务端密钥。
 
 ### API 与数据库
@@ -354,7 +352,6 @@ supabase/migrations/20260723000200_guest_public_content_access.sql
 | `SUPABASE_PUBLISHABLE_KEY` | 服务端调用公开 Supabase API 的首选 key |
 | `SUPABASE_ANON_KEY` | `SUPABASE_PUBLISHABLE_KEY` 不存在时的兼容回退 |
 | `SUPABASE_SERVICE_ROLE_KEY` | 仅服务端使用，用于认证身份映射和受控动作 |
-| `AUTH_EMAIL_REDIRECT_URL` | 邮箱确认完成后的 Web 或 Native 回跳地址 |
 | `DEEPSEEK_API_KEY` | Community Spark 服务端密钥 |
 | `DEEPSEEK_BASE_URL` | DeepSeek API 根地址，默认 `https://api.deepseek.com` |
 | `DEEPSEEK_COMMUNITY_SPARK_MODEL` | Community Spark 模型，默认 `deepseek-v4-flash` |
@@ -401,7 +398,6 @@ EXPO_PUBLIC_API_BASE_URL=/api
 SUPABASE_URL=https://<project-ref>.supabase.co
 SUPABASE_PUBLISHABLE_KEY=<publishable-key>
 SUPABASE_SERVICE_ROLE_KEY=<server-only-secret>
-AUTH_EMAIL_REDIRECT_URL=https://<web-domain>/auth/confirm
 DEEPSEEK_API_KEY=<server-only-secret>
 DEEPSEEK_COMMUNITY_SPARK_MODEL=deepseek-v4-flash
 ```

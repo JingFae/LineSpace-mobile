@@ -25,4 +25,9 @@ enabled = false
 
 [auth]
 site_url = "http://localhost:8081"
-additional_redirect_urls = ["http://localhost:8081/auth/confirm"]
+
+[auth.email]
+# LineSpace registration is owned by the server-side username/password API.
+# Direct public email sign-up and email confirmation are intentionally disabled.
+enable_signup = false
+enable_confirmations = false

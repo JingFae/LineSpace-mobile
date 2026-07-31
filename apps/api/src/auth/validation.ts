@@ -7,11 +7,9 @@ import type {
 import { ApiAuthError } from "./errors.js";
 
 const usernamePattern = /^[a-z0-9][a-z0-9._-]*$/;
-const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export type ValidatedRegistration = {
   username: string;
-  email: string;
   password: string;
 };
 
@@ -37,24 +35,15 @@ export function parseRegistration(body: unknown): ValidatedRegistration {
   const source = body as Partial<Record<keyof RegisterAuthInput, unknown>>;
   if (
     typeof source.username !== "string" ||
-    typeof source.email !== "string" ||
-    typeof source.password !== "string" ||
-    typeof source.confirmPassword !== "string"
+    typeof source.password !== "string"
   ) {
-    throw invalidInput("username, email, password, and confirmPassword are required.");
+    throw invalidInput("username and password are required.");
   }
 
   const username = validateUsername(source.username);
-  const email = source.email.normalize("NFKC").trim().toLocaleLowerCase("en-US");
-  if (email.length > 320 || !emailPattern.test(email)) {
-    throw invalidInput("A valid email address is required.");
-  }
-  if (source.password !== source.confirmPassword) {
-    throw invalidInput("Password confirmation does not match.");
-  }
   validatePassword(source.password);
 
-  return { username, email, password: source.password };
+  return { username, password: source.password };
 }
 
 export function parseLogin(body: unknown): ValidatedLogin {

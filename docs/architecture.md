@@ -85,7 +85,6 @@ app/
 │  ├─ comments.tsx             # Comments/Notes 占位
 │  ├─ profile.tsx              # 当前用户 Profile
 │  └─ _layout.tsx              # Expo Tabs 容器
-├─ auth/confirm.tsx             # 邮箱确认回跳
 ├─ login.tsx / register.tsx     # 公开认证页面
 ├─ compose-preview.tsx          # 草稿预览
 ├─ compose/collaborate/[id].tsx # 协作草稿
@@ -101,7 +100,7 @@ app/
 
 ```text
 src/features/
-├─ auth/       # 登录、注册、邮箱确认 UI
+├─ auth/       # 用户名/密码登录与注册 UI
 ├─ compose/    # 草稿、图片、协作者、预览、发布
 ├─ feed/       # 首页 Feed
 ├─ inbox/      # Inbox 活动与会话
@@ -130,7 +129,6 @@ Feature 可以依赖 `lineSpaceApi`、`useAuth`、`packages/ui` 和 `packages/to
 | `AuthSessionProvider.tsx` | Session 状态、启动恢复、登录、注册、刷新、退出 |
 | `authStorage.ts` | Native SecureStore / Web sessionStorage |
 | `session-store.ts` | 内存 Access Token 和 Refresh single-flight |
-| `emailConfirmation.ts` | 邮箱确认回跳处理 |
 
 认证状态初始化完成前，`RouteGuard` 只显示加载态，不能短暂渲染受保护页面。
 
@@ -172,7 +170,9 @@ Authorization: Bearer <access-token>
 ```
 
 收到 401 时最多执行一次 single-flight Refresh，再重试原请求一次。登录、
-注册和 Refresh 不通过业务请求的自动重试机制无限重试。
+注册和 Refresh 不通过业务请求的自动重试机制无限重试。注册只接收用户名和密码，
+由服务端创建已确认的 Supabase Auth 身份并立即返回 Session；内部不可投递邮箱仅是
+Supabase 密码认证的实现细节，不进入产品资料或客户端界面。
 
 ## 5. 服务端分层
 
@@ -190,7 +190,7 @@ auth/
 
 认证服务负责：
 
-- username 到 email 的服务端映射；
+- username 到 Supabase 内部认证标识的服务端映射；
 - Supabase Auth 注册、登录、Refresh、Logout 和 `/me`；
 - JWT 验证；
 - 通用错误；

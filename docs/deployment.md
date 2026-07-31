@@ -68,7 +68,6 @@ EXPO_PUBLIC_API_BASE_URL=/api
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_PUBLISHABLE_KEY=sb_publishable_example
 SUPABASE_SERVICE_ROLE_KEY=server-only-secret
-AUTH_EMAIL_REDIRECT_URL=https://your-domain.example/auth/confirm
 DEEPSEEK_API_KEY=server-only-secret
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_COMMUNITY_SPARK_MODEL=deepseek-v4-flash
@@ -76,7 +75,10 @@ DEEPSEEK_COMMUNITY_SPARK_MODEL=deepseek-v4-flash
 
 `EXPO_PUBLIC_*` 会进入客户端 Bundle，不能保存密钥。`SUPABASE_SERVICE_ROLE_KEY`、`DATABASE_URL`、`DEEPSEEK_API_KEY` 和 `OPENAI_API_KEY` 必须使用 Vercel Server-only 环境变量；它们不得改名为 `EXPO_PUBLIC_*`。
 
-Supabase Dashboard 的 Redirect URLs 还需要包含 `https://your-domain.example/auth/confirm`。Native 构建使用同一个后端时，将 `AUTH_EMAIL_REDIRECT_URL` 配为 `linespace://auth/confirm`，并在 Supabase 允许列表中加入该自定义 scheme；Web 与 Native 不应混用错误的回跳地址。
+LineSpace 只通过服务端 `/v1/auth/register` 创建用户名/密码账号。该接口使用
+Service Role 创建已确认的内部 Auth 身份并立即签发 Session，不发送确认邮件，
+也不需要配置邮箱确认 Redirect URL。应在 Supabase Email Provider 中关闭公开
+Email Signups 和 Confirm Email，防止绕过 LineSpace 用户名注册边界。
 
 ## API 上线前检查
 
@@ -102,8 +104,8 @@ Feed、Poem、Post、评论和 Compose 不会因此变成 PostgreSQL 持久化�
 API Function 仅配置服务端 `SUPABASE_URL`、Publishable/Anon Key 和
 `SUPABASE_SERVICE_ROLE_KEY`。普通用户域查询使用请求 JWT；Service Role
 只保留给现有认证映射与受控后台动作，绝不能配置为 `EXPO_PUBLIC_*`。
-发布前需确认 Supabase Dashboard 已启用 RLS、邮箱确认回跳地址和生产
-Redirect URL，并在隔离数据库中执行迁移幂等性与 RLS 测试。当前仓库没有
+发布前需确认 Supabase Dashboard 已启用 RLS、关闭公开 Email Signups 和
+Confirm Email，并在隔离数据库中执行迁移幂等性与 RLS 测试。当前仓库没有
 真实生产 Supabase 数据库凭据，因此本地检查不会声称完成端到端数据库验证。
 
 ## CI
@@ -202,8 +204,8 @@ GET https://line-space-mobile-api.vercel.app/api/health/ready
 If either URL returns Expo HTML, the API rewrite/Function was not deployed. If
 the readiness endpoint returns `503` with `authConfigured:false`, verify
 `SUPABASE_URL`, the Publishable/Anon key, and `SUPABASE_SERVICE_ROLE_KEY` in
-the API Vercel project, then redeploy that project. Email confirmation is not
-involved until the registration endpoint has successfully reached Supabase.
+the API Vercel project, then redeploy that project. Username registration does
+not send or wait for an email confirmation.
 If `communitySparkConfigured` is `false`, the DeepSeek key is missing from that
 deployment. If it is `true` but generation still fails, the card now reports
 whether the key, model access, quota, request shape, or provider connection is

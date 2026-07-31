@@ -59,7 +59,7 @@ function RouteGuard({ children }: { children: ReactNode }) {
   const routeSegments: readonly string[] = segments;
   const firstSegment = routeSegments[0];
   const isPublicRoute =
-    firstSegment === "login" || firstSegment === "register" || firstSegment === "auth";
+    firstSegment === "login" || firstSegment === "register";
   const secondSegment = routeSegments[1];
   const isGuestRestrictedRoute =
     status === "guest" && (

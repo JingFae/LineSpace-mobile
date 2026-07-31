@@ -3,7 +3,12 @@ import type {
   AuthSessionResult,
   AuthUser
 } from "@linespace/api-client";
-import { ApiAuthError, type AuthService } from "./auth/index.js";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  ApiAuthError,
+  SupabaseAuthService,
+  type AuthService
+} from "./auth/index.js";
 import { handleApiRequest } from "./routes.js";
 
 const lili: AuthUser = {
@@ -21,24 +26,23 @@ class FakeAuthService implements AuthService {
 
   async register(input: {
     username: string;
-    email: string;
     password: string;
   }): Promise<AuthRegistrationResult> {
     if (this.usernames.has(input.username)) {
       throw new ApiAuthError("USERNAME_TAKEN", 409, "This username is unavailable.");
     }
     this.usernames.add(input.username);
+    const user = {
+      ...lili,
+      id: `user-${input.username}`,
+      authUserId: "22222222-2222-4222-8222-222222222222",
+      username: input.username,
+      email: "",
+      displayName: input.username
+    };
     return {
-      user: {
-        ...lili,
-        id: `user-${input.username}`,
-        authUserId: "22222222-2222-4222-8222-222222222222",
-        username: input.username,
-        email: input.email,
-        displayName: input.username
-      },
-      session: null,
-      emailConfirmationRequired: true
+      ...sessionResult(user),
+      emailConfirmationRequired: false
     };
   }
 
@@ -113,26 +117,29 @@ async function request(
 }
 
 async function main() {
+  await checkUsernameOnlySupabaseRegistration();
+
   const auth = new FakeAuthService();
   const password = "AnotherPass123";
 
   const registered = await request(auth, "POST", "/v1/auth/register", {
     username: "New.Poet",
-    email: "new.poet@example.com",
-    password,
-    confirmPassword: password
+    password
   });
   assert(registered.status === 201, "Valid registration did not return 201.");
   assert(
     (registered.body as AuthRegistrationResult).user.username === "new.poet",
     "Registration did not normalize the username."
   );
+  assert(
+    Boolean((registered.body as AuthRegistrationResult).session) &&
+      !(registered.body as AuthRegistrationResult).emailConfirmationRequired,
+    "Registration did not return an immediate session."
+  );
 
   const duplicate = await request(auth, "POST", "/v1/auth/register", {
     username: "NEW.POET",
-    email: "other@example.com",
-    password,
-    confirmPassword: password
+    password
   });
   assert(duplicate.status === 409, "Duplicate case-insensitive username was not rejected.");
   assert(
@@ -143,9 +150,7 @@ async function main() {
   const weakPassword = "weak";
   const weak = await request(auth, "POST", "/v1/auth/register", {
     username: "weak-poet",
-    email: "weak@example.com",
-    password: weakPassword,
-    confirmPassword: weakPassword
+    password: weakPassword
   });
   assert(weak.status === 422, "Weak password was not rejected.");
   assert(!JSON.stringify(weak.body).includes(weakPassword), "Weak password leaked in response.");
@@ -266,6 +271,104 @@ async function main() {
 
   process.stdout.write(
     "Auth check passed: registration, case-insensitive uniqueness, weak passwords, generic login errors, refresh, logout, JWT validation, and write ownership.\n"
+  );
+}
+
+async function checkUsernameOnlySupabaseRegistration() {
+  const authUserId = "33333333-3333-4333-8333-333333333333";
+  const createdAt = "2026-01-02T00:00:00.000Z";
+  let createdAttributes: Record<string, unknown> | undefined;
+  let signedInEmail: string | undefined;
+
+  const providerUser = {
+    id: authUserId,
+    email: "internal@users.linespace.invalid",
+    email_confirmed_at: createdAt
+  };
+  const profile = {
+    id: "user-new-poet",
+    auth_user_id: authUserId,
+    handle: "new-poet",
+    display_name: "new-poet",
+    created_at: createdAt
+  };
+  const session = {
+    access_token: "registration-access-token",
+    refresh_token: "registration-refresh-token",
+    expires_at: 1_900_000_000,
+    expires_in: 3600,
+    token_type: "bearer"
+  };
+
+  const adminClient = {
+    auth: {
+      admin: {
+        async createUser(attributes: Record<string, unknown>) {
+          createdAttributes = attributes;
+          return { data: { user: providerUser }, error: null };
+        },
+        async deleteUser() {
+          return { data: { user: null }, error: null };
+        }
+      }
+    },
+    from() {
+      return {
+        select() {
+          return {
+            eq(column: string) {
+              return {
+                async maybeSingle() {
+                  return {
+                    data: column === "handle" ? null : profile,
+                    error: null
+                  };
+                }
+              };
+            }
+          };
+        }
+      };
+    }
+  } as unknown as SupabaseClient;
+
+  const publicClient = {
+    auth: {
+      async signInWithPassword(input: { email: string; password: string }) {
+        signedInEmail = input.email;
+        return {
+          data: { user: providerUser, session },
+          error: null
+        };
+      }
+    }
+  } as unknown as SupabaseClient;
+
+  const service = new SupabaseAuthService(() => publicClient, adminClient);
+  const registered = await service.register({
+    username: "new-poet",
+    password: "ValidPass123"
+  });
+
+  const internalEmail = createdAttributes?.email;
+  assert(
+    typeof internalEmail === "string" &&
+      internalEmail.endsWith("@users.linespace.invalid"),
+    "Username registration did not create a non-deliverable internal Auth identifier."
+  );
+  assert(
+    createdAttributes?.email_confirm === true,
+    "Username registration did not auto-confirm the internal Auth identity."
+  );
+  assert(
+    signedInEmail === internalEmail,
+    "Username registration did not sign in with the created Auth identity."
+  );
+  assert(
+    Boolean(registered.session) &&
+      !registered.emailConfirmationRequired &&
+      registered.user.email === "",
+    "Username registration exposed an internal email or failed to return a session."
   );
 }
 

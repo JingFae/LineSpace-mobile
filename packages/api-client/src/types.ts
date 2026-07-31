@@ -4,8 +4,10 @@ export type AuthUser = {
   id: string;
   authUserId: string;
   username: string;
+  /** @deprecated LineSpace no longer collects a registration email. */
   email: string;
   displayName: string;
+  /** @deprecated Username accounts are active immediately. */
   emailConfirmed: boolean;
   createdAt: string;
 };
@@ -20,9 +22,7 @@ export type AuthSession = {
 
 export type RegisterAuthInput = {
   username: string;
-  email: string;
   password: string;
-  confirmPassword: string;
 };
 
 export type LoginAuthInput = {
@@ -43,6 +43,7 @@ export type RefreshAuthInput = {
 export type AuthRegistrationResult = {
   user: AuthUser;
   session: AuthSession | null;
+  /** @deprecated Always false for username/password registration. */
   emailConfirmationRequired: boolean;
 };
 

@@ -913,9 +913,7 @@ async function verifyAuthClientContract() {
 
   const registered = await client.register({
     username: "new-poet",
-    email: "new-poet@example.com",
-    password: "ValidPass123",
-    confirmPassword: "ValidPass123"
+    password: "ValidPass123"
   });
   assert(registered.user.id === smokeUser.id, "Auth client did not decode registration data.");
   await client.login({ username: "lili", password: "ValidPass123" });

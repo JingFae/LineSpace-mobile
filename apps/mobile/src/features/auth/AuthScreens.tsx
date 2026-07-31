@@ -1,9 +1,8 @@
 import { router, type Href } from "expo-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
-  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -15,7 +14,6 @@ import {
 import { colors, radius, spacing } from "@linespace/tokens";
 import { AppScreen } from "@linespace/ui";
 import { useAuth } from "@/auth/AuthSessionProvider";
-import { clearEmailConfirmationFragment, parseEmailConfirmationUrl } from "@/auth/emailConfirmation";
 
 export function LoginScreen() {
   const { continueAsGuest, login } = useAuth();
@@ -96,9 +94,7 @@ export function LoginScreen() {
 export function RegisterScreen() {
   const { register } = useAuth();
   const [username, setUsername] = useState("");
-  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -110,24 +106,15 @@ export function RegisterScreen() {
       setError("Username must contain 3–32 characters.");
       return;
     }
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
     setError(null);
     setSubmitting(true);
     try {
       const result = await register({
         username: normalized,
-        email: email.trim(),
-        password,
-        confirmPassword
+        password
       });
-      if (result.emailConfirmationRequired && !result.session) {
-        router.replace("/auth/confirm" as Href);
-      } else {
-        router.replace("/(tabs)" as Href);
-      }
+      if (!result.session) throw new Error("Registration could not start a session.");
+      router.replace("/(tabs)" as Href);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Registration could not be completed.");
     } finally {
@@ -152,37 +139,17 @@ export function RegisterScreen() {
         returnKeyType="next"
         value={username}
       />
-      <AuthField
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType="email-address"
-        label="email"
-        onChangeText={setEmail}
-        placeholder="you@example.com"
-        returnKeyType="next"
-        value={email}
-      />
       <PasswordField
         onChangeText={setPassword}
+        onSubmitEditing={submit}
+        returnKeyType="done"
         showPassword={showPassword}
         setShowPassword={setShowPassword}
         value={password}
       />
-      <AuthField
-        autoCapitalize="none"
-        label="confirm password"
-        onChangeText={setConfirmPassword}
-        onSubmitEditing={submit}
-        placeholder="repeat your password"
-        returnKeyType="done"
-        secureTextEntry={!showPassword}
-        value={confirmPassword}
-      />
       {error ? <AuthError message={error} /> : null}
       <PrimaryButton
-        disabled={
-          submitting || !username.trim() || !email.trim() || !password || !confirmPassword
-        }
+        disabled={submitting || !username.trim() || !password}
         label="Create my space"
         loading={submitting}
         onPress={submit}
@@ -193,76 +160,6 @@ export function RegisterScreen() {
           <Text style={styles.link}>Log in</Text>
         </Pressable>
       </View>
-    </AuthShell>
-  );
-}
-
-export function EmailConfirmationScreen() {
-  const { completeEmailConfirmation } = useAuth();
-  const [state, setState] = useState<"waiting" | "verifying" | "failed">("waiting");
-
-  const processCallback = async (url: string) => {
-    const callback = parseEmailConfirmationUrl(url);
-    if (callback.kind === "none") return;
-    clearEmailConfirmationFragment();
-    if (callback.kind === "error") {
-      setState("failed");
-      return;
-    }
-    setState("verifying");
-    const restored = await completeEmailConfirmation(callback.session);
-    if (!restored) setState("failed");
-  };
-
-  useEffect(() => {
-    if (Platform.OS === "web" && typeof window !== "undefined") {
-      void processCallback(window.location.href);
-    } else {
-      void Linking.getInitialURL().then((url) => {
-        if (url) void processCallback(url);
-      });
-    }
-    const subscription = Linking.addEventListener("url", ({ url }) => void processCallback(url));
-    return () => subscription.remove();
-  }, [completeEmailConfirmation]);
-
-  if (state === "verifying") {
-    return (
-      <AuthShell
-        eyebrow="ONE MORE SMALL STEP"
-        formTitle="Email confirmation"
-        title="Confirming your email."
-        subtitle="One moment while we finish setting up your session."
-      >
-        <ActivityIndicator color={colors.accent} />
-      </AuthShell>
-    );
-  }
-
-  return (
-    <AuthShell
-      eyebrow={state === "failed" ? "THAT LINK HAS EXPIRED" : "CHECK YOUR INBOX"}
-      formTitle="Email confirmation"
-      title={state === "failed" ? "Let's try that again." : "Your space is waiting."}
-      subtitle={
-        state === "failed"
-          ? "Please request a new confirmation email or try signing in again."
-          : "Follow the confirmation link we sent, then return here to continue."
-      }
-    >
-      <Text style={styles.confirmationCopy}>
-        {state === "failed"
-          ? "We could not safely verify that link. No token was kept in this URL or on the device."
-          : "Your session will not be active until the email is confirmed. Once it is, your lines will be ready for you."}
-      </Text>
-      <PrimaryButton label="Return to log in" onPress={() => router.replace("/login" as Href)} />
-      <Pressable
-        accessibilityRole="link"
-        onPress={() => router.replace("/register" as Href)}
-        style={styles.secondaryButton}
-      >
-        <Text style={styles.secondaryButtonText}>Try a different email</Text>
-      </Pressable>
     </AuthShell>
   );
 }
@@ -596,9 +493,6 @@ const styles = StyleSheet.create({
   switchRow: { alignItems: "center", flexDirection: "row", gap: 5, justifyContent: "center" },
   switchText: { color: colors.profileMuted, fontSize: 12 },
   link: { color: colors.accent, fontSize: 12, fontWeight: "800" },
-  confirmationCopy: { color: colors.inkSoft, fontSize: 15, lineHeight: 23 },
-  secondaryButton: { alignItems: "center", justifyContent: "center", minHeight: 48 },
-  secondaryButtonText: { color: colors.accent, fontSize: 13, fontWeight: "700" },
   guestButton: {
     alignItems: "center",
     backgroundColor: "#F6F3ED",

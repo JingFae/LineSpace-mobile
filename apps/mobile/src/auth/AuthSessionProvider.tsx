@@ -2,7 +2,6 @@ import {
   AuthClientError,
   HttpAuthClient,
   type AuthRegistrationResult,
-  type AuthSession,
   type AuthSessionResult,
   type AuthUser,
   type ChangePasswordInput,
@@ -35,7 +34,6 @@ export type AuthContextValue = {
   continueAsGuest: () => Promise<void>;
   leaveGuestMode: () => Promise<void>;
   refreshSession: () => Promise<boolean>;
-  completeEmailConfirmation: (session: AuthSession) => Promise<boolean>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -218,19 +216,6 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
     setStatus("guest");
   }, [queryClient]);
 
-  const completeEmailConfirmation = useCallback(async (session: AuthSession) => {
-    if (useMocks) return true;
-    if (!authClientRef.current) return false;
-    try {
-      const confirmedUser = await authClientRef.current.me(session.accessToken);
-      await applySession({ user: confirmedUser, session });
-      return true;
-    } catch {
-      await clearSession();
-      return false;
-    }
-  }, [applySession, clearSession]);
-
   const logout = useCallback(async () => {
     const token = getAccessToken();
     try {
@@ -255,10 +240,9 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
       changePassword,
       continueAsGuest,
       leaveGuestMode: clearSession,
-      refreshSession,
-      completeEmailConfirmation
+      refreshSession
     }),
-    [accessToken, changePassword, clearSession, completeEmailConfirmation, continueAsGuest, login, logout, refreshSession, register, status, user]
+    [accessToken, changePassword, clearSession, continueAsGuest, login, logout, refreshSession, register, status, user]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
