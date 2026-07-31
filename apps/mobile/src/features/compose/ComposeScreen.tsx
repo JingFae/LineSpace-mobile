@@ -47,7 +47,11 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
   const resumeDraftId = getParam(params.draftId);
   const editPostId = getParam(params.editPostId);
   const sourceVersionId = getParam(params.sourceVersionId);
-  const lockedVersionContent = getParam(params.lockedVersionContent) === "true";
+  const isThreadVersionCompose = Boolean(sourceVersionId);
+  const lockedVersionContent =
+    isThreadVersionCompose ||
+    getParam(params.lockedVersionContent) === "true";
+  const creativeSparkEnabled = !isThreadVersionCompose && !lockedVersionContent;
   const contributorHandles = parseList(getParam(params.contributorHandles));
   const versionLines = parseVersionLines(getParam(params.versionLines));
   const sourceVersionBody = getParam(params.fullPoemText) ?? "";
@@ -382,7 +386,9 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
         />
       </View>
 
-      {editHydrated && editPostQuery.data?.author.id === currentUserId ? (
+      {creativeSparkEnabled &&
+      editHydrated &&
+      editPostQuery.data?.author.id === currentUserId ? (
         <View style={styles.creativeSparkWrap}>
           <CommunitySparkCards
             autoLoad
@@ -420,7 +426,7 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
         </View>
       ) : null}
 
-      {!editPostId ? (
+      {creativeSparkEnabled && !editPostId ? (
         <View style={styles.creativeSparkWrap}>
           <CommunitySparkCards
             label="Creative Spark"
@@ -439,7 +445,7 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
         </View>
       ) : null}
 
-      {sparkChange ? (
+      {creativeSparkEnabled && sparkChange ? (
         <SparkChangeNotice
           change={sparkChange}
           isUndoing={undoingSpark}
