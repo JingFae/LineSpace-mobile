@@ -373,15 +373,6 @@ function deriveStartingContentFallback(content: string) {
 
 function normalizeWorkerError(error: unknown) {
   if (!(error instanceof Error)) return "THREAD_VERSION_AI_FAILED";
-  const message = error.message.toLocaleLowerCase();
-  if (
-    error.name === "AbortError" ||
-    error.name === "TimeoutError" ||
-    message.includes("timeout") ||
-    message.includes("timed out")
-  ) {
-    return "LLM_TIMEOUT";
-  }
   return error.message.startsWith("LLM_")
     ? error.message
     : error.message.slice(0, 120) || "THREAD_VERSION_AI_FAILED";

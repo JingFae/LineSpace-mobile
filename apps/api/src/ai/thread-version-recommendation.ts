@@ -9,9 +9,7 @@ import {
   type DeepSeekChatCompletionPayload
 } from "./community-spark.js";
 
-export const THREAD_VERSION_AI_PROMPT_VERSION = "thread-version-ai-v3-multilingual";
-
-const THREAD_VERSION_PROVIDER_TIMEOUT_MS = 90_000;
+export const THREAD_VERSION_AI_PROMPT_VERSION = "thread-version-ai-v2-multilingual";
 
 /**
  * Version 1 is a selection task. Version 2 is a deliberately constrained
@@ -246,13 +244,9 @@ export async function requestThreadVersionRecommendation(
         "content-type": "application/json",
         authorization: `Bearer ${apiKey}`
       },
-      signal: AbortSignal.timeout(THREAD_VERSION_PROVIDER_TIMEOUT_MS),
+      signal: AbortSignal.timeout(45_000),
       body: JSON.stringify({
         model: communitySparkModel(),
-        // DeepSeek V4 defaults to thinking mode. This task needs a compact,
-        // schema-bound editorial result, so non-thinking mode is both faster
-        // and less likely to exhaust a background Function invocation.
-        thinking: { type: "disabled" },
         messages: [
           {
             role: "system",
@@ -270,12 +264,17 @@ export async function requestThreadVersionRecommendation(
         ],
         response_format: { type: "json_object" },
         temperature: 0.5,
-        max_tokens: threadVersionOutputTokenBudget(candidates),
+        max_tokens: 5_000,
         stream: false
       })
     });
   } catch (error) {
-    throw new Error(normalizeProviderTransportError(error));
+    const name = error instanceof Error ? error.name : "";
+    throw new Error(
+      name === "AbortError" || name === "TimeoutError"
+        ? "LLM_TIMEOUT"
+        : "LLM_NETWORK_ERROR"
+    );
   }
 
   if (!response.ok) {
@@ -292,13 +291,7 @@ export async function requestThreadVersionRecommendation(
     throw new Error(code);
   }
 
-  let payload: DeepSeekChatCompletionPayload;
-  try {
-    payload = (await response.json()) as DeepSeekChatCompletionPayload;
-  } catch (error) {
-    const code = normalizeProviderTransportError(error);
-    throw new Error(code === "LLM_TIMEOUT" ? code : "LLM_INVALID_RESPONSE");
-  }
+  const payload = (await response.json()) as DeepSeekChatCompletionPayload;
   const choice = payload.choices?.[0];
   if (choice?.finish_reason === "length") throw new Error("LLM_INCOMPLETE_RESPONSE");
   if (choice?.finish_reason === "content_filter" || choice?.message?.refusal) {
@@ -413,25 +406,6 @@ function buildProviderInput(
       lineIds: candidate.lines.map((line) => line.lineId)
     }))
   };
-}
-
-function threadVersionOutputTokenBudget(candidates: CandidateVersion[]) {
-  const maximumLineCount = candidates.reduce(
-    (maximum, candidate) => Math.max(maximum, candidate.lineCount),
-    0
-  );
-  return Math.min(5_000, Math.max(1_600, 1_000 + maximumLineCount * 70));
-}
-
-function normalizeProviderTransportError(error: unknown) {
-  if (!(error instanceof Error)) return "LLM_NETWORK_ERROR";
-  const message = error.message.toLocaleLowerCase();
-  return error.name === "AbortError" ||
-    error.name === "TimeoutError" ||
-    message.includes("timeout") ||
-    message.includes("timed out")
-    ? "LLM_TIMEOUT"
-    : "LLM_NETWORK_ERROR";
 }
 
 function normalizeResult(
