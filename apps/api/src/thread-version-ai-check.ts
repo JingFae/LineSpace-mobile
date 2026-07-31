@@ -136,8 +136,10 @@ try {
   };
   const providerBody = JSON.parse(String(capturedRequest?.body)) as {
     model?: string;
+    thinking?: { type?: string };
     messages?: Array<{ role?: string; content?: string }>;
     response_format?: { type?: string };
+    max_tokens?: number;
   };
   const providerInput = JSON.parse(
     providerBody.messages?.[1]?.content ?? "{}"
@@ -152,6 +154,8 @@ try {
       new Headers(capturedRequest?.headers).get("authorization") ===
         "Bearer test-thread-version-key" &&
       providerBody.model === "deepseek-v4-flash" &&
+      providerBody.thinking?.type === "disabled" &&
+      providerBody.max_tokens === 1_600 &&
       providerBody.messages?.[0]?.role === "system" &&
       providerBody.messages[0].content?.includes("OUTPUT LANGUAGE (MANDATORY)") &&
       providerBody.messages[0].content.includes("professional Chinese poetry critic") &&
@@ -274,13 +278,42 @@ try {
     chineseProviderBody.messages?.[1]?.content ?? "{}"
   ) as { outputLanguage?: string };
   assert(
-    THREAD_VERSION_AI_PROMPT_VERSION === "thread-version-ai-v2-multilingual" &&
+    THREAD_VERSION_AI_PROMPT_VERSION === "thread-version-ai-v3-multilingual" &&
       chineseProviderInput.outputLanguage?.startsWith("Chinese") &&
       /[\p{Script=Han}]/u.test(normalizedChinese.recommendedRationale ?? "") &&
       /[\p{Script=Han}]/u.test(normalizedChinese.harmonizedRationale ?? "") &&
       normalizedChinese.harmonizedLines?.[1]?.changeNote ===
         "节奏：调整语序与用词，使诗句更凝练流畅。",
     "Chinese Thread Version explanations did not follow the poem language."
+  );
+
+  globalThis.fetch = async () =>
+    ({
+      ok: true,
+      json: async () => {
+        throw new DOMException(
+          "The operation was aborted due to timeout",
+          "TimeoutError"
+        );
+      }
+    }) as unknown as Response;
+  let timeoutCode = "";
+  try {
+    await requestThreadVersionRecommendation({
+      intent: "moderation-preview",
+      poemId: "thread-timeout-check",
+      locale: "en",
+      text: JSON.stringify({
+        thread: { id: "thread-timeout-check", title: "Tide", rules: "Continue." },
+        candidateVersions: [candidates[0]]
+      })
+    });
+  } catch (error) {
+    timeoutCode = error instanceof Error ? error.message : "";
+  }
+  assert(
+    timeoutCode === "LLM_TIMEOUT",
+    "Thread Version AI did not normalize response-body timeouts."
   );
 } finally {
   globalThis.fetch = originalFetch;
