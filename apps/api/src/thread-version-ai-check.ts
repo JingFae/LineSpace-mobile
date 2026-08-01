@@ -1,4 +1,7 @@
-import { requestThreadVersionRecommendation } from "./ai/thread-version-recommendation.js";
+import {
+  requestThreadVersionRecommendation,
+  THREAD_VERSION_AI_PROMPT_VERSION
+} from "./ai/thread-version-recommendation.js";
 
 const originalFetch = globalThis.fetch;
 const originalEnvironment = {
@@ -130,8 +133,10 @@ try {
   };
   const providerBody = JSON.parse(String(capturedRequest?.body)) as {
     model?: string;
+    thinking?: { type?: string };
     messages?: Array<{ role?: string; content?: string }>;
     response_format?: { type?: string };
+    max_tokens?: number;
   };
   const providerInput = JSON.parse(
     providerBody.messages?.[1]?.content ?? "{}"
@@ -144,8 +149,13 @@ try {
     capturedUrl === "https://api.deepseek.example/chat/completions" &&
       new Headers(capturedRequest?.headers).get("authorization") ===
         "Bearer test-thread-version-key" &&
+      THREAD_VERSION_AI_PROMPT_VERSION === "thread-version-ai-v2" &&
       providerBody.model === "deepseek-v4-flash" &&
+      providerBody.thinking?.type === "disabled" &&
+      providerBody.max_tokens === 1_600 &&
       providerBody.messages?.[0]?.role === "system" &&
+      providerBody.messages[0].content?.includes("concise English") &&
+      !providerBody.messages[0].content.includes("OUTPUT LANGUAGE (MANDATORY)") &&
       providerInput.branchNodes?.length === 5 &&
       providerInput.candidateVersions?.every(
         (candidate) =>
@@ -169,6 +179,39 @@ try {
         candidates[1]!.lines[2]!.text &&
       normalized.harmonizedLines[2]?.changed === false,
     "Harmonized did not preserve line structure or reject an unsafe rewrite."
+  );
+
+  globalThis.fetch = async () =>
+    ({
+      ok: true,
+      json: async () => {
+        throw new DOMException(
+          "The operation was aborted due to timeout",
+          "TimeoutError"
+        );
+      }
+    }) as unknown as Response;
+  let timeoutCode = "";
+  try {
+    await requestThreadVersionRecommendation({
+      intent: "moderation-preview",
+      poemId: "thread-timeout-check",
+      locale: "en",
+      text: JSON.stringify({
+        thread: {
+          id: "thread-timeout-check",
+          title: "Tide",
+          rules: "Continue."
+        },
+        candidateVersions: [candidates[0]]
+      })
+    });
+  } catch (error) {
+    timeoutCode = error instanceof Error ? error.message : "";
+  }
+  assert(
+    timeoutCode === "LLM_TIMEOUT",
+    "Thread Version AI did not normalize response-body timeouts."
   );
 } finally {
   globalThis.fetch = originalFetch;

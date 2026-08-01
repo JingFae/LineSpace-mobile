@@ -23,6 +23,12 @@ import {
   CommunitySparkCards,
   type SparkApplyChange
 } from "@/features/poem/CommunitySparkCards";
+import {
+  appendSparkChange,
+  areEquivalentPoemLines,
+  latestSparkChange,
+  removeLatestSparkChange
+} from "./spark-change-history";
 
 type ComposeScreenProps = {
   sessionKey: string;
@@ -69,8 +75,9 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
   const [settings, setSettings] = useState<PoemDraftSettings>(initialSettings);
   const [error, setError] = useState<string | null>(null);
   const [editHydrated, setEditHydrated] = useState(false);
-  const [sparkChange, setSparkChange] = useState<SparkApplyChange | null>(null);
+  const [sparkChanges, setSparkChanges] = useState<SparkApplyChange[]>([]);
   const [undoingSpark, setUndoingSpark] = useState(false);
+  const sparkChange = latestSparkChange(sparkChanges);
   const editInitialized = useRef(false);
   const draftInitialized = useRef(false);
   const draftQueryKey = [
@@ -251,8 +258,7 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
 
   const undoSparkChange = async () => {
     if (!sparkChange || undoingSpark) return;
-    const currentLines = body.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    if (JSON.stringify(currentLines) !== JSON.stringify(sparkChange.afterLines)) {
+    if (!areEquivalentPoemLines(body, sparkChange.afterLines)) {
       setError("Your draft changed after the AI edit, so this change can no longer be undone safely.");
       return;
     }
@@ -269,7 +275,7 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
         queryClient.setQueryData(["poem", editPostId, currentUserId], result.poem);
       }
       setBody(sparkChange.beforeLines.join("\n"));
-      setSparkChange(null);
+      setSparkChanges(removeLatestSparkChange);
       setError(null);
     } catch {
       setError("This AI change can no longer be undone safely.");
@@ -394,8 +400,16 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
             autoLoad
             label="Creative Spark"
             onApplied={(result, change) => {
-              setBody(result.poem.lines.join("\n"));
-              setSparkChange(change);
+              const appliedChange = {
+                ...change,
+                // The database response is authoritative and may normalize
+                // whitespace or line endings from the provider payload.
+                afterLines: [...result.poem.lines]
+              };
+              setBody(appliedChange.afterLines.join("\n"));
+              setSparkChanges((history) =>
+                appendSparkChange(history, appliedChange)
+              );
               queryClient.setQueryData(
                 ["compose-edit-post", editPostId, currentUserId],
                 result.poem
@@ -432,7 +446,7 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
             label="Creative Spark"
             onDraftApplied={(change) => {
               setBody(change.afterLines.join("\n"));
-              setSparkChange(change);
+              setSparkChanges((history) => appendSparkChange(history, change));
             }}
             sparkMode="draft"
             userId={currentUserId}

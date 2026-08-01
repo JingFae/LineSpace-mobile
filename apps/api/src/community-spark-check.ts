@@ -1,4 +1,3 @@
-import { mockPoems } from "@linespace/api-client";
 import {
   communitySparkModel,
   communitySparkProvider,
@@ -7,6 +6,12 @@ import {
   requestCreativeSpark,
   requestCommunitySpark
 } from "./ai/community-spark.js";
+import {
+  appendSparkChange,
+  areEquivalentPoemLines,
+  latestSparkChange,
+  removeLatestSparkChange
+} from "../../mobile/src/features/compose/spark-change-history.js";
 
 const originalFetch = globalThis.fetch;
 const originalEnvironment = {
@@ -46,8 +51,7 @@ try {
                     preview: "Morning arrived quietly, already exhausted.",
                     proposedLines: [
                       "Yesterday kept borrowing tomorrow's light.",
-                      "Morning arrived quietly, already exhausted.",
-                      "Nobody questioned the clock."
+                      "Morning arrived quietly, already exhausted.\nNobody questioned the clock."
                     ],
                     sourceCommentId: "comment-ray-loneliness"
                   },
@@ -91,11 +95,47 @@ try {
     );
   };
 
-  const poem = mockPoems[0];
-  assert(poem, "Community Spark check poem is missing.");
+  const poem = {
+    id: "poem-community-spark-check",
+    title: "light",
+    lines: [
+      "Yesterday kept borrowing tomorrow's light.",
+      "Morning arrived already exhausted.",
+      "Nobody questioned the clock."
+    ],
+    tags: ["dreamed"],
+    author: { id: "user-community-spark-check" },
+    comments: [
+      {
+        id: "comment-ray-loneliness",
+        author: {
+          id: "reader-ray",
+          handle: "ray",
+          displayName: "Ray",
+          avatarColor: "#25507B"
+        },
+        dateLabel: "8-09",
+        body: "let the loneliness arrive quietly.",
+        likes: 18
+      },
+      {
+        id: "comment-jinghe-floors",
+        author: {
+          id: "reader-jinghe",
+          handle: "jinghe",
+          displayName: "Jinghe",
+          avatarColor: "#D97941"
+        },
+        dateLabel: "8-09",
+        body: "The ending could wait one beat longer.",
+        likes: 7
+      }
+    ]
+  };
   const result = await requestCommunitySpark({ poem });
   const requestBody = JSON.parse(String(capturedRequest?.body)) as {
     model?: string;
+    thinking?: { type?: string };
     messages?: Array<{ role?: string; content?: string }>;
     response_format?: { type?: string };
     max_tokens?: number;
@@ -112,6 +152,7 @@ try {
   );
   assert(
     requestBody.model === "deepseek-v4-flash" &&
+      requestBody.thinking?.type === "disabled" &&
       requestBody.messages?.[0]?.role === "system" &&
       requestBody.messages?.[1]?.role === "user" &&
       requestBody.response_format?.type === "json_object" &&
@@ -123,6 +164,8 @@ try {
       result.suggestions.length === 3 &&
       result.suggestions[0]?.source?.commentId ===
         "comment-ray-loneliness" &&
+      result.suggestions[0]?.proposedLines.length === 3 &&
+      result.suggestions[0]?.proposedLines[2] === "Nobody questioned the clock." &&
       result.usage?.inputTokens === 321 &&
       result.usage.outputTokens === 123,
     "Community Spark did not normalize the DeepSeek response."
@@ -146,6 +189,49 @@ try {
       communitySparkKeySource() === "DEEPSEEK_API_KEY" &&
       isCommunitySparkConfigured(),
     "Community Spark did not expose its DeepSeek readiness configuration."
+  );
+
+  const firstChange = {
+    beforeLines: ["我将未寄出的心事藏进月光当中，", "以为风会带它飘向远方"],
+    afterLines: ["我将未寄出的心事酿进月光当中，\n以为风会带它飘向远方"]
+  };
+  const secondChange = {
+    beforeLines: ["我将未寄出的心事酿进月光当中，", "以为风会带它飘向远方"],
+    afterLines: ["我将未寄出的心事酿进月光当中，", "等风把回声带向远方"]
+  };
+  const history = appendSparkChange(
+    appendSparkChange([], firstChange),
+    secondChange
+  );
+  assert(
+    areEquivalentPoemLines(
+      "我将未寄出的心事酿进月光当中，\r\n以为风会带它飘向远方",
+      firstChange.afterLines
+    ) &&
+      latestSparkChange(history) === secondChange &&
+      latestSparkChange(removeLatestSparkChange(history)) === firstChange,
+    "Creative Spark change history did not preserve sequential undo behavior."
+  );
+
+  globalThis.fetch = async () =>
+    ({
+      ok: true,
+      json: async () => {
+        throw new DOMException(
+          "The operation was aborted due to timeout",
+          "TimeoutError"
+        );
+      }
+    }) as unknown as Response;
+  let timeoutCode = "";
+  try {
+    await requestCommunitySpark({ poem });
+  } catch (error) {
+    timeoutCode = error instanceof Error ? error.message : "";
+  }
+  assert(
+    timeoutCode === "LLM_TIMEOUT",
+    "Community Spark did not normalize response-body timeouts."
   );
 } finally {
   globalThis.fetch = originalFetch;

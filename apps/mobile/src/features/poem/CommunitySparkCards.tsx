@@ -64,6 +64,7 @@ export function CommunitySparkCards({
   const loadingRef = useRef(false);
   const previousSuggestionsRef = useRef<string[]>([]);
   const autoLoadedPostRef = useRef<string | null>(null);
+  const refreshedAppliedCopyRef = useRef<string | null>(null);
 
   const resolvedWorkingCopy = useMemo(() => {
     const fallbackLines = poem?.lines ?? [];
@@ -132,6 +133,17 @@ export function CommunitySparkCards({
     autoLoadedPostRef.current = sparkKey;
     void loadBatch();
   }, [autoLoad, currentCopyKey, loadBatch, poem?.id]);
+
+  useEffect(() => {
+    if (!appliedId || !batch || !suggestionsAreStale) return;
+    const refreshKey = `${batch.id}:${currentCopyKey}`;
+    if (refreshedAppliedCopyRef.current === refreshKey) return;
+    refreshedAppliedCopyRef.current = refreshKey;
+    // Each suggestion contains a complete poem for the version it was made
+    // from. Generate a rebased batch after applying one so the next choice
+    // builds on the newly edited lines instead of overwriting them.
+    void loadBatch();
+  }, [appliedId, batch, currentCopyKey, loadBatch, suggestionsAreStale]);
 
   const applySuggestion = async (suggestion: CommunitySparkSuggestion) => {
     if (applyingId || !batch) return;
@@ -243,7 +255,11 @@ export function CommunitySparkCards({
           <Text style={styles.summary}>{batch.summary}</Text>
           {suggestionsAreStale ? (
             <Pressable onPress={() => void loadBatch()} style={styles.staleBanner}>
-              <Text style={styles.staleText}>Your words changed · refresh ideas</Text>
+              <Text style={styles.staleText}>
+                {loading
+                  ? "Lines updated · finding ideas for this version…"
+                  : "Lines updated · refresh to keep building"}
+              </Text>
             </Pressable>
           ) : null}
           <View

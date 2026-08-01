@@ -284,8 +284,14 @@ export class PostRepository {
       .from("posts")
       .update({ body: previousLines.join("\n"), edited_at: new Date().toISOString() })
       .eq("id", input.poemId)
-      .eq("author_user_id", actorId);
+      .eq("author_user_id", actorId)
+      // Keep the compare and write atomic from the client's perspective. If
+      // another edit lands after the read above, do not overwrite it.
+      .eq("body", row.body)
+      .select("id")
+      .maybeSingle();
     ensureDatabaseResult(update.error);
+    if (!update.data) throw new Error("community spark undo is stale");
     const poem = await this.getPoem(input.poemId);
     if (!poem) throw new Error("post not found");
     return { poem };

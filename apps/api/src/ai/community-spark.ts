@@ -96,6 +96,7 @@ const communitySparkSchema = {
 
 const DEEPSEEK_DEFAULT_BASE_URL = "https://api.deepseek.com";
 const DEEPSEEK_DEFAULT_MODEL = "deepseek-v4-flash";
+const COMMUNITY_SPARK_PROVIDER_TIMEOUT_MS = 75_000;
 
 export async function requestCommunitySpark(
   input: CommunitySparkAiInput
@@ -118,9 +119,13 @@ export async function requestCommunitySpark(
         "content-type": "application/json",
         authorization: `Bearer ${apiKey}`
       },
-      signal: AbortSignal.timeout(35_000),
+      signal: AbortSignal.timeout(COMMUNITY_SPARK_PROVIDER_TIMEOUT_MS),
       body: JSON.stringify({
         model,
+        // DeepSeek V4 enables thinking mode by default. Community Spark is a
+        // concise JSON transformation, so non-thinking mode is faster and
+        // avoids spending the Function lifetime on hidden reasoning tokens.
+        thinking: { type: "disabled" },
         messages: [
           {
             role: "system",
@@ -162,12 +167,7 @@ export async function requestCommunitySpark(
       })
     });
   } catch (error) {
-    const name = error instanceof Error ? error.name : "";
-    throw new Error(
-      name === "AbortError" || name === "TimeoutError"
-        ? "LLM_TIMEOUT"
-        : "LLM_NETWORK_ERROR"
-    );
+    throw new Error(normalizeProviderTransportError(error));
   }
   if (!response.ok) {
     const providerCode = await readProviderErrorCode(response);
@@ -183,13 +183,22 @@ export async function requestCommunitySpark(
     throw new Error(code);
   }
 
-  const payload = (await response.json()) as DeepSeekChatCompletionPayload;
+  let payload: DeepSeekChatCompletionPayload;
+  try {
+    payload = (await response.json()) as DeepSeekChatCompletionPayload;
+  } catch (error) {
+    const code = normalizeProviderTransportError(error);
+    throw new Error(code === "LLM_TIMEOUT" ? code : "LLM_INVALID_RESPONSE");
+  }
   const choice = payload.choices?.[0];
   if (choice?.finish_reason === "length") {
     throw new Error("LLM_INCOMPLETE_RESPONSE");
   }
   if (choice?.finish_reason === "content_filter" || choice?.message?.refusal) {
     throw new Error("LLM_REFUSED");
+  }
+  if (choice?.finish_reason === "insufficient_system_resource") {
+    throw new Error("LLM_PROVIDER_UNAVAILABLE");
   }
   const content = choice?.message?.content?.trim();
   if (!content) throw new Error("LLM_EMPTY_RESPONSE");
@@ -347,8 +356,10 @@ function normalizeSuggestions(
     const preview = cleanText(value.preview, 500);
     const proposedLines = value.proposedLines
       .slice(0, 200)
-      .map((line) => cleanText(line, 2_000))
-      .filter(Boolean);
+      .flatMap((line) => cleanText(line, 2_000).split(/\r?\n/))
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(0, 200);
     if (!suggestion || !preview || proposedLines.length === 0) return [];
     const source = value.sourceCommentId
       ? commentsById.get(value.sourceCommentId)
@@ -372,6 +383,17 @@ function normalizeSuggestions(
 
 function cleanText(value: unknown, maxLength: number) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
+}
+
+function normalizeProviderTransportError(error: unknown) {
+  if (!(error instanceof Error)) return "LLM_NETWORK_ERROR";
+  const message = error.message.toLocaleLowerCase();
+  return error.name === "AbortError" ||
+    error.name === "TimeoutError" ||
+    message.includes("timeout") ||
+    message.includes("timed out")
+    ? "LLM_TIMEOUT"
+    : "LLM_NETWORK_ERROR";
 }
 
 export function stripJsonFence(value: string) {

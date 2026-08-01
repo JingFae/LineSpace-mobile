@@ -793,6 +793,11 @@ export async function handleApiRequest(
           );
         } catch (error) {
           const code = error instanceof Error ? error.message : "LLM_REQUEST_FAILED";
+          console.error("Community Spark generation failed", {
+            poemId: poemRoute.poemId,
+            code: code.startsWith("LLM_") ? code : "LLM_REQUEST_FAILED",
+            model: communitySparkModel()
+          });
           return json(503, {
             code: code.startsWith("LLM_") ? code : "LLM_REQUEST_FAILED",
             message: communitySparkFailureMessage(code)
