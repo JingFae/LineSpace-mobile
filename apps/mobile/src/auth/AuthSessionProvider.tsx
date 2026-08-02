@@ -19,7 +19,7 @@ import {
   storeRefreshToken
 } from "./authStorage";
 import { getAccessToken, refreshAccessToken, setAccessToken, setRefreshHandler } from "./session-store";
-import { setCurrentUserId, useMocks } from "@/services/lineSpaceApi";
+import { apiBaseUrl, setCurrentUserId, useMocks } from "@/services/lineSpaceApi";
 
 export type AuthStatus = "loading" | "authenticated" | "guest" | "unauthenticated";
 
@@ -50,8 +50,7 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
   const guestModeRef = useRef(false);
 
   if (!useMocks && !authClientRef.current) {
-    const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
-    if (baseUrl) authClientRef.current = new HttpAuthClient(baseUrl.replace(/\/$/, ""));
+    if (apiBaseUrl) authClientRef.current = new HttpAuthClient(apiBaseUrl.replace(/\/$/, ""));
   }
 
   const clearSession = useCallback(async () => {

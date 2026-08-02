@@ -174,7 +174,7 @@ The Web project should build with:
 
 ```env
 EXPO_PUBLIC_USE_MOCKS=false
-EXPO_PUBLIC_API_BASE_URL=https://line-space-mobile-api.vercel.app/api
+EXPO_PUBLIC_API_BASE_URL=/api
 ```
 
 Community Spark reads its DeepSeek variables from the Vercel project that serves
@@ -186,18 +186,17 @@ existing deployments keep their previous values.
 
 The readiness response intentionally reports `communitySparkKeySource` as
 `"DEEPSEEK_API_KEY"`, `"OPENAI_API_KEY"` (migration fallback), or `null`. It
-never returns the secret. When the Web app is configured with
-`https://line-space-mobile-api.vercel.app/api`, check that API domain's
-`/api/health/ready` endpoint—not the Web domain—before testing Community Spark.
+never returns the secret. When the Web app is configured with `/api`, check the
+Web domain's `/api/health/ready` endpoint before testing Community Spark.
 
 The API project must define the server-only Supabase variables. After each API
 deployment, verify routing and configuration before testing registration:
 
 ```text
-GET https://line-space-mobile-api.vercel.app/api/health
+GET https://www.linespace-mobile.online/api/health
 200 {"ok":true,"service":"linespace-api"}
 
-GET https://line-space-mobile-api.vercel.app/api/health/ready
+GET https://www.linespace-mobile.online/api/health/ready
 200 {"ok":true,"service":"linespace-api","authConfigured":true,"communitySparkConfigured":true,"communitySparkModel":"deepseek-v4-flash","communitySparkProvider":"deepseek"}
 ```
 

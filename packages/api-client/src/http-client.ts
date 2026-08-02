@@ -88,6 +88,14 @@ export type HttpLineSpaceApiOptions = {
   /** Refreshes the current session when a protected request receives one 401. */
   refreshAccessToken?: () => Promise<string | null | undefined>;
   onRefreshFailure?: () => Promise<void> | void;
+  /** Request timeout in milliseconds. Defaults to 15 seconds. */
+  timeoutMs?: number;
+  /** Number of retries after the first failed GET request. Defaults to 2. */
+  getRetryCount?: number;
+  /** Base delay for exponential GET retries. Defaults to 250 milliseconds. */
+  retryDelayMs?: number;
+  /** Injectable fetch implementation for tests and non-browser runtimes. */
+  fetch?: typeof fetch;
 };
 
 export class HttpLineSpaceApiError extends Error {
@@ -96,10 +104,29 @@ export class HttpLineSpaceApiError extends Error {
     readonly path: string,
     readonly status: number,
     readonly code?: string,
-    responseMessage?: string
+    responseMessage?: string,
+    readonly requestId?: string
   ) {
     super(responseMessage || `LineSpace API request failed with ${status}.`);
     this.name = "HttpLineSpaceApiError";
+  }
+}
+
+export type HttpLineSpaceApiNetworkErrorKind = "timeout" | "network";
+
+export class HttpLineSpaceApiNetworkError extends Error {
+  constructor(
+    readonly method: string,
+    readonly path: string,
+    readonly kind: HttpLineSpaceApiNetworkErrorKind,
+    readonly requestId: string
+  ) {
+    super(
+      kind === "timeout"
+        ? "LineSpace API request timed out."
+        : "LineSpace API could not be reached."
+    );
+    this.name = "HttpLineSpaceApiNetworkError";
   }
 }
 
@@ -637,41 +664,114 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     path: string,
     body?: unknown
   ): Promise<T> {
-    let response = await this.performRequest(method, path, body);
-    if (response.status === 401 && this.options.refreshAccessToken) {
-      const refreshedToken = await this.refreshAccessTokenOnce();
-      if (refreshedToken) {
-        response = await this.performRequest(method, path, body, refreshedToken);
-      } else {
-        await this.options.onRefreshFailure?.();
+    const requestId = createRequestId();
+    const maxRetries = method === "GET"
+      ? Math.max(0, this.options.getRetryCount ?? 2)
+      : 0;
+    let retryCount = 0;
+    let refreshAttempted = false;
+    let accessTokenOverride: string | undefined;
+
+    while (true) {
+      try {
+        let response = await this.performRequest(
+          method,
+          path,
+          body,
+          accessTokenOverride,
+          requestId
+        );
+        if (
+          response.status === 401 &&
+          !refreshAttempted &&
+          this.options.refreshAccessToken
+        ) {
+          refreshAttempted = true;
+          const refreshedToken = await this.refreshAccessTokenOnce();
+          if (refreshedToken) {
+            accessTokenOverride = refreshedToken;
+            response = await this.performRequest(
+              method,
+              path,
+              body,
+              refreshedToken,
+              requestId
+            );
+          } else {
+            await this.options.onRefreshFailure?.();
+          }
+        }
+
+        if (isRetryableStatus(response.status) && retryCount < maxRetries) {
+          await this.waitBeforeRetry(retryCount);
+          retryCount += 1;
+          continue;
+        }
+
+        if (!response.ok) {
+          const payload = await readApiErrorPayload(response);
+          throw new HttpLineSpaceApiError(
+            method,
+            path,
+            response.status,
+            payload.code,
+            payload.message,
+            response.headers.get("x-linespace-request-id") ?? requestId
+          );
+        }
+        return (await response.json()) as T;
+      } catch (error) {
+        if (
+          error instanceof HttpLineSpaceApiNetworkError &&
+          retryCount < maxRetries
+        ) {
+          await this.waitBeforeRetry(retryCount);
+          retryCount += 1;
+          continue;
+        }
+        throw error;
       }
     }
-
-    if (!response.ok) {
-      const payload = await readApiErrorPayload(response);
-      throw new HttpLineSpaceApiError(
-        method,
-        path,
-        response.status,
-        payload.code,
-        payload.message
-      );
-    }
-    return (await response.json()) as T;
   }
 
   private async performRequest(
     method: "GET" | "POST" | "PUT" | "DELETE",
     path: string,
     body?: unknown,
-    accessTokenOverride?: string
+    accessTokenOverride?: string,
+    requestId = createRequestId()
   ) {
     const accessToken = accessTokenOverride ?? (await this.options.getAccessToken?.());
-    return fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers: await this.requestHeaders(body !== undefined, accessToken),
-      body: body === undefined ? undefined : JSON.stringify(body)
-    });
+    const controller = new AbortController();
+    const timeoutMs = Math.max(1, this.options.timeoutMs ?? 15_000);
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+
+    try {
+      return await (this.options.fetch ?? globalThis.fetch)(`${this.baseUrl}${path}`, {
+        method,
+        headers: await this.requestHeaders(body !== undefined, accessToken, requestId),
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: controller.signal
+      });
+    } catch {
+      throw new HttpLineSpaceApiNetworkError(
+        method,
+        path,
+        timedOut ? "timeout" : "network",
+        requestId
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private async waitBeforeRetry(retryCount: number) {
+    const baseDelay = Math.max(0, this.options.retryDelayMs ?? 250);
+    await delay(baseDelay * (2 ** retryCount));
   }
 
   private async refreshAccessTokenOnce() {
@@ -686,9 +786,13 @@ export class HttpLineSpaceApi implements LineSpaceApi {
 
   private async requestHeaders(
     hasJsonBody = false,
-    accessToken?: string | null
+    accessToken?: string | null,
+    requestId?: string
   ): Promise<Record<string, string>> {
     const headers: Record<string, string> = {};
+    if (requestId) {
+      headers["x-linespace-request-id"] = requestId;
+    }
     if (hasJsonBody) {
       headers["content-type"] = "application/json";
     }
@@ -700,6 +804,22 @@ export class HttpLineSpaceApi implements LineSpaceApi {
 
     return headers;
   }
+}
+
+function isRetryableStatus(status: number) {
+  return status === 502 || status === 503 || status === 504;
+}
+
+function createRequestId() {
+  const runtimeCrypto = globalThis.crypto as { randomUUID?: () => string } | undefined;
+  return runtimeCrypto?.randomUUID?.() ??
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function delay(milliseconds: number) {
+  return milliseconds > 0
+    ? new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
+    : Promise.resolve();
 }
 
 async function readApiErrorPayload(response: Response): Promise<{

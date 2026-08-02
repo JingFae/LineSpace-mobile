@@ -24,6 +24,7 @@ import type {
 import { getCurrentLinespaceUserId } from "../core/auth-context.js";
 import type { DatabaseClient } from "../core/client.js";
 import { ensureDatabaseResult } from "../core/errors.js";
+import { isRemoteAssetUrl } from "../core/public-assets.js";
 import {
   loadProfiles,
   toUserProfile,
@@ -810,7 +811,7 @@ function toPoemSummary(
     status: "final",
     startedAt: row.started_at,
     editedAt: row.edited_at,
-    ...(row.artwork_url ? { artworkUrl: row.artwork_url } : {}),
+    ...(isRemoteAssetUrl(row.artwork_url) ? { artworkUrl: row.artwork_url } : {}),
     ...(media ? { media } : {}),
     ...(layout ? { layout } : {}),
     ...(versionLines?.length ? { versionLines } : {}),
@@ -823,7 +824,10 @@ function toPoemSummary(
     },
     viewer: { liked, saved },
     credits: {
-      startedBy: toPostCreditPerson(author),
+      // The full author (including avatar) already appears above. Omitting the
+      // duplicate avatar here prevents the same image URL/data being serialized
+      // twice in every feed card.
+      startedBy: toPostCreditPerson(author, false),
       commentContributors,
       quoteContributors
     },
@@ -837,13 +841,14 @@ function toPoemSummary(
 }
 
 function toPostCreditPerson(
-  profile: ReturnType<typeof toUserProfile>
+  profile: ReturnType<typeof toUserProfile>,
+  includeAvatar = true
 ): PoemCreditPerson {
   return {
     handle: profile.handle,
     displayName: profile.displayName,
     avatarColor: profile.avatarColor,
-    ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {})
+    ...(includeAvatar && profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {})
   };
 }
 
@@ -888,6 +893,7 @@ function toMedia(value: unknown): PoemDraftMedia | undefined {
   const media = objectValue(value);
   if (
     typeof media.uri !== "string" ||
+    !isRemoteAssetUrl(media.uri) ||
     (media.kind !== "image" && media.kind !== "video") ||
     typeof media.name !== "string"
   ) {

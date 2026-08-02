@@ -1,6 +1,7 @@
 import type { UserProfile } from "@linespace/api-client";
 import type { DatabaseClient } from "./client.js";
 import { ensureDatabaseResult } from "./errors.js";
+import { isRemoteAssetUrl } from "./public-assets.js";
 
 export type UserRow = {
   id: string;
@@ -21,7 +22,7 @@ export function toUserProfile(row: UserRow): UserProfile {
     handle: row.handle,
     displayName: row.display_name,
     avatarColor: row.avatar_color,
-    ...(row.avatar_url ? { avatarUrl: row.avatar_url } : {}),
+    ...(isRemoteAssetUrl(row.avatar_url) ? { avatarUrl: row.avatar_url } : {}),
     ...(row.bio ? { bio: row.bio } : {})
   };
 }

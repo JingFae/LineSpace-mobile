@@ -23,7 +23,12 @@ import {
   type PoemCardModel
 } from "@linespace/ui";
 import { colors, spacing } from "@linespace/tokens";
-import type { FeedSection, PoemSummary } from "@linespace/api-client";
+import {
+  HttpLineSpaceApiError,
+  HttpLineSpaceApiNetworkError,
+  type FeedSection,
+  type PoemSummary
+} from "@linespace/api-client";
 import { lineSpaceApi } from "@/services/lineSpaceApi";
 import { useAuth } from "@/auth/AuthSessionProvider";
 import { mainTabs, tabRoutes } from "@/navigation/tabs";
@@ -81,7 +86,10 @@ export function LineSpaceHomeScreen() {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) =>
       lastPage.length === feedPageSize ? lastPage.at(-1)?.id : undefined,
-    enabled: currentUserId.length > 0
+    enabled: currentUserId.length > 0,
+    // HttpLineSpaceApi already performs two bounded GET retries. Avoid stacking
+    // React Query retries on top and making users wait through many attempts.
+    retry: false
   });
 
   const poems = useMemo(
@@ -175,7 +183,7 @@ export function LineSpaceHomeScreen() {
           feedQuery.isLoading ? (
             <View style={styles.loadingWrap}><ActivityIndicator color={colors.accent} /></View>
           ) : feedQuery.isError ? (
-            <EmptyState title="Feed unavailable" body="Pull down to try loading the feed again." />
+            <EmptyState title="Feed unavailable" body={feedErrorMessage(feedQuery.error)} />
           ) : (
             <EmptyState title="No posts yet" body="Published posts from the community will appear here." />
           )
@@ -245,6 +253,24 @@ export function LineSpaceHomeScreen() {
 
     </AppScreen>
   );
+}
+
+function feedErrorMessage(error: unknown) {
+  if (error instanceof HttpLineSpaceApiNetworkError) {
+    const reference = error.requestId.slice(0, 12);
+    return error.kind === "timeout"
+      ? `The connection timed out. Pull down to retry. Reference: ${reference}`
+      : `The server could not be reached. Check your network and retry. Reference: ${reference}`;
+  }
+  if (error instanceof HttpLineSpaceApiError) {
+    if (error.status === 401 || error.status === 403) {
+      return "Your session cannot load this feed. Sign in again and retry.";
+    }
+    if (error.status >= 500) {
+      return `The server is temporarily unavailable. Pull down to retry.${error.requestId ? ` Reference: ${error.requestId.slice(0, 12)}` : ""}`;
+    }
+  }
+  return "Pull down to try loading the feed again.";
 }
 
 function FeedCardReveal({ children }: { children: ReactNode }) {

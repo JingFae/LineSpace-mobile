@@ -4,8 +4,12 @@ import {
   type LineSpaceApi
 } from "@linespace/api-client";
 import { getAccessToken, refreshAccessToken, setAccessToken } from "@/auth/session-store";
+import { Platform } from "react-native";
 
-const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+const configuredApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+// A deployed Web build serves its API through the root Vercel rewrite. Native
+// builds still require an absolute public API URL.
+export const apiBaseUrl = configuredApiBaseUrl || (Platform.OS === "web" ? "/api" : undefined);
 
 // Mock data is an explicit development choice. Missing deployment variables
 // must never silently authenticate the fixed Lili account in a production Web
@@ -14,7 +18,7 @@ export const useMocks = process.env.EXPO_PUBLIC_USE_MOCKS === "true";
 
 if (!useMocks && !apiBaseUrl) {
   throw new Error(
-    "EXPO_PUBLIC_API_BASE_URL is required when EXPO_PUBLIC_USE_MOCKS is not true."
+    "EXPO_PUBLIC_API_BASE_URL is required for native builds when EXPO_PUBLIC_USE_MOCKS is not true."
   );
 }
 

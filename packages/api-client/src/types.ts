@@ -766,6 +766,8 @@ export type StorageUploadTarget = {
   path: string;
   token: string;
   signedUrl: string;
+  /** Stable public URL. Present for uploads to the public linespace-media bucket. */
+  publicUrl?: string;
 };
 
 export type InboxGroupMemberStatus = "invited" | "active" | "declined";

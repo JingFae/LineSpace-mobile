@@ -17,6 +17,10 @@ import { AppScreen } from "@linespace/ui";
 import { colors, radius, spacing } from "@linespace/tokens";
 import type { PoemDraft, PoemDraftMedia, PoemDraftSettings } from "@linespace/api-client";
 import { lineSpaceApi } from "@/services/lineSpaceApi";
+import {
+  mediaUploadErrorMessage,
+  uploadPickedMedia
+} from "@/services/mediaUpload";
 import { useAuth } from "@/auth/AuthSessionProvider";
 import { getMediaAspectRatio } from "@/features/poem/poemPresentation";
 import {
@@ -74,6 +78,7 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
   });
   const [settings, setSettings] = useState<PoemDraftSettings>(initialSettings);
   const [error, setError] = useState<string | null>(null);
+  const [mediaUploading, setMediaUploading] = useState(false);
   const [editHydrated, setEditHydrated] = useState(false);
   const [sparkChanges, setSparkChanges] = useState<SparkApplyChange[]>([]);
   const [undoingSpark, setUndoingSpark] = useState(false);
@@ -200,37 +205,32 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
 
   const openMediaPicker = async () => {
     setError(null);
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      setError("Photo-library access is required to attach media.");
-      return;
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        setError("Photo-library access is required to attach media.");
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images", "videos"],
+        allowsMultipleSelection: false,
+        quality: 0.8,
+        base64: false
+      });
+      if (result.canceled || !result.assets[0]) return;
+
+      setMediaUploading(true);
+      setMedia(await uploadPickedMedia({
+        asset: result.assets[0],
+        userId: currentUserId,
+        purpose: "posts"
+      }));
+    } catch (uploadError) {
+      setError(mediaUploadErrorMessage(uploadError));
+    } finally {
+      setMediaUploading(false);
     }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images", "videos"],
-      allowsMultipleSelection: false,
-      quality: 0.85,
-      // Keep image posts portable across the draft and API boundaries. A
-      // device-local file:// URI cannot be rendered after the post is loaded
-      // again, while the data URI works in both mock and HTTP mode.
-      base64: true
-    });
-    if (result.canceled || !result.assets[0]) return;
-
-    const asset = result.assets[0];
-    const isVideo = asset.type === "video";
-    const uri =
-      !isVideo && asset.base64
-        ? `data:${asset.mimeType ?? "image/jpeg"};base64,${asset.base64}`
-        : asset.uri;
-    setMedia({
-      uri,
-      kind: isVideo ? "video" : "image",
-      name: asset.fileName ?? (isVideo ? "video" : "image"),
-      width: asset.width,
-      height: asset.height,
-      mimeType: asset.mimeType
-    });
   };
 
   const goToPreview = () => {
@@ -292,8 +292,8 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
       contentContainerStyle={styles.screen}
     >
       <ComposeHeader
-        isBusy={(Boolean(resumeDraftId) && draftQuery.isLoading) || editPostQuery.isLoading || saveMutation.isPending}
-        isDisabled={currentUserId.length === 0 || (Boolean(editPostId) && !editPostQuery.data)}
+        isBusy={(Boolean(resumeDraftId) && draftQuery.isLoading) || editPostQuery.isLoading || saveMutation.isPending || mediaUploading}
+        isDisabled={currentUserId.length === 0 || mediaUploading || (Boolean(editPostId) && !editPostQuery.data)}
         onAction={goToPreview}
         title={editPostId ? "edit post" : "new post"}
       />
@@ -312,10 +312,16 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
 
       <Pressable
         accessibilityRole="button"
+        disabled={mediaUploading}
         onPress={openMediaPicker}
         style={[styles.mediaZone, { height: mediaHeight }]}
       >
-        {media ? (
+        {mediaUploading ? (
+          <View style={styles.mediaEmpty}>
+            <ActivityIndicator color={colors.accent} />
+            <Text style={styles.mediaPlaceholder}>Uploading media...</Text>
+          </View>
+        ) : media ? (
           <SelectedMedia media={media} onRemove={() => setMedia(null)} />
         ) : (
           <View style={styles.mediaEmpty}>

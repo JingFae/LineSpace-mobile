@@ -2,6 +2,8 @@ export { createMockLineSpaceApi, MockLineSpaceApi, type LineSpaceApi } from "./c
 export {
   HttpLineSpaceApi,
   HttpLineSpaceApiError,
+  HttpLineSpaceApiNetworkError,
+  type HttpLineSpaceApiNetworkErrorKind,
   type HttpLineSpaceApiOptions
 } from "./http-client";
 export {

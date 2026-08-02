@@ -43,6 +43,10 @@ assert(
   healthResponse.headers.get("access-control-allow-origin") === "*",
   "Vercel API response is missing its CORS header."
 );
+assert(
+  Boolean(healthResponse.headers.get("x-linespace-request-id")),
+  "Vercel API responses must expose a diagnostic request ID."
+);
 
 const readinessResponse = await vercelHandler.fetch(
   new Request("https://linespace.example/api?__linespace_api_path=health/ready")
@@ -81,10 +85,17 @@ assert(
     "GET,POST,PUT,DELETE,OPTIONS",
   "Vercel API preflight has an incomplete method list."
 );
+assert(
+  preflightResponse.headers
+    .get("access-control-allow-headers")
+    ?.includes("x-linespace-request-id"),
+  "Vercel API preflight must allow the diagnostic request ID header."
+);
 
 const config = JSON.parse(
   await readFile(new URL("../../../vercel.json", import.meta.url), "utf8")
 ) as {
+  regions?: string[];
   crons?: Array<{ path?: string; schedule?: string }>;
   rewrites?: Array<{ source?: string; destination?: string }>;
 };
@@ -111,6 +122,10 @@ assert(
 assert(
   functionEntry.includes("waitUntil: keepVercelTaskAlive"),
   "The Vercel Function must keep Thread AI background work alive after responding."
+);
+assert(
+  config.regions?.length === 1 && config.regions[0] === "icn1",
+  "The Vercel Function must run next to Supabase in Seoul (icn1)."
 );
 assert(
   config.crons?.some(

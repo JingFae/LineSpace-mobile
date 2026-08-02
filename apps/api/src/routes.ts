@@ -35,6 +35,7 @@ import {
   type AuthRequestContext
 } from "./auth/index.js";
 import { DomainRepositoryError } from "./database/core/errors.js";
+import { isRemoteAssetUrl } from "./database/core/public-assets.js";
 import { ProfileRepositoryError } from "./database/profile/profile.errors.js";
 import {
   communitySparkKeySource,
@@ -591,6 +592,16 @@ export async function handleApiRequest(
         const actor = await authenticateRequest(context);
         if (!actor.ok) return actor.response;
         const request = (body ?? {}) as Omit<UpdatePoemDraftInput, "draftId" | "userId">;
+        if (
+          request.media !== undefined &&
+          request.media !== null &&
+          !isValidRemoteDraftMedia(request.media)
+        ) {
+          return json(400, {
+            code: "INVALID_DRAFT_MEDIA",
+            message: "Draft media must use an uploaded HTTPS URL."
+          });
+        }
         return json(
           200,
           await api.updatePoemDraft({
@@ -1980,8 +1991,8 @@ function parseUserProfileChanges(
   }
 
   if (source.avatarUrl !== undefined) {
-    if (typeof source.avatarUrl !== "string" || source.avatarUrl.trim().length === 0) {
-      return { ok: false, message: "avatarUrl must be a non-empty string." };
+    if (!isRemoteAssetUrl(source.avatarUrl)) {
+      return { ok: false, message: "avatarUrl must be an uploaded HTTPS URL." };
     }
     value.avatarUrl = source.avatarUrl.trim();
   }
@@ -2028,4 +2039,15 @@ function parseUserProfileChanges(
   }
 
   return { ok: true, value };
+}
+
+function isValidRemoteDraftMedia(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const media = value as Record<string, unknown>;
+  return (
+    isRemoteAssetUrl(media.uri) &&
+    (media.kind === "image" || media.kind === "video") &&
+    typeof media.name === "string" &&
+    media.name.trim().length > 0
+  );
 }

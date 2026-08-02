@@ -21,6 +21,7 @@ import {
 import { getCurrentLinespaceUserId } from "../core/auth-context.js";
 import type { DatabaseClient } from "../core/client.js";
 import { ensureDatabaseResult } from "../core/errors.js";
+import { isRemoteAssetUrl } from "../core/public-assets.js";
 import {
   loadProfiles,
   toUserProfile,
@@ -384,7 +385,12 @@ export class DraftRepository {
         ...(line.aiHarmonized ? { aiHarmonized: true } : {})
       }));
     }
-    if (input.media !== undefined) patch.media = input.media;
+    if (input.media !== undefined) {
+      if (input.media && !isRemoteAssetUrl(input.media.uri)) {
+        throw new Error("draft media must use a remote URL");
+      }
+      patch.media = input.media;
+    }
     if (input.settings !== undefined) {
       const current = await this.getPoemDraft(input.draftId);
       patch.settings = {
@@ -573,15 +579,18 @@ export class DraftRepository {
     if (!/^(image\/(jpeg|png|webp|gif)|video\/mp4)$/.test(input.contentType)) {
       throw new Error("unsupported media type");
     }
-    const result = await this.client.storage
-      .from(input.bucket)
-      .createSignedUploadUrl(safePath);
+    const bucket = this.client.storage.from(input.bucket);
+    const result = await bucket.createSignedUploadUrl(safePath);
     if (result.error) throw new Error("storage upload is unavailable");
+    const publicUrl = input.bucket === "linespace-media"
+      ? bucket.getPublicUrl(safePath).data.publicUrl
+      : undefined;
     return {
       bucket: input.bucket,
       path: safePath,
       token: result.data.token,
-      signedUrl: result.data.signedUrl
+      signedUrl: result.data.signedUrl,
+      ...(publicUrl ? { publicUrl } : {})
     };
   }
 
@@ -772,6 +781,7 @@ function parseMedia(value: unknown): PoemDraftMedia | undefined {
   const source = objectValue(value);
   if (
     typeof source.uri !== "string" ||
+    !isRemoteAssetUrl(source.uri) ||
     typeof source.name !== "string" ||
     (source.kind !== "image" && source.kind !== "video")
   ) {

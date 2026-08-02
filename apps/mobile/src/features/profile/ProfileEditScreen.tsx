@@ -30,6 +30,10 @@ import type {
   UserProfileVisibility
 } from "@linespace/api-client";
 import { lineSpaceApi } from "@/services/lineSpaceApi";
+import {
+  mediaUploadErrorMessage,
+  uploadPickedMedia
+} from "@/services/mediaUpload";
 import { useAuth } from "@/auth/AuthSessionProvider";
 
 declare const require: (path: string) => ImageSourcePropType;
@@ -123,7 +127,8 @@ export function ProfileEditScreen() {
         mediaTypes: ["images"],
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.85
+        quality: 0.75,
+        base64: false
       });
 
       if (result.canceled) {
@@ -135,18 +140,19 @@ export function ProfileEditScreen() {
         setPageError("The selected photo could not be read.");
         return;
       }
-      if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) {
-        setPageError("Please choose an image smaller than 10 MB.");
-        return;
-      }
+      const uploadedAvatar = await uploadPickedMedia({
+        asset,
+        userId: currentUserId,
+        purpose: "avatars"
+      });
 
       await updateProfileMutation.mutateAsync({
         userId: currentUserId,
-        avatarUrl: asset.uri
+        avatarUrl: uploadedAvatar.uri
       });
       setNotice("Profile photo saved");
-    } catch {
-      setPageError("Could not update the profile photo. Please try again.");
+    } catch (uploadError) {
+      setPageError(mediaUploadErrorMessage(uploadError));
     } finally {
       setAvatarBusy(false);
     }

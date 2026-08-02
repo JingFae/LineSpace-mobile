@@ -3,6 +3,7 @@ import {
   createMockLineSpaceApi,
   HttpAuthClient,
   HttpLineSpaceApi,
+  HttpLineSpaceApiNetworkError,
   type AuthUser,
   type UserProfileDetails
 } from "@linespace/api-client";
@@ -253,6 +254,21 @@ async function main() {
     { authService: smokeAuthService, authorization: "Bearer smoke-token" }
   );
   assert(forbiddenInbox.status === 403, "Users must not be able to read another user's inbox.");
+
+  const inlineDraftMedia = await handleApiRequest(
+    "PUT",
+    "/v1/drafts/smoke-draft",
+    new URLSearchParams(),
+    {
+      media: {
+        uri: "data:image/jpeg;base64,aGVsbG8=",
+        kind: "image",
+        name: "inline.jpg"
+      }
+    },
+    { authService: smokeAuthService, authorization: "Bearer smoke-token" }
+  );
+  assert(inlineDraftMedia.status === 400, "Draft update accepted inline Base64 media.");
 
   globalThis.fetch = routeAdapter;
   const httpApi = new HttpLineSpaceApi(baseUrl, {
@@ -599,6 +615,7 @@ async function main() {
 
     await verifyUserDomainHttpIdentity();
     await verifyRefreshSingleFlight();
+    await verifyHttpRetryAndTimeout();
     await verifyAuthClientContract();
     await verifyInjectedUserDomainRepository();
 
@@ -608,6 +625,46 @@ async function main() {
   } finally {
     globalThis.fetch = originalFetch;
   }
+}
+
+async function verifyHttpRetryAndTimeout() {
+  let attempts = 0;
+  const requestIds: string[] = [];
+  const retryingApi = new HttpLineSpaceApi(baseUrl, {
+    getRetryCount: 2,
+    retryDelayMs: 0,
+    fetch: async (_input, init) => {
+      attempts += 1;
+      requestIds.push(new Headers(init?.headers).get("x-linespace-request-id") ?? "");
+      if (attempts < 3) throw new Error("temporary network failure");
+      return jsonResponse([]);
+    }
+  });
+  await retryingApi.listFeed({ section: "latest", limit: 3 });
+  assert(attempts === 3, "GET requests must retry twice after transient network failures.");
+  const firstRequestId = requestIds[0] ?? "";
+  assert(
+    firstRequestId.length > 0 && requestIds.every((value) => value === firstRequestId),
+    "A logical request must keep one diagnostic request ID across retries."
+  );
+
+  const timeoutApi = new HttpLineSpaceApi(baseUrl, {
+    timeoutMs: 5,
+    getRetryCount: 0,
+    fetch: async (_input, init) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+    })
+  });
+  let timeoutError: unknown;
+  try {
+    await timeoutApi.listFeed({ section: "latest", limit: 3 });
+  } catch (error) {
+    timeoutError = error;
+  }
+  assert(
+    timeoutError instanceof HttpLineSpaceApiNetworkError && timeoutError.kind === "timeout",
+    "Timed-out requests must return a typed timeout error."
+  );
 }
 
 async function verifyUserDomainHttpIdentity() {
@@ -837,6 +894,22 @@ async function verifyInjectedUserDomainRepository() {
   assert(
     unknownFieldUpdate.status === 400,
     "Profile update accepted a protected or unknown field."
+  );
+
+  const inlineAvatarUpdate = await handleApiRequest(
+    "PUT",
+    "/v1/users/user-lili/profile",
+    new URLSearchParams(),
+    { avatarUrl: "data:image/jpeg;base64,aGVsbG8=" },
+    {
+      authService: smokeAuthService,
+      authorization: "Bearer smoke-token",
+      profileRepository: repository
+    }
+  );
+  assert(
+    inlineAvatarUpdate.status === 400,
+    "Profile update accepted an inline Base64 avatar."
   );
 }
 
