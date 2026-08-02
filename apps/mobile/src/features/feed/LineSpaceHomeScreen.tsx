@@ -137,7 +137,9 @@ export function LineSpaceHomeScreen() {
       <FlatList
         contentContainerStyle={styles.feedContent}
         data={poems}
+        initialNumToRender={1}
         keyExtractor={(poem) => poem.id}
+        maxToRenderPerBatch={2}
         onEndReached={() => {
           if (feedQuery.hasNextPage && !feedQuery.isFetchingNextPage) {
             void feedQuery.fetchNextPage();
@@ -195,6 +197,8 @@ export function LineSpaceHomeScreen() {
         }
         showsVerticalScrollIndicator={false}
         style={styles.feed}
+        updateCellsBatchingPeriod={80}
+        windowSize={3}
       />
 
       <BottomNavigation
@@ -318,7 +322,7 @@ export function mapPoemToCard(poem: PoemSummary): PoemCardModel {
       : poem.artworkTone === "water"
         ? waterArtwork
         : undefined,
-    layout: getPoemLayoutPresentation(poem),
+    layout: getPoemLayoutPresentation(poem, { preferThumbnail: true }),
     versionLines: poem.versionLines?.map((line) => ({
       ...line,
       author: { ...line.author }

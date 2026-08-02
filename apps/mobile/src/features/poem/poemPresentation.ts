@@ -20,6 +20,7 @@ export type PoemLayoutPresentation = {
   typographyRole: "serif" | "script" | "sans" | "editorial" | "rounded" | "mono";
   stickerSymbols: string[];
   mediaSource?: ImageSourcePropType;
+  mediaFallbackSource?: ImageSourcePropType;
   mediaAspectRatio?: number;
 };
 
@@ -61,16 +62,30 @@ const stickerSymbols: Record<PoemStickerId, string> = {
 };
 
 export function getPoemLayoutPresentation(
-  poem: Pick<PoemSummary, "layout" | "media">
+  poem: Pick<PoemSummary, "layout" | "media">,
+  options: { preferThumbnail?: boolean } = {}
 ): PoemLayoutPresentation | undefined {
   if (!poem.layout) return undefined;
+
+  const originalMediaUri = poem.media?.kind === "image" ? poem.media.uri : undefined;
+  const thumbnailUri =
+    options.preferThumbnail && poem.media?.kind === "image"
+      ? poem.media.thumbnailUri
+      : undefined;
 
   return {
     backgroundRole: backgroundRoles[poem.layout.backgroundId],
     typographyRole: typographyRoles[poem.layout.typographyId],
     stickerSymbols: poem.layout.stickerIds.map((id) => stickerSymbols[id]),
-    mediaSource:
-      poem.media?.kind === "image" ? { uri: poem.media.uri } : undefined,
+    mediaSource: thumbnailUri
+      ? { uri: thumbnailUri }
+      : originalMediaUri
+        ? { uri: originalMediaUri }
+        : undefined,
+    mediaFallbackSource:
+      thumbnailUri && originalMediaUri && thumbnailUri !== originalMediaUri
+        ? { uri: originalMediaUri }
+        : undefined,
     mediaAspectRatio: getMediaAspectRatio(poem.media)
   };
 }

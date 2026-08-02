@@ -1,5 +1,4 @@
 import {
-  Image,
   Platform,
   Pressable,
   StyleSheet,
@@ -11,6 +10,7 @@ import {
   type ViewStyle
 } from "react-native";
 import { colors, radius } from "@linespace/tokens";
+import { FallbackImage } from "./FallbackImage";
 
 export type PoemLayoutCardModel = {
   title: string;
@@ -44,6 +44,7 @@ type PoemLayoutCardProps = {
   typographyRole: PoemTypographyRole;
   stickerSymbols?: string[];
   mediaSource?: ImageSourcePropType;
+  mediaFallbackSource?: ImageSourcePropType;
   mediaAspectRatio?: number;
   style?: StyleProp<ViewStyle>;
   onTagPress?: (tag: string) => void;
@@ -56,6 +57,7 @@ export function PoemLayoutCard({
   typographyRole,
   stickerSymbols = [],
   mediaSource,
+  mediaFallbackSource,
   mediaAspectRatio,
   style,
   onTagPress
@@ -76,8 +78,9 @@ export function PoemLayoutCard({
     >
       <PaperTexture role={backgroundRole} />
       {mediaSource ? (
-        <Image
+        <FallbackImage
           accessibilityLabel="Attached poem image"
+          fallbackSource={mediaFallbackSource}
           resizeMode="cover"
           source={mediaSource}
           style={[styles.media, { height: mediaHeight }]}

@@ -24,7 +24,10 @@ import type {
 import { getCurrentLinespaceUserId } from "../core/auth-context.js";
 import type { DatabaseClient } from "../core/client.js";
 import { ensureDatabaseResult } from "../core/errors.js";
-import { isRemoteAssetUrl } from "../core/public-assets.js";
+import {
+  isRemoteAssetUrl,
+  toFeedThumbnailUrl
+} from "../core/public-assets.js";
 import {
   loadProfiles,
   toUserProfile,
@@ -171,7 +174,7 @@ export class PostRepository {
       rows = rows.filter((row) => row.status === "published");
     }
 
-    return this.mapSummaries(rows, actorId);
+    return this.mapSummaries(rows, actorId, { includeMediaThumbnail: true });
   }
 
   async getPoem(id: string): Promise<PoemSummary | null> {
@@ -510,7 +513,8 @@ export class PostRepository {
 
   private async mapSummaries(
     rows: PostRow[],
-    actorId: string | null
+    actorId: string | null,
+    options: { includeMediaThumbnail?: boolean } = {}
   ): Promise<PoemSummary[]> {
     const contributions = await this.loadCommentContributions(rows.map((row) => row.id));
     const profiles = await loadProfiles(
@@ -555,7 +559,8 @@ export class PostRepository {
           viewer.saved.has(row.id),
           toVersionLines(row.version_lines, profiles),
           commentContributors,
-          quoteContributors
+          quoteContributors,
+          options.includeMediaThumbnail === true
         );
       })
       .filter((item): item is PoemSummary => Boolean(item));
@@ -792,9 +797,10 @@ function toPoemSummary(
   saved: boolean,
   versionLines?: PoemSummary["versionLines"],
   commentContributors: PoemCreditPerson[] = [],
-  quoteContributors: PoemCreditPerson[] = []
+  quoteContributors: PoemCreditPerson[] = [],
+  includeMediaThumbnail = false
 ): PoemSummary {
-  const media = toMedia(row.media);
+  const media = toMedia(row.media, includeMediaThumbnail);
   const layout = toLayout(row.layout);
   const background = layout?.backgroundId;
   return {
@@ -895,7 +901,10 @@ function toVersionLines(
   return lines.length ? lines : undefined;
 }
 
-function toMedia(value: unknown): PoemDraftMedia | undefined {
+function toMedia(
+  value: unknown,
+  includeThumbnail = false
+): PoemDraftMedia | undefined {
   const media = objectValue(value);
   if (
     typeof media.uri !== "string" ||
@@ -905,8 +914,13 @@ function toMedia(value: unknown): PoemDraftMedia | undefined {
   ) {
     return undefined;
   }
+  const thumbnailUri =
+    includeThumbnail && media.kind === "image"
+      ? toFeedThumbnailUrl(media.uri)
+      : undefined;
   return {
     uri: media.uri,
+    ...(thumbnailUri && thumbnailUri !== media.uri ? { thumbnailUri } : {}),
     kind: media.kind,
     name: media.name,
     ...(typeof media.width === "number" ? { width: media.width } : {}),

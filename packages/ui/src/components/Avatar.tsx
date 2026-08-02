@@ -1,5 +1,6 @@
-import { Image, StyleSheet, Text, View, type ImageSourcePropType } from "react-native";
+import { StyleSheet, Text, View, type ImageSourcePropType } from "react-native";
 import { colors, typography } from "@linespace/tokens";
+import { FallbackImage } from "./FallbackImage";
 
 type AvatarProps = {
   color: string;
@@ -24,7 +25,7 @@ export function Avatar({ color, label, size = 38, imageSource }: AvatarProps) {
       ]}
     >
       {imageSource ? (
-        <Image
+        <FallbackImage
           accessibilityLabel={`${label} profile photo`}
           source={imageSource}
           style={styles.image}

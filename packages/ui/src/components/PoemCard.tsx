@@ -51,6 +51,7 @@ export type PoemCardModel = {
     typographyRole: PoemTypographyRole;
     stickerSymbols: string[];
     mediaSource?: ImageSourcePropType;
+    mediaFallbackSource?: ImageSourcePropType;
     mediaAspectRatio?: number;
   };
   versionLines?: VersionPostLineModel[];
@@ -153,6 +154,7 @@ export function PoemCard({
             backgroundRole={poem.layout?.backgroundRole}
             lines={poem.versionLines}
             mediaAspectRatio={poem.layout?.mediaAspectRatio}
+            mediaFallbackSource={poem.layout?.mediaFallbackSource}
             mediaSource={poem.layout?.mediaSource}
             onTagPress={onTagPress}
             publishedBy={poem.author.displayName}
@@ -164,6 +166,7 @@ export function PoemCard({
           <PoemLayoutCard
             backgroundRole={poem.layout.backgroundRole}
             mediaAspectRatio={poem.layout.mediaAspectRatio}
+            mediaFallbackSource={poem.layout.mediaFallbackSource}
             mediaSource={poem.layout.mediaSource}
             onTagPress={onTagPress}
             poem={{

@@ -1,7 +1,10 @@
 import type { UserProfile } from "@linespace/api-client";
 import type { DatabaseClient } from "./client.js";
 import { ensureDatabaseResult } from "./errors.js";
-import { isRemoteAssetUrl } from "./public-assets.js";
+import {
+  isRemoteAssetUrl,
+  toAvatarThumbnailUrl
+} from "./public-assets.js";
 
 export type UserRow = {
   id: string;
@@ -17,12 +20,15 @@ export const publicUserSelect =
   "id,linespace_id,handle,display_name,avatar_url,avatar_color,bio";
 
 export function toUserProfile(row: UserRow): UserProfile {
+  const avatarUrl = isRemoteAssetUrl(row.avatar_url)
+    ? toAvatarThumbnailUrl(row.avatar_url) ?? row.avatar_url
+    : undefined;
   return {
     id: row.id,
     handle: row.handle,
     displayName: row.display_name,
     avatarColor: row.avatar_color,
-    ...(isRemoteAssetUrl(row.avatar_url) ? { avatarUrl: row.avatar_url } : {}),
+    ...(avatarUrl ? { avatarUrl } : {}),
     ...(row.bio ? { bio: row.bio } : {})
   };
 }

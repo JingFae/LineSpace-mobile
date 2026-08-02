@@ -143,7 +143,10 @@ export type PoemDesignCatalog = {
 };
 
 export type PoemDraftMedia = {
+  /** Durable original asset used by edit and detail surfaces. */
   uri: string;
+  /** Derived, presentation-only image used by list/feed surfaces when present. */
+  thumbnailUri?: string;
   kind: "image" | "video";
   name: string;
   width?: number;

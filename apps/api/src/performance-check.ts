@@ -4,7 +4,17 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-const [postRepository, draftRepository, versionPreview, compose, preview, rootLayout] =
+const [
+  postRepository,
+  draftRepository,
+  versionPreview,
+  compose,
+  preview,
+  rootLayout,
+  feedHome,
+  poemPresentation,
+  poemDetail
+] =
   await Promise.all([
     readFile(
       new URL("./database/post/post.repository.ts", import.meta.url),
@@ -35,7 +45,28 @@ const [postRepository, draftRepository, versionPreview, compose, preview, rootLa
       ),
       "utf8"
     ),
-    readFile(new URL("../../mobile/app/_layout.tsx", import.meta.url), "utf8")
+    readFile(new URL("../../mobile/app/_layout.tsx", import.meta.url), "utf8"),
+    readFile(
+      new URL(
+        "../../mobile/src/features/feed/LineSpaceHomeScreen.tsx",
+        import.meta.url
+      ),
+      "utf8"
+    ),
+    readFile(
+      new URL(
+        "../../mobile/src/features/poem/poemPresentation.ts",
+        import.meta.url
+      ),
+      "utf8"
+    ),
+    readFile(
+      new URL(
+        "../../mobile/src/features/poem/PoemDetailScreen.tsx",
+        import.meta.url
+      ),
+      "utf8"
+    )
   ]);
 
 assert(
@@ -77,7 +108,28 @@ assert(
     /gcTime:\s*30 \* 60_000/.test(rootLayout),
   "The mobile Query Client must retain recently loaded content."
 );
+assert(
+  /includeMediaThumbnail:\s*true/.test(postRepository) &&
+    /toMedia\(row\.media, includeMediaThumbnail\)/.test(postRepository) &&
+    /toFeedThumbnailUrl\(media\.uri\)/.test(postRepository),
+  "The Feed must derive thumbnails without replacing durable original media URLs."
+);
+assert(
+  /preferThumbnail:\s*true/.test(feedHome) &&
+    /initialNumToRender=\{1\}/.test(feedHome) &&
+    /maxToRenderPerBatch=\{2\}/.test(feedHome) &&
+    /mediaFallbackSource/.test(poemPresentation) &&
+    /poem\.media\.thumbnailUri/.test(poemPresentation),
+  "The Feed must prioritize its first thumbnail and retain an original-image fallback."
+);
+assert(
+  /getPoemLayoutPresentation\(poem\)/.test(poemDetail) &&
+    !/getPoemLayoutPresentation\(poem,\s*\{\s*preferThumbnail:\s*true/.test(
+      poemDetail
+    ),
+  "The Post detail surface must continue to request the original image."
+);
 
 process.stdout.write(
-  "Performance structure check passed: Version, Post comments, Drafts, Compose preparation, publish preparation, and query caching avoid known loading bottlenecks.\n"
+  "Performance structure check passed: Version, Post comments, Drafts, Compose preparation, query caching, and Feed image loading avoid known bottlenecks.\n"
 );

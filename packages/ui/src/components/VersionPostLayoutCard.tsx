@@ -1,9 +1,10 @@
-import { Image, StyleSheet, Text, View, type ImageSourcePropType, type StyleProp, type ViewStyle } from "react-native";
+import { StyleSheet, Text, View, type ImageSourcePropType, type StyleProp, type ViewStyle } from "react-native";
 import { colors, radius } from "@linespace/tokens";
 import { Avatar } from "./Avatar";
 import { ContentTagRow } from "./ContentTag";
 import { LineSpaceAiAvatar } from "./LineSpaceAiAvatar";
 import type { PoemBackgroundRole } from "./PoemLayoutCard";
+import { FallbackImage } from "./FallbackImage";
 
 export type VersionPostLineModel = {
   lineNumber: number;
@@ -27,6 +28,7 @@ export function VersionPostLayoutCard({
   publishedBy,
   backgroundRole = "ruled",
   mediaSource,
+  mediaFallbackSource,
   mediaAspectRatio,
   onTagPress,
   style
@@ -37,6 +39,7 @@ export function VersionPostLayoutCard({
   publishedBy: string;
   backgroundRole?: PoemBackgroundRole;
   mediaSource?: ImageSourcePropType;
+  mediaFallbackSource?: ImageSourcePropType;
   mediaAspectRatio?: number;
   onTagPress?: (tag: string) => void;
   style?: StyleProp<ViewStyle>;
@@ -61,8 +64,9 @@ export function VersionPostLayoutCard({
   return (
     <View style={[styles.root, backgroundStyles[backgroundRole], style]}>
       {mediaSource ? (
-        <Image
+        <FallbackImage
           accessibilityLabel="Attached poem image"
+          fallbackSource={mediaFallbackSource}
           resizeMode="cover"
           source={mediaSource}
           style={[styles.media, { height: getMediaHeight(mediaAspectRatio) }]}
