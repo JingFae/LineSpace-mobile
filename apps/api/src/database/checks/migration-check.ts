@@ -77,6 +77,13 @@ const communitySparkMigration = await readFile(
   new URL("20260723000100_community_spark.sql", canonicalMigrationsUrl),
   "utf8"
 );
+const communitySparkAtomicApplyMigration = await readFile(
+  new URL(
+    "20260802000100_community_spark_atomic_apply.sql",
+    canonicalMigrationsUrl
+  ),
+  "utf8"
+);
 const guestPublicContentMigration = await readFile(
   new URL("20260723000200_guest_public_content_access.sql", canonicalMigrationsUrl),
   "utf8"
@@ -125,6 +132,21 @@ for (const required of [
     `Stable thread line migration is missing ${required}.`
   );
 }
+for (const required of [
+  /set_config\('lock_timeout',\s*'5s',\s*true\)/i,
+  /update\s+public\.posts\s+as\s+candidate[\s\S]*p_base_revision[\s\S]*returning\s+candidate\.\*/i,
+  /exception[\s\S]*when\s+lock_not_available[\s\S]*errcode\s*=\s*'40001'/i,
+  /select\s+\*\s+into\s+existing_application[\s\S]*from\s+public\.community_spark_applications/i
+] as const) {
+  assert(
+    required.test(communitySparkAtomicApplyMigration),
+    `Atomic Community Spark migration is missing ${required}.`
+  );
+}
+assert(
+  !/for\s+update/i.test(communitySparkAtomicApplyMigration),
+  "Atomic Community Spark apply must not acquire a row lock before revision validation."
+);
 for (const required of [
   /add\s+column\s+if\s+not\s+exists\s+content_revision/i,
   /create\s+table\s+if\s+not\s+exists\s+public\.thread_ai_version_snapshots/i,

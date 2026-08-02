@@ -174,8 +174,22 @@ export function CommunitySparkCards({
       });
       setAppliedId(suggestion.id);
       onApplied?.(result, change);
-    } catch {
-      setError("This idea could not be applied. Refresh and try once more.");
+    } catch (applyError) {
+      if (applyError instanceof HttpLineSpaceApiError) {
+        if (
+          applyError.code === "COMMUNITY_SPARK_STALE" ||
+          applyError.code === "COMMUNITY_SPARK_BUSY"
+        ) {
+          setError(applyError.message);
+          return;
+        }
+        setError(
+          applyError.message ||
+            "This idea could not be applied. Please try once more."
+        );
+        return;
+      }
+      setError("This idea could not be applied. Please try once more.");
     } finally {
       setApplyingId(null);
     }

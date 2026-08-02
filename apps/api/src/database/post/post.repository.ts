@@ -23,7 +23,10 @@ import type {
 } from "@linespace/api-client";
 import { getCurrentLinespaceUserId } from "../core/auth-context.js";
 import type { DatabaseClient } from "../core/client.js";
-import { ensureDatabaseResult } from "../core/errors.js";
+import {
+  DomainRepositoryError,
+  ensureDatabaseResult
+} from "../core/errors.js";
 import {
   isRemoteAssetUrl,
   toFeedThumbnailUrl
@@ -246,6 +249,31 @@ export class PostRepository {
       p_proposed_lines: input.proposedLines,
       p_source_comment_id: input.sourceCommentId ?? null
     });
+    if (result.error) {
+      console.error("Community Spark database application failed", {
+        poemId: input.poemId,
+        code: result.error.code,
+        message: result.error.message,
+        details: result.error.details,
+        hint: result.error.hint
+      });
+      if (result.error.code === "40001" || result.error.code === "55P03") {
+        throw new DomainRepositoryError(
+          "CONFLICT",
+          409,
+          /busy|lock/i.test(result.error.message)
+            ? "This post is being updated. Please try the idea again."
+            : "This idea was made for an older version. Refresh for new ideas."
+        );
+      }
+      if (result.error.code === "22023" || result.error.code === "23514") {
+        throw new DomainRepositoryError(
+          "INVALID",
+          400,
+          "The selected suggestion cannot be applied."
+        );
+      }
+    }
     ensureDatabaseResult(result.error);
     const transaction = objectValue(result.data);
     const poem = await this.getPoem(input.poemId);

@@ -215,9 +215,10 @@ export async function requestCommunitySpark(
   return {
     id: payload.id || `spark-${crypto.randomUUID()}`,
     poemId: input.poem.id,
-    baseRevision: createHash("md5")
-      .update(input.poem.lines.join("\n"), "utf8")
-      .digest("hex"),
+    // Keep this byte-for-byte aligned with apply_community_spark. Posts may
+    // contain empty strings for stanza spacing; the database revision has
+    // always ignored those separators when checking whether words changed.
+    baseRevision: communitySparkBaseRevision(input.poem.lines),
     summary: cleanText(parsed.summary, 240),
     suggestions,
     usage: {
@@ -225,6 +226,19 @@ export async function requestCommunitySpark(
       outputTokens: payload.usage?.completion_tokens ?? 0
     }
   };
+}
+
+export function communitySparkBaseRevision(lines: string[]) {
+  return createHash("md5")
+    .update(
+      lines
+        .flatMap((line) => line.split(/\r?\n/))
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .join("\n"),
+      "utf8"
+    )
+    .digest("hex");
 }
 
 export async function requestCreativeSpark(input: {

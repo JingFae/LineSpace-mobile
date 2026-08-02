@@ -1,4 +1,5 @@
 import {
+  communitySparkBaseRevision,
   communitySparkModel,
   communitySparkProvider,
   communitySparkKeySource,
@@ -189,6 +190,12 @@ try {
       communitySparkKeySource() === "DEEPSEEK_API_KEY" &&
       isCommunitySparkConfigured(),
     "Community Spark did not expose its DeepSeek readiness configuration."
+  );
+  assert(
+    communitySparkBaseRevision([" first line ", "", "second line"]) ===
+      communitySparkBaseRevision(["first line", "second line"]) &&
+      result.baseRevision === communitySparkBaseRevision(poem.lines),
+    "Community Spark revisions must match the database when poems contain stanza spacing."
   );
 
   const firstChange = {

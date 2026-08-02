@@ -841,6 +841,33 @@ export async function handleApiRequest(
           );
         } catch (error) {
           const message = error instanceof Error ? error.message : "";
+          if (error instanceof DomainRepositoryError) {
+            if (error.code === "CONFLICT") {
+              const busy = /being updated|try the idea again/i.test(message);
+              return json(409, {
+                code: busy
+                  ? "COMMUNITY_SPARK_BUSY"
+                  : "COMMUNITY_SPARK_STALE",
+                message
+              });
+            }
+            if (error.code === "FORBIDDEN") {
+              return json(403, {
+                code: "COMMUNITY_SPARK_FORBIDDEN",
+                message: error.message
+              });
+            }
+            if (error.code === "INVALID") {
+              return json(400, {
+                code: "INVALID_COMMUNITY_SPARK_APPLICATION",
+                message: error.message
+              });
+            }
+            return json(503, {
+              code: "COMMUNITY_SPARK_UNAVAILABLE",
+              message: "The change could not be saved right now. Please try again."
+            });
+          }
           if (/older version|stale/i.test(message)) {
             return json(409, {
               code: "COMMUNITY_SPARK_STALE",
