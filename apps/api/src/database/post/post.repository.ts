@@ -297,33 +297,42 @@ export class PostRepository {
     if (!actorId || actorId !== input.userId) {
       throw new Error("community spark actor mismatch");
     }
-    const current = await this.client
-      .from("posts")
-      .select("author_user_id,body")
-      .eq("id", input.poemId)
-      .maybeSingle();
-    ensureDatabaseResult(current.error);
-    const row = current.data as Pick<PostRow, "author_user_id" | "body"> | null;
-    if (!row || row.author_user_id !== actorId) {
-      throw new Error("post not found or forbidden");
+    const result = await this.client.rpc("undo_community_spark", {
+      p_post_id: input.poemId,
+      p_applied_lines: input.appliedLines,
+      p_previous_lines: input.previousLines
+    });
+    if (result.error) {
+      console.error("Community Spark database undo failed", {
+        poemId: input.poemId,
+        code: result.error.code,
+        message: result.error.message,
+        details: result.error.details,
+        hint: result.error.hint
+      });
+      if (result.error.code === "40001" || result.error.code === "55P03") {
+        throw new DomainRepositoryError(
+          "CONFLICT",
+          409,
+          "This AI change can no longer be undone because the poem changed."
+        );
+      }
+      if (result.error.code === "42501") {
+        throw new DomainRepositoryError(
+          "FORBIDDEN",
+          403,
+          "Only the post author can undo this AI change."
+        );
+      }
+      if (result.error.code === "22023") {
+        throw new DomainRepositoryError(
+          "INVALID",
+          400,
+          "The selected AI change cannot be undone."
+        );
+      }
     }
-    if (normalizePoemBody(row.body) !== normalizePoemBody(input.appliedLines.join("\n"))) {
-      throw new Error("community spark undo is stale");
-    }
-    const previousLines = input.previousLines.map((line) => line.trim()).filter(Boolean);
-    if (previousLines.length === 0) throw new Error("a poem needs at least one line");
-    const update = await this.client
-      .from("posts")
-      .update({ body: previousLines.join("\n"), edited_at: new Date().toISOString() })
-      .eq("id", input.poemId)
-      .eq("author_user_id", actorId)
-      // Keep the compare and write atomic from the client's perspective. If
-      // another edit lands after the read above, do not overwrite it.
-      .eq("body", row.body)
-      .select("id")
-      .maybeSingle();
-    ensureDatabaseResult(update.error);
-    if (!update.data) throw new Error("community spark undo is stale");
+    ensureDatabaseResult(result.error);
     const poem = await this.getPoem(input.poemId);
     if (!poem) throw new Error("post not found");
     return { poem };
@@ -788,14 +797,6 @@ export class PostRepository {
       })
     );
   }
-}
-
-function normalizePoemBody(value: string) {
-  return value
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .join("\n");
 }
 
 function splitPoemBodyPreservingStanzas(value: string) {

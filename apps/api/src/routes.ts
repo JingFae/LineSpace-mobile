@@ -901,6 +901,30 @@ export async function handleApiRequest(
           }));
         } catch (error) {
           const message = error instanceof Error ? error.message : "";
+          if (error instanceof DomainRepositoryError) {
+            if (error.code === "CONFLICT") {
+              return json(409, {
+                code: "COMMUNITY_SPARK_UNDO_STALE",
+                message: error.message
+              });
+            }
+            if (error.code === "FORBIDDEN") {
+              return json(403, {
+                code: "COMMUNITY_SPARK_FORBIDDEN",
+                message: error.message
+              });
+            }
+            if (error.code === "INVALID") {
+              return json(400, {
+                code: "INVALID_COMMUNITY_SPARK_UNDO",
+                message: error.message
+              });
+            }
+            return json(503, {
+              code: "COMMUNITY_SPARK_UNAVAILABLE",
+              message: "The change could not be restored right now. Please try again."
+            });
+          }
           return json(/stale|changed/i.test(message) ? 409 : 400, {
             code: /stale|changed/i.test(message)
               ? "COMMUNITY_SPARK_UNDO_STALE"

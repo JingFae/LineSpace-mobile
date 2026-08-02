@@ -84,6 +84,13 @@ const communitySparkAtomicApplyMigration = await readFile(
   ),
   "utf8"
 );
+const communitySparkAtomicUndoMigration = await readFile(
+  new URL(
+    "20260802000200_community_spark_atomic_undo.sql",
+    canonicalMigrationsUrl
+  ),
+  "utf8"
+);
 const guestPublicContentMigration = await readFile(
   new URL("20260723000200_guest_public_content_access.sql", canonicalMigrationsUrl),
   "utf8"
@@ -147,6 +154,18 @@ assert(
   !/for\s+update/i.test(communitySparkAtomicApplyMigration),
   "Atomic Community Spark apply must not acquire a row lock before revision validation."
 );
+for (const required of [
+  /create\s+or\s+replace\s+function\s+public\.undo_community_spark/i,
+  /security\s+definer/i,
+  /update\s+public\.posts\s+as\s+candidate[\s\S]*expected_body[\s\S]*returning\s+candidate\.\*/i,
+  /errcode\s*=\s*'40001'[\s\S]*Community Spark undo is stale/i,
+  /grant\s+execute\s+on\s+function\s+public\.undo_community_spark[\s\S]*to\s+authenticated/i
+] as const) {
+  assert(
+    required.test(communitySparkAtomicUndoMigration),
+    `Atomic Community Spark undo migration is missing ${required}.`
+  );
+}
 for (const required of [
   /add\s+column\s+if\s+not\s+exists\s+content_revision/i,
   /create\s+table\s+if\s+not\s+exists\s+public\.thread_ai_version_snapshots/i,
