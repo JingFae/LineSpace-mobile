@@ -32,7 +32,8 @@ import type {
   ApplyCommunitySparkResult,
   PoemComment,
   PoemCreditPerson,
-  PoemSummary
+  PoemSummary,
+  UndoCommunitySparkResult
 } from "@linespace/api-client";
 import { lineSpaceApi } from "@/services/lineSpaceApi";
 import { useAuth } from "@/auth/AuthSessionProvider";
@@ -70,8 +71,8 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
   const [followingAuthorIds, setFollowingAuthorIds] = useState<Set<string>>(() => new Set());
   const [focusedCommentId, setFocusedCommentId] = useState(commentId);
   const [postMenuOpen, setPostMenuOpen] = useState(false);
-  const [sparkChange, setSparkChange] = useState<SparkApplyChange | null>(null);
-  const [undoingSpark, setUndoingSpark] = useState(false);
+  const [sparkChanges, setSparkChanges] = useState<SparkApplyChange[]>([]);
+  const sparkChange = sparkChanges[sparkChanges.length - 1] ?? null;
   const scrollRef = useRef<ScrollView | null>(null);
   const commentOffsets = useRef(new Map<string, number>());
   const engagement = usePoemEngagement();
@@ -115,28 +116,6 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
 
   const updatePoemCache = (next: PoemSummary) => {
     queryClient.setQueryData(["poem", id, currentUserId], next);
-  };
-
-  const undoSparkChange = async () => {
-    if (!poem || !sparkChange || undoingSpark) return;
-    setUndoingSpark(true);
-    try {
-      const result = await lineSpaceApi.undoCommunitySpark({
-        poemId: poem.id,
-        userId: currentUserId,
-        appliedLines: sparkChange.afterLines,
-        previousLines: sparkChange.beforeLines
-      });
-      updatePoemCache(result.poem);
-      setSparkChange(null);
-      setNotice("AI line changes reverted. Reader credit remains in the conversation.");
-      void queryClient.invalidateQueries({ queryKey: ["feed"] });
-      void queryClient.invalidateQueries({ queryKey: ["user-profile-content", currentUserId] });
-    } catch {
-      setNotice("This AI change can no longer be undone safely.");
-    } finally {
-      setUndoingSpark(false);
-    }
   };
 
   const focusComment = (targetCommentId: string) => {
@@ -262,7 +241,7 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
             }}
             onSparkApplied={(result, change) => {
               updatePoemCache(result.poem);
-              setSparkChange(change);
+              setSparkChanges((current) => [...current, change].slice(-20));
               setNotice(
                 result.reply
                   ? "Idea applied · reader credited"
@@ -274,10 +253,23 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
               });
               void queryClient.invalidateQueries({ queryKey: ["inbox-summary"] });
             }}
+            onSparkUndone={(result, change) => {
+              updatePoemCache(result.poem);
+              setSparkChanges((current) =>
+                current.filter(
+                  (item) => item.suggestion.id !== change.suggestion.id
+                )
+              );
+              setNotice(
+                "AI line changes reverted. Reader credit remains in the conversation."
+              );
+              void queryClient.invalidateQueries({ queryKey: ["feed"] });
+              void queryClient.invalidateQueries({
+                queryKey: ["user-profile-content", currentUserId]
+              });
+            }}
             onSparkSourcePress={focusComment}
-            onUndoSpark={() => void undoSparkChange()}
             sparkChange={sparkChange}
-            undoingSpark={undoingSpark}
             onCommentLayout={(targetCommentId, offset) => {
               commentOffsets.current.set(targetCommentId, offset);
               if (targetCommentId === focusedCommentId) {
@@ -396,10 +388,9 @@ function PoemDetailContent({
   onCommentSave,
   onCommentLayout,
   onSparkApplied,
+  onSparkUndone,
   onSparkSourcePress,
-  sparkChange,
-  undoingSpark,
-  onUndoSpark
+  sparkChange
 }: {
   commentId?: string;
   currentUserId: string;
@@ -411,10 +402,9 @@ function PoemDetailContent({
   onCommentSave: (comment: PoemComment) => void;
   onCommentLayout: (commentId: string, offset: number) => void;
   onSparkApplied: (result: ApplyCommunitySparkResult, change: SparkApplyChange) => void;
+  onSparkUndone: (result: UndoCommunitySparkResult, change: SparkApplyChange) => void;
   onSparkSourcePress: (commentId: string) => void;
   sparkChange: SparkApplyChange | null;
-  undoingSpark: boolean;
-  onUndoSpark: () => void;
 }) {
   const layoutPresentation = getPoemLayoutPresentation(poem);
   const isVersionPost = Boolean(poem.versionLines?.length);
@@ -510,24 +500,11 @@ function PoemDetailContent({
           <CommunitySparkCards
             label="Community Spark"
             onApplied={onSparkApplied}
+            onUndone={onSparkUndone}
             onSourcePress={onSparkSourcePress}
             poem={poem}
             userId={currentUserId}
           />
-        ) : null}
-
-        {sparkChange ? (
-          <View style={styles.sparkChangeNotice}>
-            <View style={styles.sparkChangeHeader}>
-              <View>
-                <Text style={styles.sparkChangeEyebrow}>COMMUNITY SPARK APPLIED</Text>
-                <Text style={styles.sparkChangeTitle}>The warm highlight marks the lines changed with AI.</Text>
-              </View>
-              <Pressable accessibilityRole="button" disabled={undoingSpark} onPress={onUndoSpark} style={styles.sparkUndoButton}>
-                <Text style={styles.sparkUndoText}>{undoingSpark ? "Undoing…" : "Undo"}</Text>
-              </Pressable>
-            </View>
-          </View>
         ) : null}
 
         <View style={styles.commentSummary}>
@@ -1058,12 +1035,6 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: "#FFF7D9"
   },
-  sparkChangeNotice: { marginTop: 15, padding: 13, borderRadius: 14, borderWidth: 1, borderColor: "#E9D49A", backgroundColor: "#FFF9E8" },
-  sparkChangeHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
-  sparkChangeEyebrow: { color: "#8D6A1C", fontSize: 9, letterSpacing: 1.1, fontWeight: "700" },
-  sparkChangeTitle: { maxWidth: 220, marginTop: 3, color: colors.ink, fontSize: 12, lineHeight: 17 },
-  sparkUndoButton: { minWidth: 58, paddingHorizontal: 11, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.ink, alignItems: "center" },
-  sparkUndoText: { color: colors.white, fontSize: 11, fontWeight: "700" },
   tagRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 },
   divider: {
     height: StyleSheet.hairlineWidth,

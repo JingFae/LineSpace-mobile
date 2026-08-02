@@ -25,7 +25,7 @@
     "db:security-check": "pnpm --filter @linespace/api check:db:local",
     "db:push:dry-run": "supabase db push --linked --dry-run",
     "db:push": "supabase db push --linked",
-    "media:migrate-inline": "pnpm --filter @linespace/api exec node --env-file=../../.env scripts/migrate-inline-media.mjs"
+    "media:migrate-inline": "node --env-file=.env apps/api/scripts/migrate-inline-media.mjs"
   },
   "devDependencies": {
     "supabase": "^2.109.1",

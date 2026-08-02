@@ -13,6 +13,10 @@ import {
   latestSparkChange,
   removeLatestSparkChange
 } from "../../mobile/src/features/compose/spark-change-history.js";
+import {
+  getSparkPreviewLines,
+  removeSparkChangeFromLines
+} from "../../mobile/src/features/poem/spark-card-model.js";
 
 const originalFetch = globalThis.fetch;
 const originalEnvironment = {
@@ -218,6 +222,37 @@ try {
       latestSparkChange(history) === secondChange &&
       latestSparkChange(removeLatestSparkChange(history)) === firstChange,
     "Creative Spark change history did not preserve sequential undo behavior."
+  );
+  const completePreview = getSparkPreviewLines(
+    ["I left the window open."],
+    [
+      "I left the window open.",
+      "The wind carried one answer in,",
+      "then left another beside the moon."
+    ],
+    "The wind carried one answer in,"
+  );
+  assert(
+    completePreview.length === 2 &&
+      completePreview[0] === "The wind carried one answer in," &&
+      completePreview[1] === "then left another beside the moon.",
+    "Spark cards did not preserve every proposed continuation line in the preview."
+  );
+  const withoutFirstCard = removeSparkChangeFromLines(
+    ["The moon waited at the window.", "The river learned my name."],
+    ["The moon was at the window.", "The river forgot my name."],
+    ["The moon waited at the window.", "The river forgot my name."]
+  );
+  const withoutContinuationCard = removeSparkChangeFromLines(
+    ["The moon waited at the window.", "One bell crossed the river.", "No one answered."],
+    ["The moon waited at the window."],
+    ["The moon waited at the window.", "One bell crossed the river.", "No one answered."]
+  );
+  assert(
+    withoutFirstCard.join("|") ===
+      "The moon was at the window.|The river learned my name." &&
+      withoutContinuationCard.join("|") === "The moon waited at the window.",
+    "Card-scoped undo did not preserve later edits or remove a full continuation."
   );
 
   globalThis.fetch = async () =>

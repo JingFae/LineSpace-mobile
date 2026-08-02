@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,10 +17,15 @@ import type {
   CommunitySparkResponse,
   CommunitySparkSuggestion,
   CommunitySparkWorkingCopy,
-  PoemSummary
+  PoemSummary,
+  UndoCommunitySparkResult
 } from "@linespace/api-client";
 import { HttpLineSpaceApiError } from "@linespace/api-client";
 import { lineSpaceApi } from "@/services/lineSpaceApi";
+import {
+  getSparkPreviewLines,
+  removeSparkChangeFromLines
+} from "./spark-card-model";
 
 type CommunitySparkCardsProps = {
   autoLoad?: boolean;
@@ -30,7 +36,9 @@ type CommunitySparkCardsProps = {
   userId: string;
   workingCopy?: CommunitySparkWorkingCopy;
   onApplied?: (result: ApplyCommunitySparkResult, change: SparkApplyChange) => void;
+  onUndone?: (result: UndoCommunitySparkResult, change: SparkApplyChange) => void;
   onDraftApplied?: (change: SparkApplyChange) => void;
+  onDraftUndone?: (change: SparkApplyChange, restoredLines: string[]) => void;
   onSourcePress?: (commentId: string) => void;
 };
 
@@ -38,6 +46,21 @@ export type SparkApplyChange = {
   beforeLines: string[];
   afterLines: string[];
   suggestion: CommunitySparkSuggestion;
+};
+
+type StoredSparkBatch = {
+  response: CommunitySparkResponse;
+  copyKey: string;
+  beforeLines: string[];
+};
+
+type SparkCardEntry = {
+  batch: StoredSparkBatch;
+  suggestion: CommunitySparkSuggestion;
+};
+
+type AppliedSparkCard = {
+  change: SparkApplyChange;
 };
 
 export function CommunitySparkCards({
@@ -48,23 +71,28 @@ export function CommunitySparkCards({
   userId,
   workingCopy,
   onApplied,
+  onUndone,
   onDraftApplied,
+  onDraftUndone,
   onSourcePress
 }: CommunitySparkCardsProps) {
   const [expanded, setExpanded] = useState(autoLoad);
-  const [batch, setBatch] = useState<CommunitySparkResponse | null>(null);
+  const [batches, setBatches] = useState<StoredSparkBatch[]>([]);
   const [loading, setLoading] = useState(false);
   const [applyingId, setApplyingId] = useState<string | null>(null);
-  const [appliedId, setAppliedId] = useState<string | null>(null);
+  const [undoingId, setUndoingId] = useState<string | null>(null);
+  const [appliedCards, setAppliedCards] = useState<Record<string, AppliedSparkCard>>({});
+  const [justAppliedId, setJustAppliedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [viewportWidth, setViewportWidth] = useState(0);
-  const [generatedCopyKey, setGeneratedCopyKey] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView | null>(null);
   const loadingRef = useRef(false);
   const previousSuggestionsRef = useRef<string[]>([]);
   const autoLoadedPostRef = useRef<string | null>(null);
-  const refreshedAppliedCopyRef = useRef<string | null>(null);
+  const batchesRef = useRef<StoredSparkBatch[]>([]);
+  const viewportWidthRef = useRef(0);
+  const appliedPulse = useRef(new Animated.Value(0)).current;
 
   const resolvedWorkingCopy = useMemo(() => {
     const fallbackLines = poem?.lines ?? [];
@@ -81,9 +109,16 @@ export function CommunitySparkCards({
     () => JSON.stringify(resolvedWorkingCopy),
     [resolvedWorkingCopy]
   );
-  const suggestionsAreStale = Boolean(
-    batch && generatedCopyKey && generatedCopyKey !== currentCopyKey
+  const entries = useMemo<SparkCardEntry[]>(
+    () =>
+      batches.flatMap((batch) =>
+        batch.response.suggestions.map((suggestion) => ({ batch, suggestion }))
+      ),
+    [batches]
   );
+  useEffect(() => {
+    batchesRef.current = batches;
+  }, [batches]);
 
   const loadBatch = useCallback(async () => {
     if (loadingRef.current) return;
@@ -91,34 +126,56 @@ export function CommunitySparkCards({
     setExpanded(true);
     setLoading(true);
     setError(null);
-    setAppliedId(null);
     if (resolvedWorkingCopy.lines.length === 0) {
       setError("Write at least one line before asking Creative Spark.");
       setLoading(false);
       loadingRef.current = false;
       return;
     }
+    const requestedCopy = {
+      title: resolvedWorkingCopy.title,
+      lines: [...resolvedWorkingCopy.lines],
+      tags: [...resolvedWorkingCopy.tags]
+    };
+    const requestedCopyKey = currentCopyKey;
     try {
       const next = sparkMode === "draft"
         ? await lineSpaceApi.requestCreativeSpark({
             userId,
             previousSuggestions: previousSuggestionsRef.current.slice(-12),
-            workingCopy: resolvedWorkingCopy
+            workingCopy: requestedCopy
           })
         : await lineSpaceApi.requestCommunitySpark({
             poemId: poem!.id,
             userId,
             previousSuggestions: previousSuggestionsRef.current.slice(-12),
-            workingCopy: resolvedWorkingCopy
+            workingCopy: requestedCopy
           });
       previousSuggestionsRef.current = [
         ...previousSuggestionsRef.current,
         ...next.suggestions.map((suggestion) => suggestion.suggestion)
       ].slice(-12);
-      setBatch(next);
-      setGeneratedCopyKey(currentCopyKey);
-      setPage(0);
-      setTimeout(() => scrollRef.current?.scrollTo({ x: 0, animated: false }), 0);
+      const nextStartIndex = batchesRef.current.reduce(
+        (total, batch) => total + batch.response.suggestions.length,
+        0
+      );
+      const stored: StoredSparkBatch = {
+        response: next,
+        copyKey: requestedCopyKey,
+        beforeLines: [...requestedCopy.lines]
+      };
+      const nextBatches = [...batchesRef.current, stored];
+      batchesRef.current = nextBatches;
+      setBatches(nextBatches);
+      setPage(nextStartIndex);
+      setTimeout(
+        () =>
+          scrollRef.current?.scrollTo({
+            x: nextStartIndex * viewportWidthRef.current,
+            animated: true
+          }),
+        0
+      );
     } catch (loadError) {
       setError(communitySparkLoadError(loadError));
     } finally {
@@ -134,20 +191,39 @@ export function CommunitySparkCards({
     void loadBatch();
   }, [autoLoad, currentCopyKey, loadBatch, poem?.id]);
 
-  useEffect(() => {
-    if (!appliedId || !batch || !suggestionsAreStale) return;
-    const refreshKey = `${batch.id}:${currentCopyKey}`;
-    if (refreshedAppliedCopyRef.current === refreshKey) return;
-    refreshedAppliedCopyRef.current = refreshKey;
-    // Each suggestion contains a complete poem for the version it was made
-    // from. Generate a rebased batch after applying one so the next choice
-    // builds on the newly edited lines instead of overwriting them.
-    void loadBatch();
-  }, [appliedId, batch, currentCopyKey, loadBatch, suggestionsAreStale]);
+  const animateApplied = (suggestionId: string) => {
+    setJustAppliedId(suggestionId);
+    appliedPulse.stopAnimation();
+    appliedPulse.setValue(0);
+    Animated.sequence([
+      Animated.timing(appliedPulse, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: true
+      }),
+      Animated.delay(900),
+      Animated.timing(appliedPulse, {
+        toValue: 0,
+        duration: 260,
+        useNativeDriver: true
+      })
+    ]).start(() => setJustAppliedId(null));
+  };
 
-  const applySuggestion = async (suggestion: CommunitySparkSuggestion) => {
-    if (applyingId || !batch) return;
-    if (suggestionsAreStale) {
+  const rememberApplied = (change: SparkApplyChange) => {
+    setAppliedCards((current) => ({
+      ...current,
+      [change.suggestion.id]: {
+        change
+      }
+    }));
+    animateApplied(change.suggestion.id);
+  };
+
+  const applySuggestion = async (entry: SparkCardEntry) => {
+    if (applyingId || undoingId) return;
+    const { batch, suggestion } = entry;
+    if (batch.copyKey !== currentCopyKey) {
       setError("Your words changed. Refresh these ideas before applying one.");
       return;
     }
@@ -155,25 +231,29 @@ export function CommunitySparkCards({
     setError(null);
     try {
       const change: SparkApplyChange = {
-        beforeLines: [...resolvedWorkingCopy.lines],
+        beforeLines: [...batch.beforeLines],
         afterLines: [...suggestion.proposedLines],
         suggestion
       };
       if (sparkMode === "draft") {
         onDraftApplied?.(change);
-        setAppliedId(suggestion.id);
+        rememberApplied(change);
         return;
       }
       const result = await lineSpaceApi.applyCommunitySpark({
         poemId: poem!.id,
         userId,
         suggestionId: suggestion.id,
-        baseRevision: batch.baseRevision,
+        baseRevision: batch.response.baseRevision,
         proposedLines: suggestion.proposedLines,
         sourceCommentId: suggestion.source?.commentId
       });
-      setAppliedId(suggestion.id);
-      onApplied?.(result, change);
+      const appliedChange = {
+        ...change,
+        afterLines: [...result.poem.lines]
+      };
+      rememberApplied(appliedChange);
+      onApplied?.(result, appliedChange);
     } catch (applyError) {
       if (applyError instanceof HttpLineSpaceApiError) {
         if (
@@ -195,12 +275,52 @@ export function CommunitySparkCards({
     }
   };
 
+  const undoSuggestion = async (suggestionId: string) => {
+    const applied = appliedCards[suggestionId];
+    if (!applied || applyingId || undoingId) return;
+    const currentLines = [...resolvedWorkingCopy.lines];
+    const restoredLines = removeSparkChangeFromLines(
+      currentLines,
+      applied.change.beforeLines,
+      applied.change.afterLines
+    );
+    setUndoingId(suggestionId);
+    setError(null);
+    try {
+      if (sparkMode === "draft") {
+        onDraftUndone?.(applied.change, restoredLines);
+      } else {
+        const result = await lineSpaceApi.undoCommunitySpark({
+          poemId: poem!.id,
+          userId,
+          appliedLines: currentLines,
+          previousLines: restoredLines
+        });
+        onUndone?.(result, applied.change);
+      }
+      setAppliedCards((current) => {
+        const next = { ...current };
+        delete next[suggestionId];
+        return next;
+      });
+      setJustAppliedId(null);
+    } catch (undoError) {
+      setError(
+        undoError instanceof HttpLineSpaceApiError
+          ? undoError.message
+          : "This AI change can no longer be undone safely."
+      );
+    } finally {
+      setUndoingId(null);
+    }
+  };
+
   const handleMomentumEnd = (
     event: NativeSyntheticEvent<NativeScrollEvent>
   ) => {
-    if (!viewportWidth || !batch) return;
+    if (!viewportWidth || entries.length === 0) return;
     const nextPage = Math.round(event.nativeEvent.contentOffset.x / viewportWidth);
-    if (nextPage >= batch.suggestions.length) {
+    if (nextPage >= entries.length) {
       void loadBatch();
       return;
     }
@@ -233,7 +353,7 @@ export function CommunitySparkCards({
           </View>
         </View>
         <View style={styles.headerActions}>
-          {batch ? (
+          {batches.length > 0 ? (
             <Pressable
               accessibilityLabel="Refresh Creative Spark ideas"
               disabled={loading}
@@ -253,31 +373,29 @@ export function CommunitySparkCards({
         </View>
       </View>
 
-      {loading && !batch ? (
+      {loading && batches.length === 0 ? (
         <View style={styles.stateCard}>
           <ActivityIndicator color={colors.ink} />
           <Text style={styles.stateTitle}>Listening for a spark…</Text>
           <Text style={styles.stateBody}>Reading the poem alongside thoughtful feedback.</Text>
         </View>
-      ) : error && !batch ? (
+      ) : error && batches.length === 0 ? (
         <Pressable onPress={() => void loadBatch()} style={styles.stateCard}>
           <Text style={styles.stateTitle}>{error}</Text>
           <Text style={styles.retryText}>Tap to retry</Text>
         </Pressable>
-      ) : batch ? (
+      ) : batches.length > 0 ? (
         <>
-          <Text style={styles.summary}>{batch.summary}</Text>
-          {suggestionsAreStale ? (
-            <Pressable onPress={() => void loadBatch()} style={styles.staleBanner}>
-              <Text style={styles.staleText}>
-                {loading
-                  ? "Lines updated · finding ideas for this version…"
-                  : "Lines updated · refresh to keep building"}
-              </Text>
-            </Pressable>
-          ) : null}
+          <Text style={styles.summary}>
+            {entries[Math.min(page, entries.length - 1)]?.batch.response.summary ??
+              batches[batches.length - 1]?.response.summary}
+          </Text>
           <View
-            onLayout={(event) => setViewportWidth(event.nativeEvent.layout.width)}
+            onLayout={(event) => {
+              const width = event.nativeEvent.layout.width;
+              viewportWidthRef.current = width;
+              setViewportWidth(width);
+            }}
             style={styles.carouselViewport}
           >
             <ScrollView
@@ -288,22 +406,39 @@ export function CommunitySparkCards({
               ref={scrollRef}
               showsHorizontalScrollIndicator={false}
             >
-              {batch.suggestions.map((suggestion, index) => (
+              {entries.map((entry, index) => {
+                const applied = appliedCards[entry.suggestion.id];
+                const stale = entry.batch.copyKey !== currentCopyKey;
+                const busy = applyingId === entry.suggestion.id || undoingId === entry.suggestion.id;
+                return (
                 <View
-                  key={suggestion.id}
+                  key={entry.suggestion.id}
                   style={[styles.slide, { width: viewportWidth || 320 }]}
                 >
                   <SuggestionCard
-                    applied={appliedId === suggestion.id}
-                    applying={applyingId === suggestion.id}
-                    disabled={suggestionsAreStale || Boolean(applyingId)}
+                    applied={Boolean(applied)}
+                    busy={busy}
+                    disabled={Boolean(applyingId || undoingId) || (!applied && stale)}
                     index={index}
-                    onApply={() => void applySuggestion(suggestion)}
+                    justApplied={justAppliedId === entry.suggestion.id}
+                    onAction={() =>
+                      void (applied
+                        ? undoSuggestion(entry.suggestion.id)
+                        : applySuggestion(entry))
+                    }
                     onSourcePress={onSourcePress}
-                    suggestion={suggestion}
+                    previewLines={getSparkPreviewLines(
+                      entry.batch.beforeLines,
+                      entry.suggestion.proposedLines,
+                      entry.suggestion.preview
+                    )}
+                    pulse={appliedPulse}
+                    stale={stale}
+                    suggestion={entry.suggestion}
                   />
                 </View>
-              ))}
+                );
+              })}
               <View style={[styles.slide, { width: viewportWidth || 320 }]}>
                 <Pressable
                   accessibilityRole="button"
@@ -319,9 +454,9 @@ export function CommunitySparkCards({
             </ScrollView>
           </View>
           <View style={styles.pagination}>
-            {batch.suggestions.map((suggestion, index) => (
+            {entries.map((entry, index) => (
               <View
-                key={`${suggestion.id}-dot`}
+                key={`${entry.suggestion.id}-dot`}
                 style={[styles.dot, page === index && styles.dotActive]}
               />
             ))}
@@ -343,33 +478,66 @@ function communitySparkLoadError(error: unknown) {
 function SuggestionCard({
   suggestion,
   index,
-  applying,
+  previewLines,
+  busy,
   applied,
+  justApplied,
+  pulse,
+  stale,
   disabled,
-  onApply,
+  onAction,
   onSourcePress
 }: {
   suggestion: CommunitySparkSuggestion;
   index: number;
-  applying: boolean;
+  previewLines: string[];
+  busy: boolean;
   applied: boolean;
+  justApplied: boolean;
+  pulse: Animated.Value;
+  stale: boolean;
   disabled: boolean;
-  onApply: () => void;
+  onAction: () => void;
   onSourcePress?: (commentId: string) => void;
 }) {
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, applied && styles.cardApplied]}>
       <View style={styles.cardTopline}>
-        <Text style={styles.cardNumber}>0{index + 1}</Text>
+        <Text style={styles.cardNumber}>{String(index + 1).padStart(2, "0")}</Text>
         <Text style={styles.kindLabel}>
           {suggestion.kind === "revise" ? "REVISION IDEA" : "CONTINUATION IDEA"}
         </Text>
       </View>
       <Text style={styles.suggestion}>{suggestion.suggestion}</Text>
       <View style={styles.previewBox}>
-        <Text style={styles.previewLabel}>A possible line</Text>
-        <Text numberOfLines={3} style={styles.previewText}>{suggestion.preview}</Text>
+        <Text style={styles.previewLabel}>
+          {previewLines.length > 1 ? "THE CHANGED LINES" : "A POSSIBLE LINE"}
+        </Text>
+        <Text style={styles.previewText}>{previewLines.join("\n")}</Text>
       </View>
+      {stale && !applied ? (
+        <Text style={styles.cardStale}>Made for an earlier version · refresh to build on your latest lines</Text>
+      ) : null}
+      {justApplied ? (
+        <Animated.View
+          style={[
+            styles.appliedPulse,
+            {
+              opacity: pulse,
+              transform: [
+                {
+                  scale: pulse.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.96, 1]
+                  })
+                }
+              ]
+            }
+          ]}
+        >
+          <Text style={styles.appliedPulseText}>✓ Applied to your lines</Text>
+        </Animated.View>
+      ) : null}
       <View style={styles.cardFooter}>
         {suggestion.source ? (
           <Pressable
@@ -393,16 +561,26 @@ function SuggestionCard({
           <Text style={styles.poemSource}>Inspired by the poem’s own voice</Text>
         )}
         <Pressable
-          accessibilityLabel="Apply this suggestion to the poem lines"
+          accessibilityLabel={
+            applied
+              ? "Undo this suggestion's changes"
+              : "Apply this suggestion to the poem lines"
+          }
           accessibilityRole="button"
-          disabled={disabled || applied}
-          onPress={onApply}
-          style={[styles.applyButton, (disabled || applied) && styles.applyButtonDisabled]}
+          disabled={disabled}
+          onPress={onAction}
+          style={[
+            styles.applyButton,
+            applied && styles.undoButton,
+            disabled && styles.applyButtonDisabled
+          ]}
         >
-          {applying ? (
+          {busy ? (
             <ActivityIndicator color={colors.white} size="small" />
           ) : (
-            <Text style={styles.applyGlyph}>{applied ? "✓" : "✓"}</Text>
+            <Text style={applied ? styles.undoText : styles.applyGlyph}>
+              {applied ? "Undo" : "✓"}
+            </Text>
           )}
         </Pressable>
       </View>
@@ -480,6 +658,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 5 },
     elevation: 1
   },
+  cardApplied: { borderColor: "#D8B66A", shadowOpacity: 0.1 },
   cardTopline: { flexDirection: "row", alignItems: "center" },
   cardNumber: { color: colors.ink, fontSize: 12, fontWeight: "700", letterSpacing: 1 },
   kindLabel: { marginLeft: 9, color: colors.profileMuted, fontSize: 9, fontWeight: "700", letterSpacing: 1.1 },
@@ -487,6 +666,9 @@ const styles = StyleSheet.create({
   previewBox: { marginTop: 13, paddingLeft: 11, borderLeftWidth: 2, borderLeftColor: "#D8B66A" },
   previewLabel: { color: colors.profileMuted, fontSize: 9, letterSpacing: 0.7, textTransform: "uppercase" },
   previewText: { marginTop: 4, color: colors.inkSoft, fontFamily: "Georgia", fontSize: 14, lineHeight: 20 },
+  cardStale: { marginTop: 10, color: colors.profileMuted, fontSize: 10, lineHeight: 14 },
+  appliedPulse: { alignSelf: "flex-start", marginTop: 11, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: "#FFF2CB" },
+  appliedPulseText: { color: "#8D6A1C", fontSize: 10, fontWeight: "700" },
   cardFooter: { flex: 1, minHeight: 54, marginTop: 15, flexDirection: "row", alignItems: "flex-end" },
   source: { flex: 1, minWidth: 0, paddingRight: 10, flexDirection: "row", alignItems: "center" },
   sourceCopy: { flex: 1, minWidth: 0, marginLeft: 7 },
@@ -494,8 +676,10 @@ const styles = StyleSheet.create({
   sourceExcerpt: { marginTop: 2, color: colors.tabMuted, fontSize: 10, lineHeight: 14 },
   poemSource: { flex: 1, paddingRight: 10, color: colors.tabMuted, fontSize: 10, fontStyle: "italic" },
   applyButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.ink, alignItems: "center", justifyContent: "center" },
+  undoButton: { width: 58, paddingHorizontal: 8 },
   applyButtonDisabled: { opacity: 0.42 },
   applyGlyph: { color: colors.white, fontSize: 18, fontWeight: "700" },
+  undoText: { color: colors.white, fontSize: 10, fontWeight: "700" },
   moreCard: { minHeight: 248, borderRadius: 17, borderWidth: 1, borderStyle: "dashed", borderColor: colors.faint, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", paddingHorizontal: spacing.xl },
   moreGlyph: { color: colors.ink, fontSize: 25, fontWeight: "300" },
   moreTitle: { marginTop: 9, color: colors.ink, fontSize: 15, fontWeight: "600" },
