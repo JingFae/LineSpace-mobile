@@ -370,7 +370,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
     const poem: PoemSummary = {
       id: replaced?.id ?? `poem-${draft.id}`,
       title: draft.title.trim() || "untitled line",
-      lines: draft.body.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
+      lines: splitPoemBodyPreservingStanzas(draft.body),
       author: profileToUser(owner),
       contributorsCount: draft.collaborators.length,
       tags: [...draft.tags],
@@ -2957,6 +2957,12 @@ function canViewContent(visibility: PoemSummary["visibility"], audienceUserIds: 
 
 function mockLinesRevision(lines: readonly string[]) {
   return `mock-lines:${lines.join("\n")}`;
+}
+
+function splitPoemBodyPreservingStanzas(value: string) {
+  const normalized = value.replace(/\r\n?/g, "\n").trim();
+  if (!normalized) return [];
+  return normalized.split("\n").map((line) => line.trim());
 }
 
 function normalizeDiscoveryText(value: string) {

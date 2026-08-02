@@ -765,6 +765,12 @@ function normalizePoemBody(value: string) {
     .join("\n");
 }
 
+function splitPoemBodyPreservingStanzas(value: string) {
+  const normalized = value.replace(/\r\n?/g, "\n").trim();
+  if (!normalized) return [];
+  return normalized.split("\n").map((line) => line.trim());
+}
+
 type InboxRow = {
   id: string;
   sender_user_id: string;
@@ -794,7 +800,7 @@ function toPoemSummary(
   return {
     id: row.id,
     title: row.title,
-    lines: row.body.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
+    lines: splitPoemBodyPreservingStanzas(row.body),
     author,
     contributorsCount: new Set([
       author.handle,

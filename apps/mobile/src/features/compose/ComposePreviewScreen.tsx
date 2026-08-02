@@ -278,7 +278,7 @@ function ComposeExportCanvas({
   const stickerSymbols = layout.stickerIds
     .map((id) => catalog.stickers.find((item) => item.id === id)?.symbol)
     .filter((symbol): symbol is string => Boolean(symbol));
-  const lines = draft.body.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const lines = splitPoemBodyPreservingStanzas(draft.body);
   const displayLines = draft.versionLines?.length
     ? draft.versionLines.map((line) => line.text)
     : lines;
@@ -337,7 +337,7 @@ function LayoutWorkspace({
   const stickerSymbols = layout.stickerIds
     .map((id) => catalog.stickers.find((item) => item.id === id)?.symbol)
     .filter((symbol): symbol is string => Boolean(symbol));
-  const lines = draft.body.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const lines = splitPoemBodyPreservingStanzas(draft.body);
   const displayLines = draft.versionLines?.length
     ? draft.versionLines.map((line) => line.text)
     : lines;
@@ -580,6 +580,12 @@ function ToolButton({ children, label, active, onPress }: { children: ReactNode;
 
 function getParam(value: SearchParamValue) {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
+function splitPoemBodyPreservingStanzas(value: string) {
+  const normalized = value.replace(/\r\n?/g, "\n").trim();
+  if (!normalized) return [];
+  return normalized.split("\n").map((line) => line.trim());
 }
 
 function formatPoemDate(value: string) {

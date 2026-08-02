@@ -195,7 +195,7 @@ export function PoemCard({
               <View style={styles.lines}>
                 {poem.lines.map((line, index) => (
                   <Text key={`${line}-${index}`} style={styles.poemLine}>
-                    {line}
+                    {line.length > 0 ? line : "\u00A0"}
                   </Text>
                 ))}
               </View>

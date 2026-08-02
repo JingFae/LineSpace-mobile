@@ -476,7 +476,7 @@ function PoemDetailContent({
             <View style={styles.lineStack}>
               {poem.lines.map((line, index) => (
                 <Text key={`${line}-${index}`} style={[styles.poemLine, sparkChange?.afterLines[index] === line && sparkChange.beforeLines[index] !== line && styles.aiChangedLine]}>
-                  {line}
+                  {line.length > 0 ? line : "\u00A0"}
                 </Text>
               ))}
             </View>

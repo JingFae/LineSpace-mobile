@@ -92,7 +92,9 @@ export function PoemLayoutCard({
         <Text style={[styles.title, typeStyle, { color: textColor }]}>{poem.title}</Text>
         <View style={styles.lines}>
           {poem.lines.map((line, index) => (
-            <Text key={`${line}-${index}`} style={[styles.line, typeStyle, { color: textColor }]}>{line}</Text>
+            <Text key={`${line}-${index}`} style={[styles.line, typeStyle, { color: textColor }]}>
+              {line.length > 0 ? line : "\u00A0"}
+            </Text>
           ))}
         </View>
         <View style={styles.tagRow}>
