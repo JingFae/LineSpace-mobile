@@ -198,7 +198,10 @@ export class MockLineSpaceApi implements LineSpaceApi {
   private readonly experienceEvents = new Set<string>();
   private readonly followingByUser = new Map<string, Set<string>>();
   private readonly inboxActivitySummaries = new Map<string, InboxActivitySummary>();
-  private readonly communitySparkApplications = new Map<string, string | null>();
+  private readonly communitySparkApplications = new Map<
+    string,
+    { replyId: string | null; undone: boolean }
+  >();
   private draftSequence = 0;
   private continuationSequence = 0;
   private shareSequence = 0;
@@ -2043,11 +2046,16 @@ export class MockLineSpaceApi implements LineSpaceApi {
     if (!poem || poem.author.id !== input.userId) {
       throw new Error("Only the author can undo Community Spark");
     }
+    const application = this.communitySparkApplications.get(input.suggestionId);
+    if (!application || application.undone) {
+      throw new Error("This Community Spark suggestion is not currently applied");
+    }
     if (mockLinesRevision(poem.lines) !== mockLinesRevision(input.appliedLines)) {
       throw new Error("The poem changed after this AI suggestion was applied");
     }
     poem.lines = input.previousLines.map((line) => line.trim()).filter(Boolean);
     poem.editedAt = new Date().toISOString();
+    application.undone = true;
     return { poem: this.withViewer(poem, input.userId) };
   }
 
@@ -2058,10 +2066,10 @@ export class MockLineSpaceApi implements LineSpaceApi {
     if (!poem || poem.author.id !== input.userId) {
       throw new Error("Only the author can apply Community Spark");
     }
-    const existingReplyId = this.communitySparkApplications.get(input.suggestionId);
-    if (this.communitySparkApplications.has(input.suggestionId)) {
-      const reply = existingReplyId
-        ? poem.comments?.find((comment) => comment.id === existingReplyId) ?? null
+    const existingApplication = this.communitySparkApplications.get(input.suggestionId);
+    if (existingApplication && !existingApplication.undone) {
+      const reply = existingApplication.replyId
+        ? poem.comments?.find((comment) => comment.id === existingApplication.replyId) ?? null
         : null;
       return { poem: this.withViewer(poem, input.userId), reply: reply ? cloneComment(reply) : null };
     }
@@ -2074,6 +2082,18 @@ export class MockLineSpaceApi implements LineSpaceApi {
     poem.lines = lines;
     poem.versionLines = undefined;
     poem.editedAt = new Date().toISOString();
+    if (existingApplication) {
+      existingApplication.undone = false;
+      const reply = existingApplication.replyId
+        ? poem.comments?.find(
+            (comment) => comment.id === existingApplication.replyId
+          ) ?? null
+        : null;
+      return {
+        poem: this.withViewer(poem, input.userId),
+        reply: reply ? cloneComment(reply) : null
+      };
+    }
     let reply: PoemComment | null = null;
     const source = input.sourceCommentId
       ? poem.comments?.find(
@@ -2105,7 +2125,10 @@ export class MockLineSpaceApi implements LineSpaceApi {
         ...credits.commentContributors.map((person) => person.handle)
       ]).size;
     }
-    this.communitySparkApplications.set(input.suggestionId, reply?.id ?? null);
+    this.communitySparkApplications.set(input.suggestionId, {
+      replyId: reply?.id ?? null,
+      undone: false
+    });
     return { poem: this.withViewer(poem, input.userId), reply };
   }
 

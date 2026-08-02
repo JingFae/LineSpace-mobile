@@ -652,6 +652,8 @@ export type ApplyCommunitySparkResult = {
 export type UndoCommunitySparkInput = {
   poemId: string;
   userId: string;
+  /** Identifies the application record that becomes eligible for reapply. */
+  suggestionId: string;
   /** The lines that must still be on the post before an undo can safely run. */
   appliedLines: string[];
   previousLines: string[];

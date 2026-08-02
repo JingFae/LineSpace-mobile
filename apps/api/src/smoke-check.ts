@@ -223,6 +223,7 @@ async function main() {
   const undoneSpark = await mockApi.undoCommunitySpark({
     poemId: spark.poemId,
     userId: "user-lili",
+    suggestionId: sparkSuggestion.id,
     appliedLines: appliedSpark.poem.lines,
     previousLines: originalSparkPoem.lines
   });
@@ -230,8 +231,25 @@ async function main() {
     undoneSpark.poem.lines.join("\n") === originalSparkPoem.lines.join("\n") &&
       undoneSpark.poem.credits?.commentContributors.some(
         (person) => person.handle === sparkSuggestion.source?.author.handle
-      ),
+    ),
     "Undoing Community Spark did not restore the poem while preserving reader credit."
+  );
+  const commentsAfterFirstApplication = undoneSpark.poem.comments?.length ?? 0;
+  const reappliedSpark = await mockApi.applyCommunitySpark({
+    poemId: spark.poemId,
+    userId: "user-lili",
+    suggestionId: sparkSuggestion.id,
+    baseRevision: spark.baseRevision,
+    proposedLines: sparkSuggestion.proposedLines,
+    sourceCommentId: sparkSuggestion.source?.commentId
+  });
+  assert(
+    reappliedSpark.poem.lines.join("\n") ===
+      sparkSuggestion.proposedLines.join("\n") &&
+      reappliedSpark.reply?.id === appliedSpark.reply?.id &&
+      (reappliedSpark.poem.comments?.length ?? 0) ===
+        commentsAfterFirstApplication,
+    "Reapplying an undone Community Spark suggestion did not update the poem idempotently."
   );
 
   const health = await handleApiRequest("GET", "/health", new URLSearchParams());

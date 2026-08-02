@@ -91,6 +91,20 @@ const communitySparkAtomicUndoMigration = await readFile(
   ),
   "utf8"
 );
+const communitySparkReapplyMigration = await readFile(
+  new URL(
+    "20260802000300_community_spark_reapply.sql",
+    canonicalMigrationsUrl
+  ),
+  "utf8"
+);
+const communitySparkLegacyUndoBackfillMigration = await readFile(
+  new URL(
+    "20260802000400_community_spark_legacy_undo_backfill.sql",
+    canonicalMigrationsUrl
+  ),
+  "utf8"
+);
 const guestPublicContentMigration = await readFile(
   new URL("20260723000200_guest_public_content_access.sql", canonicalMigrationsUrl),
   "utf8"
@@ -137,6 +151,32 @@ for (const required of [
   assert(
     required.test(stableThreadLinesMigration),
     `Stable thread line migration is missing ${required}.`
+  );
+}
+for (const required of [
+  /distinct\s+on\s*\(application\.post_id\)/i,
+  /application\.undone_at\s+is\s+null/i,
+  /application\.created_at\s+desc/i,
+  /set\s+undone_at\s*=\s*now\(\)/i,
+  /regexp_split_to_table\(post\.body/i,
+  /unnest\(latest\.applied_lines\)/i
+] as const) {
+  assert(
+    required.test(communitySparkLegacyUndoBackfillMigration),
+    `Community Spark legacy undo backfill is missing ${required}.`
+  );
+}
+for (const required of [
+  /add\s+column\s+if\s+not\s+exists\s+undone_at/i,
+  /existing_application\.undone_at\s+is\s+null/i,
+  /set[\s\S]*applied_lines\s*=\s*p_proposed_lines,[\s\S]*undone_at\s*=\s*null/i,
+  /set\s+undone_at\s*=\s*now\(\)/i,
+  /p_suggestion_id\s+text,[\s\S]*p_applied_lines\s+text\[\]/i,
+  /reply_id\s*:=\s*existing_application\.reply_comment_id/i
+] as const) {
+  assert(
+    required.test(communitySparkReapplyMigration),
+    `Community Spark reapply migration is missing ${required}.`
   );
 }
 for (const required of [

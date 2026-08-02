@@ -896,6 +896,7 @@ export async function handleApiRequest(
           return json(200, await api.undoCommunitySpark({
             poemId: poemRoute.poemId,
             userId: actor.user.id,
+            suggestionId: request.suggestionId,
             appliedLines: request.appliedLines,
             previousLines: request.previousLines
           }));
@@ -1848,7 +1849,13 @@ function isUndoCommunitySparkRequest(
     lines.every(
       (line) => typeof line === "string" && line.trim().length > 0 && line.length <= 2_000
     );
-  return validLines(value.appliedLines) && validLines(value.previousLines);
+  return (
+    typeof value.suggestionId === "string" &&
+    value.suggestionId.length > 0 &&
+    value.suggestionId.length <= 200 &&
+    validLines(value.appliedLines) &&
+    validLines(value.previousLines)
+  );
 }
 
 function parseInboxMessagesRoute(pathname: string): string | null {

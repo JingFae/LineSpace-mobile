@@ -293,6 +293,7 @@ export function CommunitySparkCards({
         const result = await lineSpaceApi.undoCommunitySpark({
           poemId: poem!.id,
           userId,
+          suggestionId,
           appliedLines: currentLines,
           previousLines: restoredLines
         });

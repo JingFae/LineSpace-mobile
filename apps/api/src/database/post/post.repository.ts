@@ -299,6 +299,7 @@ export class PostRepository {
     }
     const result = await this.client.rpc("undo_community_spark", {
       p_post_id: input.poemId,
+      p_suggestion_id: input.suggestionId,
       p_applied_lines: input.appliedLines,
       p_previous_lines: input.previousLines
     });
