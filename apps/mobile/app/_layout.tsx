@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Platform, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { AuthLoadingScreen, AuthSessionProvider, useAuth } from "@/auth/AuthSessionProvider";
 import { GuestAccessProvider, useGuestAccess } from "@/auth/GuestAccessProvider";
+import { VercelSpeedInsights } from "@/components/VercelSpeedInsights";
 
 const screenInset = 12;
 const previewVerticalMargin = 44;
@@ -42,6 +43,7 @@ export default function RootLayout() {
               }}
             />
           </RouteGuard>
+          <VercelSpeedInsights />
         </GuestAccessProvider>
       </AuthSessionProvider>
     </QueryClientProvider>
