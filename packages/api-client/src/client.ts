@@ -1520,7 +1520,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
       snapshotRevision: continuations.length + 1,
       status: "ready",
       isStale: false,
-      promptVersion: "thread-version-ai-v2",
+      promptVersion: "thread-version-ai-v3",
       model: "mock",
       recommended: {
         selectedVersionId: selected.id,

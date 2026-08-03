@@ -43,7 +43,8 @@ try {
                 {
                   lineId: "b-2",
                   text: "It waits there until morning.",
-                  changeNote: "Adjusted the opening pronoun to clarify its reference."
+                  changeNote:
+                    "Reference: Clarified the opening pronoun without changing the image."
                 },
                 {
                   lineId: "b-3",
@@ -149,13 +150,20 @@ try {
     capturedUrl === "https://api.deepseek.example/chat/completions" &&
       new Headers(capturedRequest?.headers).get("authorization") ===
         "Bearer test-thread-version-key" &&
-      THREAD_VERSION_AI_PROMPT_VERSION === "thread-version-ai-v2" &&
+      THREAD_VERSION_AI_PROMPT_VERSION === "thread-version-ai-v3" &&
       providerBody.model === "deepseek-v4-flash" &&
       providerBody.thinking?.type === "disabled" &&
       providerBody.max_tokens === 1_600 &&
       providerBody.messages?.[0]?.role === "system" &&
-      providerBody.messages[0].content?.includes("concise English") &&
-      !providerBody.messages[0].content.includes("OUTPUT LANGUAGE (MANDATORY)") &&
+      providerBody.messages?.[0]?.content?.includes(
+        "OUTPUT LANGUAGE (MANDATORY)"
+      ) &&
+      providerBody.messages[0].content.includes(
+        "same language as its edited line"
+      ) &&
+      providerBody.messages[0].content.includes(
+        "punctuation-only changes do not count"
+      ) &&
       providerInput.branchNodes?.length === 5 &&
       providerInput.candidateVersions?.every(
         (candidate) =>
