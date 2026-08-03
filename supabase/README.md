@@ -34,6 +34,8 @@ Current migration order:
 ...
 20260723000100_community_spark.sql
 20260723000200_guest_public_content_access.sql
+...
+20260803000100_ai_spark_request_analytics.sql
 ```
 
 ## Current cloud scope
@@ -53,6 +55,8 @@ The canonical chain contains:
 - author-only, idempotent Thread Version publication into a durable Post
 - author-only Community Spark application with revision checks, source-comment
   replies, and durable comment-contributor credits
+- private per-user Creative Spark and Community Spark request analytics,
+  including source surface, outcome, latency, and provider token usage
 - RLS, grants, triggers, and JWT-scoped RPC functions for these domains
 
 The files under `docs/archive/database/deferred-migrations/` remain historical

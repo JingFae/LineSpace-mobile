@@ -499,6 +499,7 @@ function PoemDetailContent({
         {poem.author.id === currentUserId ? (
           <CommunitySparkCards
             label="Community Spark"
+            sourceSurface="post_detail"
             onApplied={onSparkApplied}
             onUndone={onSparkUndone}
             onSourcePress={onSparkSourcePress}

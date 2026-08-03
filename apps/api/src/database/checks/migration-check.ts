@@ -105,6 +105,13 @@ const communitySparkLegacyUndoBackfillMigration = await readFile(
   ),
   "utf8"
 );
+const aiSparkAnalyticsMigration = await readFile(
+  new URL(
+    "20260803000100_ai_spark_request_analytics.sql",
+    canonicalMigrationsUrl
+  ),
+  "utf8"
+);
 const guestPublicContentMigration = await readFile(
   new URL("20260723000200_guest_public_content_access.sql", canonicalMigrationsUrl),
   "utf8"
@@ -151,6 +158,22 @@ for (const required of [
   assert(
     required.test(stableThreadLinesMigration),
     `Stable thread line migration is missing ${required}.`
+  );
+}
+for (const required of [
+  /create\s+table\s+if\s+not\s+exists\s+public\.ai_spark_requests/i,
+  /feature\s+in\s*\('creative_spark',\s*'community_spark'\)/i,
+  /source_surface\s+in\s*\('compose_new',\s*'compose_edit',\s*'post_detail'\)/i,
+  /status\s+in\s*\('pending',\s*'succeeded',\s*'failed'\)/i,
+  /alter\s+table\s+public\.ai_spark_requests\s+enable\s+row\s+level\s+security/i,
+  /grant\s+all\s+on\s+table\s+public\.ai_spark_requests\s+to\s+service_role/i,
+  /create\s+or\s+replace\s+view\s+public\.ai_spark_usage_by_user/i,
+  /creative_spark_requests/i,
+  /community_spark_requests/i
+] as const) {
+  assert(
+    required.test(aiSparkAnalyticsMigration),
+    `AI Spark analytics migration is missing ${required}.`
   );
 }
 for (const required of [

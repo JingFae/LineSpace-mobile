@@ -585,6 +585,7 @@ export type PoemSummary = {
 };
 
 export type CommunitySparkKind = "revise" | "continue";
+export type SparkGenerationSurface = "compose_new" | "compose_edit" | "post_detail";
 
 export type CommunitySparkWorkingCopy = {
   title: string;
@@ -610,6 +611,8 @@ export type CommunitySparkSuggestion = {
 export type CommunitySparkRequest = {
   poemId: string;
   userId: string;
+  /** Identifies the product surface for server-side usage analytics. */
+  sourceSurface?: Extract<SparkGenerationSurface, "compose_edit" | "post_detail">;
   previousSuggestions?: string[];
   /** The unsaved editor state. Comments and ownership are always loaded server-side. */
   workingCopy?: CommunitySparkWorkingCopy;

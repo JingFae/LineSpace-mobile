@@ -18,6 +18,7 @@ import type {
   CommunitySparkSuggestion,
   CommunitySparkWorkingCopy,
   PoemSummary,
+  SparkGenerationSurface,
   UndoCommunitySparkResult
 } from "@linespace/api-client";
 import { HttpLineSpaceApiError } from "@linespace/api-client";
@@ -30,6 +31,7 @@ import {
 type CommunitySparkCardsProps = {
   autoLoad?: boolean;
   label: "Community Spark" | "Creative Spark";
+  sourceSurface: SparkGenerationSurface;
   /** Draft mode generates against the supplied working copy without persisting a post. */
   sparkMode?: "post" | "draft";
   poem?: PoemSummary;
@@ -66,6 +68,7 @@ type AppliedSparkCard = {
 export function CommunitySparkCards({
   autoLoad = false,
   label,
+  sourceSurface,
   sparkMode = "post",
   poem,
   userId,
@@ -148,6 +151,7 @@ export function CommunitySparkCards({
         : await lineSpaceApi.requestCommunitySpark({
             poemId: poem!.id,
             userId,
+            sourceSurface: sourceSurface === "compose_edit" ? "compose_edit" : "post_detail",
             previousSuggestions: previousSuggestionsRef.current.slice(-12),
             workingCopy: requestedCopy
           });
@@ -182,7 +186,7 @@ export function CommunitySparkCards({
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [currentCopyKey, poem?.id, resolvedWorkingCopy, sparkMode, userId]);
+  }, [currentCopyKey, poem?.id, resolvedWorkingCopy, sourceSurface, sparkMode, userId]);
 
   useEffect(() => {
     const sparkKey = poem?.id ?? `draft-${currentCopyKey}`;

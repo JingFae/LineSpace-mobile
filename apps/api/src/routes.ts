@@ -45,6 +45,7 @@ import {
   requestCreativeSpark,
   requestCommunitySpark
 } from "./ai/community-spark.js";
+import { beginSparkRequest } from "./ai/spark-request-analytics.js";
 import {
   drainThreadAiVersionJobs,
   enqueueThreadAiVersionRefresh,
@@ -144,14 +145,30 @@ export async function handleApiRequest(
         message: "Write at least one line before asking Creative Spark."
       });
     }
+    const sparkTracking = beginSparkRequest({
+      userId: actor.user.id,
+      feature: "creative_spark",
+      sourceSurface: "compose_new",
+      provider: communitySparkProvider(),
+      model: communitySparkModel()
+    });
     try {
-      return json(200, await requestCreativeSpark({
+      const result = await requestCreativeSpark({
         userId: actor.user.id,
         workingCopy: request.workingCopy,
         previousSuggestions: request.previousSuggestions
-      }));
+      });
+      scheduleBackgroundTask(
+        context,
+        sparkTracking.then((tracker) => tracker.succeeded(result))
+      );
+      return json(200, result);
     } catch (error) {
       const code = error instanceof Error ? error.message : "LLM_REQUEST_FAILED";
+      scheduleBackgroundTask(
+        context,
+        sparkTracking.then((tracker) => tracker.failed(code))
+      );
       return json(503, {
         code: code.startsWith("LLM_") ? code : "LLM_REQUEST_FAILED",
         message: communitySparkFailureMessage(code)
@@ -793,17 +810,36 @@ export async function handleApiRequest(
             message: "Only the post author can open Community Spark."
           });
         }
+        const sourceSurface = request.sourceSurface === "compose_edit"
+          ? "compose_edit"
+          : "post_detail";
+        const sparkTracking = beginSparkRequest({
+          userId: actor.user.id,
+          feature: sourceSurface === "compose_edit"
+            ? "creative_spark"
+            : "community_spark",
+          sourceSurface,
+          postId: poem.id,
+          provider: communitySparkProvider(),
+          model: communitySparkModel()
+        });
         try {
-          return json(
-            200,
-            await requestCommunitySpark({
-              poem,
-              workingCopy: request.workingCopy,
-              previousSuggestions: request.previousSuggestions
-            })
+          const result = await requestCommunitySpark({
+            poem,
+            workingCopy: request.workingCopy,
+            previousSuggestions: request.previousSuggestions
+          });
+          scheduleBackgroundTask(
+            context,
+            sparkTracking.then((tracker) => tracker.succeeded(result))
           );
+          return json(200, result);
         } catch (error) {
           const code = error instanceof Error ? error.message : "LLM_REQUEST_FAILED";
+          scheduleBackgroundTask(
+            context,
+            sparkTracking.then((tracker) => tracker.failed(code))
+          );
           console.error("Community Spark generation failed", {
             poemId: poemRoute.poemId,
             code: code.startsWith("LLM_") ? code : "LLM_REQUEST_FAILED",
@@ -1764,6 +1800,13 @@ function isCommunitySparkRequest(
     (!Array.isArray(previous) ||
       previous.length > 12 ||
       previous.some((item) => typeof item !== "string" || item.length > 300))
+  ) {
+    return false;
+  }
+  if (
+    value.sourceSurface !== undefined &&
+    value.sourceSurface !== "compose_edit" &&
+    value.sourceSurface !== "post_detail"
   ) {
     return false;
   }

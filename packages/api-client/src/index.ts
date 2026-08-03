@@ -41,6 +41,7 @@ export type {
   CommunitySparkSource,
   CommunitySparkSuggestion,
   CommunitySparkWorkingCopy,
+  SparkGenerationSurface,
   ComposeMode,
   ContentSearchResult,
   DraftVisibility,

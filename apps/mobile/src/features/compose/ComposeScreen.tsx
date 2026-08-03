@@ -367,6 +367,7 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
           <CommunitySparkCards
             autoLoad
             label="Creative Spark"
+            sourceSurface="compose_edit"
             onApplied={(result, change) => {
               const appliedChange = {
                 ...change,
@@ -421,6 +422,7 @@ export function ComposeScreen({ sessionKey, params = {} }: ComposeScreenProps) {
         <View style={styles.creativeSparkWrap}>
           <CommunitySparkCards
             label="Creative Spark"
+            sourceSurface="compose_new"
             onDraftApplied={(change) => {
               setBody(change.afterLines.join("\n"));
             }}
