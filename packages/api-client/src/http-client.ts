@@ -414,7 +414,10 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     );
   }
 
-  async getUserProfile(userId: string): Promise<UserProfileDetails | null> {
+  async getUserProfile(
+    userId: string,
+    _viewerId?: string
+  ): Promise<UserProfileDetails | null> {
     return this.getJson<UserProfileDetails | null>(
       `/v1/users/${encodeURIComponent(userId)}/profile`
     );

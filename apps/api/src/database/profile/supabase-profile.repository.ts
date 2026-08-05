@@ -11,6 +11,7 @@ import type {
   UpdateUserFollowInput
 } from "@linespace/api-client";
 import type { DatabaseClient } from "../core/client.js";
+import { getCurrentLinespaceUserId } from "../core/auth-context.js";
 import {
   ensureProfileDatabaseResult as ensureDatabaseResult,
   ProfileRepositoryError
@@ -189,13 +190,42 @@ class SupabaseProfileRepository implements ProfileRepository {
         tone: badge.tone
       }));
 
-    return toProfileDetails(
+    const profile = toProfileDetails(
       user,
       (statsResult.data as StatsRow | null) ?? emptyStats(userId),
       (visibilityResult.data as VisibilityRow | null) ?? emptyVisibility(userId),
       badges,
       (experienceResult.data as ExperienceRow | null) ?? emptyExperienceRow(userId)
     );
+    const actorUserId = await getCurrentLinespaceUserId(this.client);
+    if (!actorUserId || actorUserId === userId) return profile;
+
+    const [outgoingResult, incomingResult] = await Promise.all([
+      this.client
+        .from("user_follows")
+        .select("following_user_id")
+        .eq("follower_user_id", actorUserId)
+        .eq("following_user_id", userId)
+        .maybeSingle(),
+      this.client
+        .from("user_follows")
+        .select("follower_user_id")
+        .eq("follower_user_id", userId)
+        .eq("following_user_id", actorUserId)
+        .maybeSingle()
+    ]);
+    ensureDatabaseResult(outgoingResult.error);
+    ensureDatabaseResult(incomingResult.error);
+    const isFollowing = Boolean(outgoingResult.data);
+    const followsYou = Boolean(incomingResult.data);
+    return {
+      ...profile,
+      viewer: {
+        isFollowing,
+        followsYou,
+        isFriend: isFollowing && followsYou
+      }
+    };
   }
 
   async updateProfile(

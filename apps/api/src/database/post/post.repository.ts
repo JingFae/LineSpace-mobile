@@ -565,7 +565,7 @@ export class PostRepository {
           .map((contribution) => contribution.contributor_user_id)
       ])
     );
-    const viewer = await this.loadPostViewer(rows.map((row) => row.id), actorId);
+    const viewer = await this.loadPostViewer(rows, actorId);
     return rows
       .map((row) => {
         const author = profiles.get(row.author_user_id);
@@ -595,6 +595,7 @@ export class PostRepository {
           author,
           viewer.liked.has(row.id),
           viewer.saved.has(row.id),
+          viewer.followingAuthors.has(row.author_user_id),
           toVersionLines(row.version_lines, profiles),
           commentContributors,
           quoteContributors,
@@ -690,18 +691,34 @@ export class PostRepository {
   }
 
   private async loadPostViewer(
-    postIds: string[],
+    rows: PostRow[],
     actorId: string | null
-  ): Promise<{ liked: Set<string>; saved: Set<string> }> {
-    if (!actorId || postIds.length === 0) {
-      return { liked: new Set(), saved: new Set() };
+  ): Promise<{
+    liked: Set<string>;
+    saved: Set<string>;
+    followingAuthors: Set<string>;
+  }> {
+    if (!actorId || rows.length === 0) {
+      return {
+        liked: new Set(),
+        saved: new Set(),
+        followingAuthors: new Set()
+      };
     }
-    const [likedResult, savedResult] = await Promise.all([
+    const postIds = rows.map((row) => row.id);
+    const authorIds = [...new Set(rows.map((row) => row.author_user_id))];
+    const [likedResult, savedResult, followingResult] = await Promise.all([
       this.client.from("post_likes").select("post_id").eq("user_id", actorId).in("post_id", postIds),
-      this.client.from("post_saves").select("post_id").eq("user_id", actorId).in("post_id", postIds)
+      this.client.from("post_saves").select("post_id").eq("user_id", actorId).in("post_id", postIds),
+      this.client
+        .from("user_follows")
+        .select("following_user_id")
+        .eq("follower_user_id", actorId)
+        .in("following_user_id", authorIds)
     ]);
     ensureDatabaseResult(likedResult.error);
     ensureDatabaseResult(savedResult.error);
+    ensureDatabaseResult(followingResult.error);
     return {
       liked: new Set(
         ((likedResult.data as Array<{ post_id: string }> | null) ?? []).map(
@@ -711,6 +728,11 @@ export class PostRepository {
       saved: new Set(
         ((savedResult.data as Array<{ post_id: string }> | null) ?? []).map(
           (row) => row.post_id
+        )
+      ),
+      followingAuthors: new Set(
+        ((followingResult.data as Array<{ following_user_id: string }> | null) ?? []).map(
+          (row) => row.following_user_id
         )
       )
     };
@@ -825,6 +847,7 @@ function toPoemSummary(
   author: ReturnType<typeof toUserProfile>,
   liked: boolean,
   saved: boolean,
+  followingAuthor: boolean,
   versionLines?: PoemSummary["versionLines"],
   commentContributors: PoemCreditPerson[] = [],
   quoteContributors: PoemCreditPerson[] = [],
@@ -864,7 +887,7 @@ function toPoemSummary(
       contributions: 1,
       saves: countValue(row.saves_count)
     },
-    viewer: { liked, saved },
+    viewer: { liked, saved, followingAuthor },
     credits: {
       // The full author (including avatar) already appears above. Omitting the
       // duplicate avatar here prevents the same image URL/data being serialized

@@ -348,6 +348,11 @@ export type UserProfileDetails = UserProfile & {
   stats: UserProfileStats;
   contentCounts: UserContentCounts;
   visibility: UserProfileVisibility;
+  viewer?: {
+    isFollowing: boolean;
+    followsYou: boolean;
+    isFriend: boolean;
+  };
 };
 
 export type UpdateUserProfileInput = {
@@ -462,6 +467,8 @@ export type PoemMetrics = {
 export type PoemViewerEngagement = {
   liked: boolean;
   saved: boolean;
+  /** Whether the authenticated viewer follows this poem's author. */
+  followingAuthor?: boolean;
 };
 
 export type PoemCollectionKind = "liked" | "saved";

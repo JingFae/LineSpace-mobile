@@ -113,8 +113,8 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
   const queryClient = useQueryClient();
 
   const profileQuery = useQuery({
-    queryKey: ["user-profile", profileUserId],
-    queryFn: () => lineSpaceApi.getUserProfile(profileUserId),
+    queryKey: ["user-profile", profileUserId, currentUserId],
+    queryFn: () => lineSpaceApi.getUserProfile(profileUserId, currentUserId || undefined),
     enabled: profileUserId.length > 0 && !isGuestOwnProfile,
     staleTime: 60_000
   });
@@ -155,6 +155,44 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
   const displayedContentQuery = isGuestOwnProfile
     ? { isLoading: false, isError: false, data: { visible: true } }
     : contentQuery;
+  const followMutation = useMutation({
+    mutationFn: (isActive: boolean) =>
+      lineSpaceApi.setUserFollow({
+        userId: currentUserId,
+        targetUserId: profileUserId,
+        isActive
+      }),
+    onSuccess: (result) => {
+      queryClient.setQueryData<UserProfileDetails | null>(
+        ["user-profile", profileUserId, currentUserId],
+        (current) => current
+          ? {
+              ...current,
+              stats: { ...current.stats, followers: result.followers },
+              viewer: {
+                isFollowing: result.isFollowing,
+                followsYou: result.followsYou,
+                isFriend: result.isFriend
+              }
+            }
+          : current
+      );
+      queryClient.setQueriesData<import("@linespace/api-client").PoemSummary | null>(
+        { queryKey: ["poem"] },
+        (current) => current?.author.id === result.targetUserId
+          ? {
+              ...current,
+              viewer: {
+                ...current.viewer,
+                followingAuthor: result.isFollowing
+              }
+            }
+          : current
+      );
+      void queryClient.invalidateQueries({ queryKey: ["feed"] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", currentUserId] });
+    }
+  });
   const deletePost = useMutation({
     mutationFn: (poemId: string) => lineSpaceApi.deletePoem({ poemId, userId: currentUserId }),
     onSuccess: (result) => {
@@ -205,11 +243,17 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
             draftsCount={draftsQuery.data?.total ?? 0}
             experience={displayedProfile.experience}
             isOwner={isOwner}
+            followed={Boolean(displayedProfile.viewer?.isFollowing)}
+            followPending={followMutation.isPending}
             itemSection={section}
             items={items}
             onConnectionsPress={isGuestOwnProfile ? () => undefined : setConnectionKind}
             onExperiencePress={() => setShowExperience(true)}
             onLikesAndSavesPress={() => setSection("saves")}
+            onFollowPress={() => {
+              if (!requireAccount("follow this writer")) return;
+              followMutation.mutate(!displayedProfile.viewer?.isFollowing);
+            }}
             onManagePost={(item) => {
               deletePost.reset();
               setManagedPost(item);
@@ -320,6 +364,8 @@ export function ProfileScreen({ userId }: ProfileScreenProps) {
 function ProfileLoaded({
   profile,
   experience,
+  followed,
+  followPending,
   isOwner,
   items,
   itemSection,
@@ -327,6 +373,7 @@ function ProfileLoaded({
   contentQuery,
   onConnectionsPress,
   onExperiencePress,
+  onFollowPress,
   onLikesAndSavesPress,
   onManagePost,
   onManageThread,
@@ -338,6 +385,8 @@ function ProfileLoaded({
 }: {
   profile: UserProfileDetails;
   experience: UserExperience;
+  followed: boolean;
+  followPending: boolean;
   isOwner: boolean;
   items: UserProfileContentItem[];
   itemSection: UserProfileContentSection;
@@ -345,6 +394,7 @@ function ProfileLoaded({
   contentQuery: { isLoading: boolean; isError: boolean; data?: { visible: boolean } };
   onConnectionsPress: (kind: UserConnectionKind) => void;
   onExperiencePress: () => void;
+  onFollowPress: () => void;
   onLikesAndSavesPress: () => void;
   onManagePost: (item: UserProfileContentItem) => void;
   onManageThread: (item: UserProfileContentItem) => void;
@@ -384,9 +434,12 @@ function ProfileLoaded({
     >
       <ProfileHero
         experience={experience}
+        followed={followed}
+        followPending={followPending}
         isOwner={isOwner}
         onConnectionsPress={onConnectionsPress}
         onExperiencePress={onExperiencePress}
+        onFollowPress={onFollowPress}
         onLikesAndSavesPress={onLikesAndSavesPress}
         onSettingsPress={onSettingsPress}
         profile={profile}
@@ -470,17 +523,23 @@ function ProfileLoaded({
 function ProfileHero({
   profile,
   experience,
+  followed,
+  followPending,
   isOwner,
   onConnectionsPress,
   onExperiencePress,
+  onFollowPress,
   onLikesAndSavesPress,
   onSettingsPress
 }: {
   profile: UserProfileDetails;
   experience: UserExperience;
+  followed: boolean;
+  followPending: boolean;
   isOwner: boolean;
   onConnectionsPress: (kind: UserConnectionKind) => void;
   onExperiencePress: () => void;
+  onFollowPress: () => void;
   onLikesAndSavesPress: () => void;
   onSettingsPress: () => void;
 }) {
@@ -529,6 +588,24 @@ function ProfileHero({
           </View>
           <Text style={styles.linespaceId}>linespace ID · {profile.linespaceId}</Text>
           <Text numberOfLines={2} style={styles.bio}>{profile.bio || "No signature yet"}</Text>
+          {!isOwner ? (
+            <Pressable
+              accessibilityLabel={followed ? "Unfollow this writer" : "Follow this writer"}
+              accessibilityRole="button"
+              accessibilityState={{ selected: followed, busy: followPending }}
+              disabled={followPending}
+              onPress={onFollowPress}
+              style={({ pressed }) => [
+                styles.profileFollowButton,
+                followed && styles.profileFollowingButton,
+                pressed && styles.profileFollowButtonPressed
+              ]}
+            >
+              <Text style={[styles.profileFollowText, followed && styles.profileFollowingText]}>
+                {followPending ? "…" : followed ? "following" : "+ follow"}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
       </View>
       <Pressable onPress={onExperiencePress} style={styles.experienceBarCard}>
@@ -1418,6 +1495,11 @@ const styles = StyleSheet.create({
   levelMarkInner: { backgroundColor: "rgba(255,255,255,0.58)", borderColor: "rgba(255,255,255,0.75)", borderWidth: 1 },
   linespaceId: { color: colors.profileMuted, fontSize: 11, marginTop: 6 },
   bio: { color: colors.ink, fontSize: 15, lineHeight: 20, marginTop: 4 },
+  profileFollowButton: { alignItems: "center", alignSelf: "flex-start", backgroundColor: colors.ink, borderColor: colors.ink, borderRadius: radius.pill, borderWidth: 1, justifyContent: "center", marginTop: 10, minHeight: 32, minWidth: 88, paddingHorizontal: 15 },
+  profileFollowingButton: { backgroundColor: "rgba(255,255,255,0.72)", borderColor: "rgba(21,21,21,0.22)" },
+  profileFollowButtonPressed: { opacity: 0.72, transform: [{ scale: 0.98 }] },
+  profileFollowText: { color: colors.white, fontSize: 13, fontWeight: "700" },
+  profileFollowingText: { color: colors.ink },
   experienceBarCard: { backgroundColor: "rgba(255,255,255,0.6)", borderColor: "rgba(21,21,21,0.08)", borderRadius: 15, borderWidth: 1, marginHorizontal: spacing.lg, marginTop: 18, padding: 12 },
   experienceBarHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   experienceBarTitle: { color: colors.ink, fontSize: 12, fontWeight: "700", letterSpacing: 0.4 },

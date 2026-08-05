@@ -68,7 +68,6 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
   const [commentDraft, setCommentDraft] = useState("");
   const [commentBusy, setCommentBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [followingAuthorIds, setFollowingAuthorIds] = useState<Set<string>>(() => new Set());
   const [focusedCommentId, setFocusedCommentId] = useState(commentId);
   const [postMenuOpen, setPostMenuOpen] = useState(false);
   const [sparkChanges, setSparkChanges] = useState<SparkApplyChange[]>([]);
@@ -79,7 +78,18 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
   const followMutation = useMutation({
     mutationFn: (targetUserId: string) => lineSpaceApi.setUserFollow({ userId: currentUserId, targetUserId, isActive: true }),
     onSuccess: (result) => {
-      setFollowingAuthorIds((current) => new Set(current).add(result.targetUserId));
+      queryClient.setQueryData<PoemSummary | null>(
+        ["poem", id, currentUserId],
+        (current) => current
+          ? {
+              ...current,
+              viewer: {
+                ...current.viewer,
+                followingAuthor: result.isFollowing
+              }
+            }
+          : current
+      );
       void queryClient.invalidateQueries({ queryKey: ["user-profile", result.targetUserId] });
       void queryClient.invalidateQueries({ queryKey: ["user-profile", currentUserId] });
     },
@@ -93,6 +103,11 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
   });
 
   const poem = poemQuery.data ?? undefined;
+  const openCommentComposer = () => {
+    if (!requireAccount("write a comment")) return;
+    setReplyTarget(null);
+    setCommentComposerOpen(true);
+  };
   const deletePost = useMutation({
     mutationFn: (poemId: string) => lineSpaceApi.deletePoem({ poemId, userId: currentUserId }),
     onSuccess: () => {
@@ -194,7 +209,7 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
       contentContainerStyle={styles.screen}
     >
       <DetailHeader
-        followed={Boolean(poem && followingAuthorIds.has(poem.author.id))}
+        followed={Boolean(poem?.viewer.followingAuthor)}
         followPending={followMutation.isPending}
         onFollow={() => {
           if (!poem || poem.author.id === currentUserId || !requireAccount("follow this writer")) return;
@@ -227,11 +242,7 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
           <PoemDetailContent
             commentId={focusedCommentId}
             currentUserId={currentUserId}
-            onCommentPress={() => {
-              if (!requireAccount("write a comment")) return;
-              setReplyTarget(null);
-              setCommentComposerOpen(true);
-            }}
+            onCommentPress={openCommentComposer}
             onCommentSave={(comment) => updateCommentCollection(comment, "saved", !(comment.viewer?.saved ?? false))}
             onCommentLike={(comment) => updateCommentCollection(comment, "liked", !(comment.viewer?.liked ?? false))}
             onReplyPress={(comment) => {
@@ -294,6 +305,7 @@ export function PoemDetailScreen({ commentId, id, targetKind }: PoemDetailScreen
             onToggle={() => setCreditsOpen((value) => !value)}
           />
           <MetricDock
+            onCommentPress={openCommentComposer}
             onLikePress={(isLiked) =>
               engagement.setCollection(poem.id, "liked", isLiked)
             }
@@ -693,12 +705,14 @@ function CreditPerson({
 function MetricDock({
   poem,
   disabled = false,
+  onCommentPress,
   onLikePress,
   onSavePress,
   onSharePress
 }: {
   poem: PoemSummary;
   disabled?: boolean;
+  onCommentPress: () => void;
   onLikePress: (isLiked: boolean) => void;
   onSavePress: (isSaved: boolean) => void;
   onSharePress: () => void;
@@ -709,6 +723,7 @@ function MetricDock({
         disabled={disabled}
         liked={poem.viewer.liked}
         metrics={{ ...poem.metrics, contributions: poem.metrics.shares ?? poem.metrics.contributions }}
+        onCommentPress={onCommentPress}
         onLikePress={() => onLikePress(!poem.viewer.liked)}
         onContributionPress={onSharePress}
         onSavePress={() => onSavePress(!poem.viewer.saved)}

@@ -123,7 +123,7 @@ export interface LineSpaceApi {
   getUserPoemCollections(userId: string): Promise<UserPoemCollections>;
   getInboxActivitySummary(userId: string): Promise<InboxActivitySummary>;
   markInboxActivityRead(userId: string, kind: InboxActivityKind): Promise<InboxActivitySummary>;
-  getUserProfile(userId: string): Promise<UserProfileDetails | null>;
+  getUserProfile(userId: string, viewerId?: string): Promise<UserProfileDetails | null>;
   updateUserProfile(input: UpdateUserProfileInput): Promise<UserProfileDetails>;
   setUserFollow(input: UpdateUserFollowInput): Promise<UserFollowResult>;
   listUserProfileContent(
@@ -1232,15 +1232,15 @@ export class MockLineSpaceApi implements LineSpaceApi {
     return next;
   }
 
-  async getUserProfile(userId: string): Promise<UserProfileDetails | null> {
+  async getUserProfile(userId: string, viewerId?: string): Promise<UserProfileDetails | null> {
     const profile = this.profiles.find((item) => item.id === userId);
-    if (profile) return cloneUserProfile(profile);
+    if (profile) return this.withProfileViewer(cloneUserProfile(profile), viewerId);
     const identity = [
       ...this.threads.map((thread) => thread.author),
       ...this.continuations.map((continuation) => continuation.author)
     ].find((user) => user.id === userId);
     if (!identity) return null;
-    return {
+    return this.withProfileViewer({
       ...identity,
       linespaceId: `guest_${identity.id.replace(/[^a-z0-9]/gi, "").slice(-8)}`,
       level: 1,
@@ -1249,6 +1249,23 @@ export class MockLineSpaceApi implements LineSpaceApi {
       stats: { followers: 0, following: 0, likesAndSaves: 0 },
       contentCounts: { posts: 0, threads: 0, comments: 0, saves: 0 },
       visibility: { posts: true, threads: true, comments: true, saves: true }
+    }, viewerId);
+  }
+
+  private withProfileViewer(
+    profile: UserProfileDetails,
+    viewerId?: string
+  ): UserProfileDetails {
+    if (!viewerId || viewerId === profile.id) return profile;
+    const isFollowing = this.getFollowingIds(viewerId).has(profile.id);
+    const followsYou = this.getFollowingIds(profile.id).has(viewerId);
+    return {
+      ...profile,
+      viewer: {
+        isFollowing,
+        followsYou,
+        isFriend: isFollowing && followsYou
+      }
     };
   }
 
@@ -2179,7 +2196,10 @@ export class MockLineSpaceApi implements LineSpaceApi {
       ...hydrated,
       viewer: {
         liked: collections?.liked.has(poem.id) ?? false,
-        saved: collections?.saved.has(poem.id) ?? false
+        saved: collections?.saved.has(poem.id) ?? false,
+        followingAuthor: viewerId
+          ? this.getFollowingIds(viewerId).has(poem.author.id)
+          : false
       }
     };
   }
@@ -2896,7 +2916,8 @@ function cloneUserProfile(profile: UserProfileDetails): UserProfileDetails {
     badges: profile.badges.map((badge) => ({ ...badge })),
     stats: { ...profile.stats },
     contentCounts: { ...profile.contentCounts },
-    visibility: { ...profile.visibility }
+    visibility: { ...profile.visibility },
+    ...(profile.viewer ? { viewer: { ...profile.viewer } } : {})
   };
 }
 
