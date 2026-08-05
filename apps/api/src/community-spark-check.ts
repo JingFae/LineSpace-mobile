@@ -1,5 +1,7 @@
 import {
+  COMMUNITY_SPARK_PROMPT,
   communitySparkBaseRevision,
+  inferCommunitySparkOutputLanguage,
   communitySparkModel,
   communitySparkProvider,
   communitySparkKeySource,
@@ -137,13 +139,25 @@ try {
       }
     ]
   };
-  const result = await requestCommunitySpark({ poem });
+  const result = await requestCommunitySpark({
+    poem,
+    previousSuggestions: [
+      "Voisit ehkä antaa kellon varjon jatkaa yksin eteenpäin."
+    ]
+  });
   const requestBody = JSON.parse(String(capturedRequest?.body)) as {
     model?: string;
     thinking?: { type?: string };
     messages?: Array<{ role?: string; content?: string }>;
     response_format?: { type?: string };
     max_tokens?: number;
+  };
+  const providerInput = JSON.parse(
+    requestBody.messages?.[1]?.content ?? "{}"
+  ) as {
+    outputLanguage?: string;
+    comments?: Array<{ id?: string; text?: string }>;
+    previousSuggestions?: string[];
   };
 
   assert(
@@ -160,9 +174,35 @@ try {
       requestBody.thinking?.type === "disabled" &&
       requestBody.messages?.[0]?.role === "system" &&
       requestBody.messages?.[1]?.role === "user" &&
+      requestBody.messages[0].content?.includes(
+        "FINAL OUTPUT LANGUAGE LOCK: English"
+      ) &&
       requestBody.response_format?.type === "json_object" &&
       requestBody.max_tokens === 3_000,
     "Community Spark did not send the DeepSeek Chat Completions contract."
+  );
+  assert(
+    providerInput.outputLanguage === "English" &&
+      providerInput.comments?.[0]?.id === "comment-ray-loneliness" &&
+      providerInput.previousSuggestions?.[0]?.startsWith("Voisit") &&
+      COMMUNITY_SPARK_PROMPT.includes("counterfactual relevance test") &&
+      COMMUNITY_SPARK_PROMPT.includes(
+        "BOTH the suggestion and the visible"
+      ),
+    "Community Spark did not lock the poem language or require comment grounding."
+  );
+  assert(
+    inferCommunitySparkOutputLanguage({
+      title: "Sunlit Reverie",
+      lines: [
+        "A silver stream meanders through its long, soft sleep."
+      ]
+    }) === "English" &&
+      inferCommunitySparkOutputLanguage({
+        title: "未启之门",
+        lines: ["光影沿着木纹扎根", "风把旧钟声送进清晨"]
+      }) === "Chinese",
+    "Community Spark did not infer English and Chinese poem languages correctly."
   );
   assert(
     result.id === "deepseek-response-1" &&
