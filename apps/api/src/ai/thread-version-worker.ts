@@ -367,9 +367,6 @@ function parseWorkerResult(value?: string): ThreadVersionAiResult {
     )
   );
   if (!structurallyValid) throw new Error("LLM_INVALID_RESPONSE");
-  if (!result.harmonizedLines.some((line) => line.changed)) {
-    throw new Error("LLM_INSUFFICIENT_HARMONIZATION");
-  }
   return result as ThreadVersionAiResult;
 }
 

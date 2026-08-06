@@ -160,7 +160,7 @@ try {
     capturedUrl === "https://api.deepseek.example/chat/completions" &&
       new Headers(capturedRequest?.headers).get("authorization") ===
         "Bearer test-thread-version-key" &&
-      THREAD_VERSION_AI_PROMPT_VERSION === "thread-version-ai-v4" &&
+      THREAD_VERSION_AI_PROMPT_VERSION === "thread-version-ai-v5" &&
       providerBody.model === "deepseek-v4-flash" &&
       providerBody.thinking?.type === "disabled" &&
       providerBody.max_tokens === 1_600 &&
@@ -178,7 +178,7 @@ try {
         "BRIDGE-LINE PERMISSION"
       ) &&
       providerBody.messages[0].content.includes(
-        "Never return a completely unchanged"
+        "visible, restrained improvement"
       ) &&
       providerInput.branchNodes?.length === 5 &&
       providerInput.candidateVersions?.every(
@@ -210,51 +210,111 @@ try {
     "Harmonized did not preserve user lines, retain the AI bridge, or reject an unsafe rewrite."
   );
 
-  globalThis.fetch = async () =>
-    new Response(
+  const noOpProviderResult = {
+    selectedVersionId: "path-b",
+    recommendedRationale: "This path is coherent.",
+    confidence: 0.8,
+    harmonizedRationale: "No changes were needed.",
+    harmonizedLines: candidates[1]!.lines.map((line) => ({
+      lineId: line.lineId,
+      text: line.text,
+      changeNote: ""
+    })),
+    harmonizedInsertions: []
+  };
+  let repairCalls = 0;
+  let repairRequest: RequestInit | undefined;
+  globalThis.fetch = async (_input, init) => {
+    repairCalls += 1;
+    repairRequest = init;
+    const result = repairCalls === 1
+      ? noOpProviderResult
+      : {
+          ...noOpProviderResult,
+          harmonizedRationale:
+            "A restrained reference adjustment strengthens the handoff.",
+          harmonizedLines: candidates[1]!.lines.map((line, index) => ({
+            lineId: line.lineId,
+            text: index === 1 ? "It waits there until morning." : line.text,
+            changeNote: index === 1
+              ? "Reference: Clarifies the pronoun across the transition."
+              : ""
+          }))
+        };
+    return new Response(
       JSON.stringify({
-        id: "thread-version-noop",
+        id: `thread-version-repair-${repairCalls}`,
         choices: [{
           finish_reason: "stop",
-          message: {
-            content: JSON.stringify({
-              selectedVersionId: "path-b",
-              recommendedRationale: "This path is coherent.",
-              confidence: 0.8,
-              harmonizedRationale: "No changes were needed.",
-              harmonizedLines: candidates[1]!.lines.map((line) => ({
-                lineId: line.lineId,
-                text: line.text,
-                changeNote: ""
-              })),
-              harmonizedInsertions: []
-            })
-          }
+          message: { content: JSON.stringify(result) }
         }]
       }),
       { status: 200, headers: { "content-type": "application/json" } }
     );
-  let noInterventionCode = "";
-  try {
-    await requestThreadVersionRecommendation({
-      intent: "moderation-preview",
-      poemId: "thread-noop-check",
-      locale: "en",
-      text: JSON.stringify({
-        thread: {
-          id: "thread-noop-check",
-          title: "Winter Window",
-          rules: "Continue."
-        },
-        candidateVersions: [candidates[1]]
-      })
-    });
-  } catch (error) {
-    noInterventionCode = error instanceof Error ? error.message : "";
-  }
+  };
+  const repairedResponse = await requestThreadVersionRecommendation({
+    intent: "moderation-preview",
+    poemId: "thread-repair-check",
+    locale: "en",
+    text: JSON.stringify({
+      thread: {
+        id: "thread-repair-check",
+        title: "Winter Window",
+        rules: "Continue."
+      },
+      candidateVersions: [candidates[1]]
+    })
+  });
+  const repaired = JSON.parse(repairedResponse.suggestions[0] ?? "{}") as {
+    harmonizedLines?: Array<{ changed?: boolean }>;
+  };
+  const repairBody = JSON.parse(String(repairRequest?.body)) as {
+    temperature?: number;
+    messages?: Array<{ role?: string; content?: string }>;
+  };
   assert(
-    noInterventionCode === "LLM_INSUFFICIENT_HARMONIZATION",
-    "A no-op Harmonized result was accepted."
+    repairCalls === 2 &&
+      repaired.harmonizedLines?.some((line) => line.changed) === true &&
+      repairBody.temperature === 0.25 &&
+      repairBody.messages?.length === 4 &&
+      repairBody.messages[3]?.content?.includes("previous JSON produced no accepted"),
+    "A no-op first response did not receive one focused repair pass."
+  );
+
+  let safeFallbackCalls = 0;
+  globalThis.fetch = async () => {
+    safeFallbackCalls += 1;
+    return new Response(
+      JSON.stringify({
+        id: `thread-version-safe-fallback-${safeFallbackCalls}`,
+        choices: [{
+          finish_reason: "stop",
+          message: { content: JSON.stringify(noOpProviderResult) }
+        }]
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  };
+  const safeFallbackResponse = await requestThreadVersionRecommendation({
+    intent: "moderation-preview",
+    poemId: "thread-safe-fallback-check",
+    locale: "en",
+    text: JSON.stringify({
+      thread: {
+        id: "thread-safe-fallback-check",
+        title: "Winter Window",
+        rules: "Continue."
+      },
+      candidateVersions: [candidates[1]]
+    })
+  });
+  const safeFallback = JSON.parse(
+    safeFallbackResponse.suggestions[0] ?? "{}"
+  ) as { harmonizedLines?: Array<{ changed?: boolean }> };
+  assert(
+    safeFallbackCalls === 2 &&
+      safeFallback.harmonizedLines?.every((line) => !line.changed) === true,
+    "A double no-op response failed instead of returning the safe intact path."
   );
 
   globalThis.fetch = async () =>
