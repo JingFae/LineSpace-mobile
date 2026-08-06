@@ -76,7 +76,7 @@ export function VersionPostLayoutCard({
         <Text style={[styles.title, { color: ink }]}>{title || "untitled line"}</Text>
         <View style={styles.lineStack}>
           {lines.map((line) => {
-            const segments = line.originalText
+            const segments = line.originalText !== undefined
               ? buildAiTextSegments(line.originalText, line.text)
               : [{ text: line.text, ai: false }];
             return (

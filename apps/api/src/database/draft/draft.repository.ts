@@ -380,7 +380,9 @@ export class DraftRepository {
         text: line.text,
         authorId: line.author.id,
         ...(line.likes !== undefined ? { likes: line.likes } : {}),
-        ...(line.originalText ? { originalText: line.originalText } : {}),
+        ...(line.originalText !== undefined
+          ? { originalText: line.originalText }
+          : {}),
         ...(line.aiChangeNote ? { aiChangeNote: line.aiChangeNote } : {}),
         ...(line.aiHarmonized ? { aiHarmonized: true } : {})
       }));

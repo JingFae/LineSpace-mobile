@@ -94,7 +94,7 @@ export async function processThreadAiVersionJob(
 
     const response = await requestThreadVersionRecommendation({
       intent: "moderation-preview",
-      locale: "en",
+      locale: detectThreadLocale(detail),
       poemId: claimed.thread_id,
       text: JSON.stringify({
         task: "recommend-thread-version",
@@ -355,7 +355,37 @@ function parseWorkerResult(value?: string): ThreadVersionAiResult {
   ) {
     throw new Error("LLM_INVALID_RESPONSE");
   }
+  const structurallyValid = result.harmonizedLines.every((line) =>
+    Boolean(
+      line &&
+      typeof line.lineId === "string" &&
+      typeof line.text === "string" &&
+      typeof line.changeNote === "string" &&
+      typeof line.changed === "boolean" &&
+      (line.aiInserted !== true ||
+        typeof line.insertBeforeLineId === "string")
+    )
+  );
+  if (!structurallyValid) throw new Error("LLM_INVALID_RESPONSE");
+  if (!result.harmonizedLines.some((line) => line.changed)) {
+    throw new Error("LLM_INSUFFICIENT_HARMONIZATION");
+  }
   return result as ThreadVersionAiResult;
+}
+
+function detectThreadLocale(detail: ThreadDetail) {
+  const text = [
+    detail.thread.title,
+    detail.thread.startingContent,
+    detail.thread.rules,
+    detail.thread.content,
+    ...(detail.allContinuations ?? detail.continuations ?? []).map(
+      (line) => line.content
+    )
+  ].filter(Boolean).join("\n");
+  const chinese = text.match(/[\u3400-\u9FFF]/gu)?.length ?? 0;
+  const latin = text.match(/[A-Za-z]/gu)?.length ?? 0;
+  return chinese > latin ? "zh" : "en";
 }
 
 function versionContentHash(text: string) {

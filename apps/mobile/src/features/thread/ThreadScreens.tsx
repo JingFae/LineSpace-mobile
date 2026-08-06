@@ -1939,7 +1939,10 @@ function ContinueComposer({
   const translateY = useRef(new Animated.Value(340)).current;
   const targetKey = target ? composerTargetKey(target) : null;
   const targetAuthor = target?.kind === "thread" ? target.thread.author.handle : target?.continuation.author.handle;
-  const preview = target?.kind === "thread" ? target.thread.content : target?.continuation.content;
+  const preview =
+    target?.kind === "thread"
+      ? target.thread.startingContent?.trim() || target.thread.content
+      : target?.continuation.content;
   const nextLineNumber =
     target?.kind === "thread" ? 2 : (target?.continuation.lineNumber ?? 1) + 1;
   const trimmedContent = content.trim();

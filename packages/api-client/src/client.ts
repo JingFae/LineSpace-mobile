@@ -62,6 +62,7 @@ import type {
   SavePoemDraftInput,
   PoemSummary,
   ThreadContinuation,
+  ThreadAiHarmonizedLine,
   ThreadAiVersions,
   ThreadDetail,
   ThreadFeedQuery,
@@ -1529,13 +1530,47 @@ export class MockLineSpaceApi implements LineSpaceApi {
     const selected = [...candidates].sort(
       (left, right) => right.likes - left.likes || left.id.localeCompare(right.id)
     )[0]!;
+    const chinese = (selected.lines.map((line) => line.text).join(" ")
+      .match(/[\u3400-\u9FFF]/gu)?.length ?? 0) > 0;
+    const harmonizedLines: ThreadAiHarmonizedLine[] = selected.lines.map(
+      (line) => ({
+        lineId: line.id,
+        text: line.text,
+        changeNote: "",
+        changed: false
+      })
+    );
+    if (harmonizedLines.length > 1) {
+      const beforeLineId = harmonizedLines[1]!.lineId;
+      harmonizedLines.splice(1, 0, {
+        lineId: `ai-bridge-before:${beforeLineId}`,
+        text: chinese
+          ? "余音在两句之间，轻轻递出未尽的回响。"
+          : "Between the two lines, their unfinished echo leans forward.",
+        changeNote: chinese
+          ? "衔接：以余音承接相邻两句的情绪。"
+          : "Transition: Carries the emotional echo into the following line.",
+        changed: true,
+        aiInserted: true,
+        insertBeforeLineId: beforeLineId
+      });
+    } else {
+      const line = harmonizedLines[0]!;
+      line.text = chinese
+        ? `${line.text.replace(/[。！？!?]$/u, "")}，余韵仍向下一句延伸。`
+        : `${line.text.replace(/[.!?]$/u, "")}, its echo leaning toward what follows.`;
+      line.changeNote = chinese
+        ? "收束：让单句留下向后延伸的余韵。"
+        : "Ending: Gives the single line a more resonant forward motion.";
+      line.changed = true;
+    }
     return {
       threadId,
       sourceRevision: continuations.length + 1,
       snapshotRevision: continuations.length + 1,
       status: "ready",
       isStale: false,
-      promptVersion: "thread-version-ai-v3",
+      promptVersion: "thread-version-ai-v4",
       model: "mock",
       recommended: {
         selectedVersionId: selected.id,
@@ -1543,13 +1578,10 @@ export class MockLineSpaceApi implements LineSpaceApi {
         confidence: 0.8
       },
       harmonized: {
-        rationale: "The selected path is already cohesive, so its wording remains unchanged.",
-        lines: selected.lines.map((line) => ({
-          lineId: line.id,
-          text: line.text,
-          changeNote: "",
-          changed: false
-        }))
+        rationale: chinese
+          ? "AI 以一处清晰可见的调整增强诗句之间的流动。"
+          : "One visible intervention strengthens the movement between contributions.",
+        lines: harmonizedLines
       },
       generatedAt: new Date().toISOString()
     };

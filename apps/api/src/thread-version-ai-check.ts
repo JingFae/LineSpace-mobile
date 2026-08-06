@@ -51,6 +51,14 @@ try {
                   text: "A spaceship erupts into a completely unrelated universe.",
                   changeNote: "Replaced the image."
                 }
+              ],
+              harmonizedInsertions: [
+                {
+                  beforeLineId: "b-3",
+                  text: "Morning gathers quietly at the edge of the glass.",
+                  changeNote:
+                    "Transition: Carries the window's waiting into the returning light."
+                }
               ]
             })
           }
@@ -130,6 +138,8 @@ try {
       lineId?: string;
       text?: string;
       changed?: boolean;
+      aiInserted?: boolean;
+      insertBeforeLineId?: string;
     }>;
   };
   const providerBody = JSON.parse(String(capturedRequest?.body)) as {
@@ -150,7 +160,7 @@ try {
     capturedUrl === "https://api.deepseek.example/chat/completions" &&
       new Headers(capturedRequest?.headers).get("authorization") ===
         "Bearer test-thread-version-key" &&
-      THREAD_VERSION_AI_PROMPT_VERSION === "thread-version-ai-v3" &&
+      THREAD_VERSION_AI_PROMPT_VERSION === "thread-version-ai-v4" &&
       providerBody.model === "deepseek-v4-flash" &&
       providerBody.thinking?.type === "disabled" &&
       providerBody.max_tokens === 1_600 &&
@@ -159,10 +169,16 @@ try {
         "OUTPUT LANGUAGE (MANDATORY)"
       ) &&
       providerBody.messages[0].content.includes(
-        "same language as its edited line"
+        "Every edited line stays in the language"
       ) &&
       providerBody.messages[0].content.includes(
-        "punctuation-only changes do not count"
+        "punctuation-only"
+      ) &&
+      providerBody.messages[0].content.includes(
+        "BRIDGE-LINE PERMISSION"
+      ) &&
+      providerBody.messages[0].content.includes(
+        "Never return a completely unchanged"
       ) &&
       providerInput.branchNodes?.length === 5 &&
       providerInput.candidateVersions?.every(
@@ -177,16 +193,68 @@ try {
     "Recommended did not preserve the exact selected branch id."
   );
   assert(
-    normalized.harmonizedLines?.length === 3 &&
+    normalized.harmonizedLines?.length === 4 &&
       normalized.harmonizedLines[0]?.text ===
         candidates[1]!.lines[0]!.text &&
       normalized.harmonizedLines[1]?.text ===
         "It waits there until morning." &&
       normalized.harmonizedLines[1]?.changed === true &&
       normalized.harmonizedLines[2]?.text ===
+        "Morning gathers quietly at the edge of the glass." &&
+      normalized.harmonizedLines[2]?.changed === true &&
+      normalized.harmonizedLines[2]?.aiInserted === true &&
+      normalized.harmonizedLines[2]?.insertBeforeLineId === "b-3" &&
+      normalized.harmonizedLines[3]?.text ===
         candidates[1]!.lines[2]!.text &&
-      normalized.harmonizedLines[2]?.changed === false,
-    "Harmonized did not preserve line structure or reject an unsafe rewrite."
+      normalized.harmonizedLines[3]?.changed === false,
+    "Harmonized did not preserve user lines, retain the AI bridge, or reject an unsafe rewrite."
+  );
+
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        id: "thread-version-noop",
+        choices: [{
+          finish_reason: "stop",
+          message: {
+            content: JSON.stringify({
+              selectedVersionId: "path-b",
+              recommendedRationale: "This path is coherent.",
+              confidence: 0.8,
+              harmonizedRationale: "No changes were needed.",
+              harmonizedLines: candidates[1]!.lines.map((line) => ({
+                lineId: line.lineId,
+                text: line.text,
+                changeNote: ""
+              })),
+              harmonizedInsertions: []
+            })
+          }
+        }]
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  let noInterventionCode = "";
+  try {
+    await requestThreadVersionRecommendation({
+      intent: "moderation-preview",
+      poemId: "thread-noop-check",
+      locale: "en",
+      text: JSON.stringify({
+        thread: {
+          id: "thread-noop-check",
+          title: "Winter Window",
+          rules: "Continue."
+        },
+        candidateVersions: [candidates[1]]
+      })
+    });
+  } catch (error) {
+    noInterventionCode = error instanceof Error ? error.message : "";
+  }
+  assert(
+    noInterventionCode === "LLM_INSUFFICIENT_HARMONIZATION",
+    "A no-op Harmonized result was accepted."
   );
 
   globalThis.fetch = async () =>
