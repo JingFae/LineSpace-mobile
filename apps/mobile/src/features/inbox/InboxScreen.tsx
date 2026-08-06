@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { router, type Href, useFocusEffect } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -129,6 +129,7 @@ export function InboxScreen() {
       if (!currentUserId) return;
       void queryClient.invalidateQueries({ queryKey: ["inbox-summary", currentUserId] });
       void queryClient.invalidateQueries({ queryKey: ["inbox-groups", currentUserId] });
+      void queryClient.invalidateQueries({ queryKey: ["inbox-group-invites", currentUserId] });
       void queryClient.invalidateQueries({ queryKey: ["inbox-recent-contacts", currentUserId] });
     }, [currentUserId, queryClient])
   );
@@ -504,7 +505,7 @@ function PermissionCard({
         <View style={styles.permissionCopy}>
           <Text style={styles.permissionTitle}>Group invitation</Text>
           <Text style={styles.permissionSubtitle}>
-            {inviter?.displayName ?? "A mutual connection"} invited you to <Text style={styles.permissionStrong}>{group.name}</Text>
+            {inviter?.displayName ?? "A community member"} invited you to <Text style={styles.permissionStrong}>{group.name}</Text>
           </Text>
         </View>
       </View>
@@ -840,20 +841,31 @@ function CreateGroupSheet({
   onCreated: (group: InboxGroup) => void;
 }) {
   const [name, setName] = useState("");
-  const [selected, setSelected] = useState<string[]>([]);
-  const friendsQuery = useQuery({
-    queryKey: ["inbox-mutuals", currentUserId],
-    queryFn: () => lineSpaceApi.searchUsers("", currentUserId)
-  });
+  const [selected, setSelected] = useState<UserProfile[]>([]);
+  useEffect(() => {
+    if (visible) return;
+    setName("");
+    setSelected([]);
+  }, [visible]);
   const createMutation = useMutation({
-    mutationFn: () => lineSpaceApi.createInboxGroup({ ownerId: currentUserId, name, inviteeIds: selected }),
+    mutationFn: () => lineSpaceApi.createInboxGroup({
+      ownerId: currentUserId,
+      name,
+      inviteeIds: selected.map((user) => user.id)
+    }),
     onSuccess: onCreated
   });
-  const friends = (friendsQuery.data?.friends ?? []).filter((friend) => friend.id !== currentUserId);
+  const toggleSelected = (user: UserProfile) => {
+    setSelected((users) =>
+      users.some((item) => item.id === user.id)
+        ? users.filter((item) => item.id !== user.id)
+        : [...users, user]
+    );
+  };
 
   return (
     <Modal animationType="slide" transparent visible={visible} onRequestClose={onClose}>
-      <View style={styles.sheetBackdrop}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.sheetBackdrop}>
         <View style={styles.sheet}>
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHeader}>
@@ -871,31 +883,164 @@ function CreateGroupSheet({
             maxLength={80}
             style={styles.nameInput}
           />
-          <Text style={styles.pickerLabel}>Invite mutual connections</Text>
-          <ScrollView style={styles.friendList} showsVerticalScrollIndicator={false}>
-            {friends.map((friend) => {
-              const active = selected.includes(friend.id);
-              return (
-                <Pressable
-                  key={friend.id}
-                  onPress={() => setSelected((ids) => active ? ids.filter((id) => id !== friend.id) : [...ids, friend.id])}
-                  style={[styles.friendRow, active && styles.friendRowActive]}
-                >
-                  <ProfileAvatar profile={friend} size={42} />
-                  <View style={styles.friendCopy}><Text style={styles.friendName}>{friend.displayName}</Text><Text style={styles.friendHandle}>@{friend.handle} · mutual</Text></View>
-                  <View style={[styles.checkCircle, active && styles.checkCircleActive]}>{active ? <Text style={styles.checkMark}>✓</Text> : null}</View>
-                </Pressable>
-              );
-            })}
-            {!friendsQuery.isLoading && friends.length === 0 ? <Text style={styles.emptyPicker}>Only mutual connections can be invited.</Text> : null}
-          </ScrollView>
+          <GroupInvitePicker key={visible ? "create-group-open" : "create-group-closed"} selected={selected} onToggle={toggleSelected} />
           {createMutation.isError ? <Text style={styles.errorText}>The group could not be created. Please try again.</Text> : null}
-          <Pressable disabled={!name.trim() || createMutation.isPending} onPress={() => createMutation.mutate()} style={[styles.primaryButton, !name.trim() && styles.primaryButtonDisabled]}>
-            {createMutation.isPending ? <ActivityIndicator color={colors.white} /> : <Text style={styles.primaryButtonText}>Create group</Text>}
+          <Pressable disabled={!name.trim() || createMutation.isPending} onPress={() => createMutation.mutate()} style={[styles.primaryButton, (!name.trim() || createMutation.isPending) && styles.primaryButtonDisabled]}>
+            {createMutation.isPending ? <ActivityIndicator color={colors.white} /> : <Text style={styles.primaryButtonText}>Create group{selected.length ? ` · ${selected.length}` : ""}</Text>}
           </Pressable>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
+  );
+}
+
+function GroupInvitePicker({
+  selected,
+  onToggle,
+  excludeIds = [],
+  compact = false
+}: {
+  selected: UserProfile[];
+  onToggle: (user: UserProfile) => void;
+  excludeIds?: readonly string[];
+  compact?: boolean;
+}) {
+  const [tab, setTab] = useState<"following" | "search">("following");
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const excluded = new Set([currentUserId, ...excludeIds]);
+  const followingQuery = useQuery({
+    queryKey: ["inbox-group-following", currentUserId],
+    queryFn: () => listAllFollowingUsers(currentUserId),
+    enabled: currentUserId.length > 0,
+    staleTime: 30_000
+  });
+  const searchQuery = useQuery({
+    queryKey: ["inbox-group-user-search", currentUserId, normalizedQuery],
+    queryFn: () => lineSpaceApi.searchUsers(normalizedQuery, currentUserId, { limit: 50 }),
+    enabled: tab === "search" && normalizedQuery.length > 0,
+    staleTime: 30_000
+  });
+  const following = (followingQuery.data ?? []).filter(
+    (user) => !excluded.has(user.id)
+  );
+  const searched = (() => {
+    const page = searchQuery.data;
+    const seen = new Set<string>();
+    return [...(page?.results ?? []), ...(page?.friends ?? []), ...(page?.recent ?? [])]
+      .filter((user) => {
+        if (excluded.has(user.id) || seen.has(user.id)) return false;
+        if (
+          normalizedQuery &&
+          !`${user.displayName} ${user.handle}`.toLocaleLowerCase().includes(normalizedQuery)
+        ) {
+          return false;
+        }
+        seen.add(user.id);
+        return true;
+      });
+  })();
+  const candidates = tab === "following" ? following : searched;
+  const loading = tab === "following" ? followingQuery.isLoading : searchQuery.isLoading;
+
+  return (
+    <View style={styles.invitePicker}>
+      <View style={styles.invitePickerHeader}>
+        <Text style={styles.pickerLabel}>Invite people</Text>
+        {selected.length ? (
+          <Text style={styles.selectedCount}>
+            {selected.length} selected{selected.length >= 50 ? " · limit" : ""}
+          </Text>
+        ) : null}
+      </View>
+      {selected.length ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.selectedPeopleRow}>
+          {selected.map((user) => (
+            <Pressable
+              accessibilityLabel={`Remove ${user.displayName}`}
+              key={user.id}
+              onPress={() => onToggle(user)}
+              style={styles.selectedPersonChip}
+            >
+              <Text numberOfLines={1} style={styles.selectedPersonText}>@{user.handle}</Text>
+              <Text style={styles.selectedPersonRemove}>×</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : null}
+      <View style={styles.inviteTabs}>
+        <Pressable
+          accessibilityRole="tab"
+          accessibilityState={{ selected: tab === "following" }}
+          onPress={() => setTab("following")}
+          style={[styles.inviteTab, tab === "following" && styles.inviteTabActive]}
+        >
+          <Text style={[styles.inviteTabText, tab === "following" && styles.inviteTabTextActive]}>Following</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="tab"
+          accessibilityState={{ selected: tab === "search" }}
+          onPress={() => setTab("search")}
+          style={[styles.inviteTab, tab === "search" && styles.inviteTabActive]}
+        >
+          <Text style={[styles.inviteTabText, tab === "search" && styles.inviteTabTextActive]}>Search</Text>
+        </Pressable>
+      </View>
+      {tab === "search" ? (
+        <View style={styles.inviteSearchBox}>
+          <SearchIcon color={colors.profileMuted} width={18} height={18} />
+          <TextInput
+            autoCapitalize="none"
+            autoCorrect={false}
+            maxLength={64}
+            onChangeText={setQuery}
+            placeholder="Search any community user"
+            placeholderTextColor={colors.profileMuted}
+            style={styles.inviteSearchInput}
+            value={query}
+          />
+        </View>
+      ) : null}
+      <ScrollView style={[styles.friendList, compact && styles.friendListSmall]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        {candidates.map((user) => {
+          const active = selected.some((item) => item.id === user.id);
+          const selectionLimitReached = selected.length >= 50 && !active;
+          return (
+            <Pressable
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: active, disabled: selectionLimitReached }}
+              disabled={selectionLimitReached}
+              key={user.id}
+              onPress={() => onToggle(user)}
+              style={[
+                styles.friendRow,
+                active && styles.friendRowActive,
+                selectionLimitReached && styles.friendRowDisabled
+              ]}
+            >
+              <ProfileAvatar profile={user} size={42} />
+              <View style={styles.friendCopy}>
+                <Text style={styles.friendName}>{user.displayName}</Text>
+                <Text style={styles.friendHandle}>@{user.handle}{tab === "following" ? " · following" : ""}</Text>
+              </View>
+              <View style={[styles.checkCircle, active && styles.checkCircleActive]}>
+                {active ? <Text style={styles.checkMark}>✓</Text> : null}
+              </View>
+            </Pressable>
+          );
+        })}
+        {loading ? <ActivityIndicator color={colors.ink} style={styles.inviteLoader} /> : null}
+        {!loading && tab === "following" && following.length === 0 ? (
+          <Text style={styles.emptyPicker}>People you follow will appear here. You can still invite anyone through Search.</Text>
+        ) : null}
+        {!loading && tab === "search" && !normalizedQuery ? (
+          <Text style={styles.emptyPicker}>Search by name or username to invite anyone in the community.</Text>
+        ) : null}
+        {!loading && tab === "search" && normalizedQuery && searched.length === 0 ? (
+          <Text style={styles.emptyPicker}>No users matched this search.</Text>
+        ) : null}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -929,7 +1074,7 @@ function CreateConversationSheet({
             <View style={styles.actionIcon}><Text style={styles.actionGroupGlyph}>+</Text></View>
             <View style={styles.actionCopy}>
               <Text style={styles.actionLabel}>Create group</Text>
-              <Text style={styles.actionHint}>Open a room now and invite friends</Text>
+              <Text style={styles.actionHint}>Open a room and invite community members</Text>
             </View>
             <Text style={styles.actionArrow}>›</Text>
           </Pressable>
@@ -954,30 +1099,29 @@ function GroupSettingsSheet({
     queryKey: ["inbox-group", groupId, currentUserId],
     queryFn: () => lineSpaceApi.getInboxGroup(groupId, currentUserId)
   });
-  const friendsQuery = useQuery({
-    queryKey: ["inbox-mutuals", currentUserId],
-    queryFn: () => lineSpaceApi.searchUsers("", currentUserId)
-  });
   const group = groupQuery.data;
   const [name, setName] = useState("");
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<UserProfile[]>([]);
   const owner = group?.ownerId === currentUserId;
   const updateMutation = useMutation({
     mutationFn: () => lineSpaceApi.updateInboxGroup({ groupId, userId: currentUserId, name }),
     onSuccess: () => { onChanged(); }
   });
   const inviteMutation = useMutation({
-    mutationFn: () => lineSpaceApi.inviteInboxGroupMembers({ groupId, inviterId: currentUserId, inviteeIds: selected }),
+    mutationFn: () => lineSpaceApi.inviteInboxGroupMembers({
+      groupId,
+      inviterId: currentUserId,
+      inviteeIds: selected.map((user) => user.id)
+    }),
     onSuccess: () => { setSelected([]); onChanged(); }
   });
 
   if (!group) return null;
   const existing = new Set(group.members.map((member) => member.user.id));
-  const friends = (friendsQuery.data?.friends ?? []).filter((friend) => friend.id !== currentUserId && !existing.has(friend.id));
   const activeMembers = group.members.filter((member) => member.status === "active");
   return (
     <Modal animationType="slide" transparent visible={visible} onRequestClose={onClose}>
-      <View style={styles.sheetBackdrop}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.sheetBackdrop}>
         <View style={styles.sheet}>
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHeader}>
@@ -996,23 +1140,24 @@ function GroupSettingsSheet({
           </ScrollView>
           {owner || activeMembers.some((member) => member.user.id === currentUserId) ? (
             <>
-              <Text style={styles.pickerLabel}>Invite more mutuals</Text>
-              <ScrollView style={styles.friendListSmall} showsVerticalScrollIndicator={false}>
-                {friends.map((friend) => {
-                  const active = selected.includes(friend.id);
-                  return <Pressable key={friend.id} onPress={() => setSelected((ids) => active ? ids.filter((id) => id !== friend.id) : [...ids, friend.id])} style={styles.friendRow}>
-                    <ProfileAvatar profile={friend} size={36} />
-                    <View style={styles.friendCopy}><Text style={styles.friendName}>{friend.displayName}</Text><Text style={styles.friendHandle}>@{friend.handle} · mutual</Text></View>
-                    <View style={[styles.checkCircle, active && styles.checkCircleActive]}>{active ? <Text style={styles.checkMark}>✓</Text> : null}</View>
-                  </Pressable>;
-                })}
-                {friends.length === 0 ? <Text style={styles.emptyPicker}>Everyone you mutually follow is already here.</Text> : null}
-              </ScrollView>
+              <GroupInvitePicker
+                compact
+                excludeIds={[...existing]}
+                key={`${groupId}:${visible ? "open" : "closed"}`}
+                onToggle={(user) =>
+                  setSelected((users) =>
+                    users.some((item) => item.id === user.id)
+                      ? users.filter((item) => item.id !== user.id)
+                      : [...users, user]
+                  )
+                }
+                selected={selected}
+              />
               <Pressable disabled={!selected.length || inviteMutation.isPending} onPress={() => inviteMutation.mutate()} style={[styles.primaryButton, !selected.length && styles.primaryButtonDisabled]}><Text style={styles.primaryButtonText}>{inviteMutation.isPending ? "Inviting..." : "Send invitations"}</Text></Pressable>
             </>
           ) : null}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -1025,6 +1170,28 @@ function MemberRow({ member }: { member: InboxGroupMember }) {
       <Text style={[styles.memberStatus, member.status === "active" ? styles.memberStatusActive : styles.memberStatusInvited]}>{member.status === "active" ? (member.role === "owner" ? "Owner" : "Joined") : "Invited"}</Text>
     </Pressable>
   );
+}
+
+async function listAllFollowingUsers(userId: string) {
+  const users: UserProfile[] = [];
+  const seen = new Set<string>();
+  let cursor: string | undefined;
+  let pageCount = 0;
+  do {
+    const page = await lineSpaceApi.listUserConnections(userId, "following", {
+      cursor,
+      limit: 50,
+      viewerId: userId
+    });
+    for (const user of page.items) {
+      if (seen.has(user.id)) continue;
+      seen.add(user.id);
+      users.push(user);
+    }
+    cursor = page.nextCursor;
+    pageCount += 1;
+  } while (cursor && pageCount < 20);
+  return users;
 }
 
 function openProfile(userId: string) {
@@ -1168,10 +1335,26 @@ const styles = StyleSheet.create({
   closeText: { ...typography.caption, color: colors.profileMuted, fontWeight: "600" },
   nameInput: { ...typography.body, backgroundColor: colors.canvas, borderRadius: 14, color: colors.ink, paddingHorizontal: 14, paddingVertical: 13 },
   pickerLabel: { ...typography.caption, color: colors.profileMuted, fontWeight: "700", marginBottom: 8, marginTop: 20 },
+  invitePicker: { width: "100%" },
+  invitePickerHeader: { alignItems: "flex-end", flexDirection: "row", justifyContent: "space-between" },
+  selectedCount: { ...typography.caption, color: colors.inkSoft, marginBottom: 8 },
+  selectedPeopleRow: { gap: 7, paddingBottom: 10 },
+  selectedPersonChip: { alignItems: "center", backgroundColor: colors.ink, borderRadius: 16, flexDirection: "row", maxWidth: 150, minHeight: 32, paddingLeft: 11, paddingRight: 8 },
+  selectedPersonText: { ...typography.caption, color: colors.white, flexShrink: 1, fontWeight: "600" },
+  selectedPersonRemove: { color: "rgba(255,255,255,0.72)", fontSize: 18, lineHeight: 20, marginLeft: 6 },
+  inviteTabs: { backgroundColor: colors.canvas, borderRadius: 18, flexDirection: "row", marginBottom: 10, padding: 3 },
+  inviteTab: { alignItems: "center", borderRadius: 15, flex: 1, justifyContent: "center", minHeight: 36 },
+  inviteTabActive: { backgroundColor: colors.white },
+  inviteTabText: { ...typography.caption, color: colors.profileMuted, fontWeight: "600" },
+  inviteTabTextActive: { color: colors.ink, fontWeight: "700" },
+  inviteSearchBox: { alignItems: "center", backgroundColor: colors.canvas, borderRadius: 15, flexDirection: "row", marginBottom: 8, minHeight: 46, paddingHorizontal: 13 },
+  inviteSearchInput: { ...typography.body, color: colors.ink, flex: 1, marginLeft: 9, paddingVertical: 10 },
+  inviteLoader: { marginVertical: 16 },
   friendList: { maxHeight: 250 },
   friendListSmall: { maxHeight: 145 },
   friendRow: { alignItems: "center", borderColor: "transparent", borderRadius: 14, borderWidth: 1, flexDirection: "row", gap: 10, marginBottom: 4, padding: 8 },
   friendRowActive: { backgroundColor: colors.canvas, borderColor: colors.line },
+  friendRowDisabled: { opacity: 0.38 },
   friendCopy: { flex: 1, minWidth: 0 },
   friendName: { ...typography.body, color: colors.ink, fontWeight: "600" },
   friendHandle: { ...typography.caption, color: colors.profileMuted, marginTop: 2 },

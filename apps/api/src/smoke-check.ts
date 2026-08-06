@@ -127,11 +127,21 @@ async function main() {
   const mockGroup = await mockApi.createInboxGroup({
     ownerId: "user-lili",
     name: "Smoke Lines",
-    inviteeIds: ["user-ray"]
+    inviteeIds: ["user-ray", "user-zhihan"]
   });
   assert(
-    mockGroup.members.some((member) => member.user.id === "user-ray" && member.status === "invited"),
-    "Mock group creation did not create a pending invitation."
+    ["user-ray", "user-zhihan"].every((userId) =>
+      mockGroup.members.some(
+        (member) => member.user.id === userId && member.status === "invited"
+      )
+    ),
+    "Mock group creation did not preserve multiple community invitations."
+  );
+  assert(
+    (await mockApi.listInboxGroupInvites("user-zhihan")).some(
+      (group) => group.id === mockGroup.id
+    ),
+    "A non-mutual invitee could not see the pending Group information."
   );
   const emptyMemberGroup = await mockApi.createInboxGroup({
     ownerId: "user-lili",

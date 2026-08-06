@@ -1001,6 +1001,24 @@ export type CreateContinuationInput = {
   content: string;
 };
 
+export type UpdateContinuationInput = {
+  continuationId: string;
+  userId: string;
+  content: string;
+};
+
+export type DeleteContinuationInput = {
+  continuationId: string;
+  userId: string;
+};
+
+export type DeleteContinuationResult = {
+  continuationId: string;
+  threadId: string;
+  deletedContinuationIds: string[];
+  deleted: boolean;
+};
+
 export type UpdateThreadLikeInput = {
   threadId: string;
   userId: string;

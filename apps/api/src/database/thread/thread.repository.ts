@@ -1,5 +1,7 @@
 import type {
   ContinuationDetail,
+  DeleteContinuationInput,
+  DeleteContinuationResult,
   DeleteThreadInput,
   DeleteThreadResult,
   InboxConversationMessage,
@@ -10,6 +12,7 @@ import type {
   ThreadFeedQuery,
   ThreadShareResult,
   UpdateContinuationLikeInput,
+  UpdateContinuationInput,
   UpdateThreadCollectionInput,
   UpdateThreadInput,
   UpdateThreadLikeInput
@@ -229,6 +232,76 @@ export class ThreadRepository {
       userId: input.userId,
       content: input.content
     });
+  }
+
+  async updateContinuation(
+    input: UpdateContinuationInput
+  ): Promise<ThreadContinuation> {
+    const actorId = await getCurrentLinespaceUserId(this.client);
+    const content = input.content.trim();
+    if (!actorId || actorId !== input.userId) {
+      throw new Error("continuation actor mismatch");
+    }
+    if (!content || content.length > 5000) {
+      throw new Error("invalid continuation content");
+    }
+    const result = await this.client
+      .from("thread_continuations")
+      .update({ content })
+      .eq("id", input.continuationId)
+      .eq("author_user_id", actorId)
+      .select(continuationSelect)
+      .maybeSingle();
+    ensureDatabaseResult(result.error);
+    if (!result.data) throw new Error("continuation not found or forbidden");
+    const mapped = await this.mapContinuations(
+      [result.data as ContinuationRow],
+      actorId
+    );
+    const continuation = mapped[0];
+    if (!continuation) throw new Error("updated continuation not found");
+    return continuation;
+  }
+
+  async deleteContinuation(
+    input: DeleteContinuationInput
+  ): Promise<DeleteContinuationResult> {
+    const actorId = await getCurrentLinespaceUserId(this.client);
+    if (!actorId || actorId !== input.userId) {
+      throw new Error("continuation actor mismatch");
+    }
+    const targetResult = await this.client
+      .from("thread_continuations")
+      .select("id,thread_id,author_user_id")
+      .eq("id", input.continuationId)
+      .maybeSingle();
+    ensureDatabaseResult(targetResult.error);
+    const target = targetResult.data as Pick<
+      ContinuationRow,
+      "id" | "thread_id" | "author_user_id"
+    > | null;
+    if (!target || target.author_user_id !== actorId) {
+      throw new Error("continuation not found or forbidden");
+    }
+    const branchIds = collectContinuationBranchIds(
+      target.id,
+      await this.loadContinuations(target.thread_id)
+    );
+    const result = await this.client
+      .from("thread_continuations")
+      .delete()
+      .eq("id", target.id)
+      .eq("author_user_id", actorId)
+      .select("id")
+      .maybeSingle();
+    ensureDatabaseResult(result.error);
+    if (!result.data) throw new Error("continuation not found or forbidden");
+    return {
+      continuationId: target.id,
+      threadId: target.thread_id,
+      deletedContinuationIds: branchIds,
+      deleted: true
+    };
   }
 
   async setThreadLike(input: UpdateThreadLikeInput): Promise<PoetryThread> {
@@ -724,6 +797,30 @@ function countBy(ids: string[]): Map<string, number> {
   const counts = new Map<string, number>();
   for (const id of ids) counts.set(id, (counts.get(id) ?? 0) + 1);
   return counts;
+}
+
+function collectContinuationBranchIds(
+  rootId: string,
+  rows: readonly ContinuationRow[]
+) {
+  const childrenByParent = new Map<string, string[]>();
+  for (const row of rows) {
+    if (!row.parent_continuation_id) continue;
+    const children = childrenByParent.get(row.parent_continuation_id) ?? [];
+    children.push(row.id);
+    childrenByParent.set(row.parent_continuation_id, children);
+  }
+  const collected: string[] = [];
+  const visited = new Set<string>();
+  const pending = [rootId];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (!current || visited.has(current)) continue;
+    visited.add(current);
+    collected.push(current);
+    pending.push(...(childrenByParent.get(current) ?? []));
+  }
+  return collected;
 }
 
 type InboxRow = {

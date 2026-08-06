@@ -323,6 +323,37 @@ export function getFullPoemText(version: PoemVersionViewModel) {
   return version.lines.map((line) => line.text).join("\n\n");
 }
 
+export function buildThreadVersionComposeParams(
+  thread: PoetryThread,
+  version: PoemVersionViewModel
+) {
+  const creativeThread = adaptThreadToCreativeViewModel(thread);
+  const contributors = [...new Map(
+    version.lines.map((line) => [line.author.id, line.author])
+  ).values()].sort((left, right) => left.handle.localeCompare(right.handle));
+  const versionLines = version.lines.map((line) => ({
+    ...line,
+    ...(version.criterion === "harmonized" ? { aiHarmonized: true } : {})
+  }));
+
+  return {
+    type: "post" as const,
+    session: `thread-version-${version.id}-${Date.now()}`,
+    sourceThreadId: version.threadId,
+    sourceVersionId: version.id,
+    generatedTitle: version.title,
+    fullPoemText: getFullPoemText(version),
+    contributorIds: contributors.map((person) => person.id).join(","),
+    contributorHandles: contributors.map((person) => person.handle).join(","),
+    versionLines: JSON.stringify(versionLines),
+    mediaUri: thread.media?.uri,
+    mediaKind: thread.media?.kind,
+    mediaId: creativeThread.mediaId,
+    startingContent: creativeThread.startingContent,
+    lockedVersionContent: "true"
+  };
+}
+
 function buildVersionFromPath(
   creativeThread: CreativeThreadViewModel,
   path: readonly ThreadContinuation[],

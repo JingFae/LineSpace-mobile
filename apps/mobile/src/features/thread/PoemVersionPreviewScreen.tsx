@@ -29,6 +29,7 @@ import {
   adaptThreadToCreativeViewModel,
   buildCustomPoemVersion,
   buildPoemVersions,
+  buildThreadVersionComposeParams,
   getFullPoemText,
   getThreadMedia,
   getVersionContentHash,
@@ -46,11 +47,13 @@ type ExportNotice = {
 type PoemVersionPreviewScreenProps = {
   threadId?: string;
   customSelectionIds?: string;
+  focusCustomVersion?: boolean;
 };
 
 export function PoemVersionPreviewScreen({
   threadId,
-  customSelectionIds
+  customSelectionIds,
+  focusCustomVersion = false
 }: PoemVersionPreviewScreenProps) {
   const { width } = useWindowDimensions();
   const [viewportWidth, setViewportWidth] = useState(0);
@@ -194,20 +197,25 @@ export function PoemVersionPreviewScreen({
   const pageWidth = viewportWidth || width;
 
   useEffect(() => {
-    if (
-      positionedInitialPageRef.current ||
-      pageWidth <= 0 ||
-      versions.length < 3
-    ) {
+    if (positionedInitialPageRef.current || pageWidth <= 0 || versions.length < 3) {
       return;
     }
+    const customPageIndex = versions.findIndex(
+      (version) => version.criterion === "custom"
+    );
+    const initialPageIndex =
+      focusCustomVersion && customPageIndex >= 0 ? customPageIndex : 1;
     positionedInitialPageRef.current = true;
-    visiblePageIndexRef.current = 1;
-    setPageIndex(1);
+    visiblePageIndexRef.current = initialPageIndex;
+    setPageIndex(initialPageIndex);
     requestAnimationFrame(() => {
-      pagerRef.current?.scrollTo({ x: pageWidth, y: 0, animated: false });
+      pagerRef.current?.scrollTo({
+        x: pageWidth * initialPageIndex,
+        y: 0,
+        animated: false
+      });
     });
-  }, [pageWidth, versions.length]);
+  }, [focusCustomVersion, pageWidth, versions]);
 
   const syncVisiblePage = (offsetX: number) => {
     if (pageWidth <= 0 || versions.length === 0) return;
@@ -271,33 +279,9 @@ export function PoemVersionPreviewScreen({
       });
       return;
     }
-    const sortedContributors = [...new Map(
-      activeVersion.lines.map((line) => [line.author.id, line.author])
-    ).values()].sort((left, right) => left.handle.localeCompare(right.handle));
-    const versionLines = activeVersion.lines.map((line) => ({
-      ...line,
-      ...(activeVersion.criterion === "harmonized"
-        ? { aiHarmonized: true }
-        : {})
-    }));
     router.push({
       pathname: "/(tabs)/compose",
-      params: {
-        type: "post",
-        session: `thread-version-${activeVersion.id}-${Date.now()}`,
-        sourceThreadId: activeVersion.threadId,
-        sourceVersionId: activeVersion.id,
-        generatedTitle: activeVersion.title,
-        fullPoemText: getFullPoemText(activeVersion),
-        contributorIds: sortedContributors.map((person) => person.id).join(","),
-        contributorHandles: sortedContributors.map((person) => person.handle).join(","),
-        versionLines: JSON.stringify(versionLines),
-        mediaUri: detail?.thread.media?.uri,
-        mediaKind: detail?.thread.media?.kind,
-        mediaId: creativeThread.mediaId,
-        startingContent: creativeThread.startingContent,
-        lockedVersionContent: "true"
-      }
+      params: buildThreadVersionComposeParams(detail!.thread, activeVersion)
     } as unknown as Href);
   };
 
@@ -379,16 +363,19 @@ export function PoemVersionPreviewScreen({
                 ]}
               />
             ) : null}
-            <View
-              accessibilityLabel={`Page ${Math.min(pageIndex, 2) + 1} of 3`}
-              style={styles.pageIndicator}
-            >
-              {versions.slice(0, 3).map((version, index) => (
-                <View
-                  key={version.id}
-                  style={[styles.pageDot, index === pageIndex && styles.pageDotActive]}
-                />
-              ))}
+            <View style={styles.pageIndicator}>
+              {currentVersion.criterion === "custom" ? (
+                <Text accessibilityLabel="My custom version" style={styles.customPageBadge}>
+                  MY VERSION
+                </Text>
+              ) : (
+                versions.slice(0, 3).map((version, index) => (
+                  <View
+                    key={version.id}
+                    style={[styles.pageDot, index === pageIndex && styles.pageDotActive]}
+                  />
+                ))
+              )}
             </View>
             <ScrollView
               ref={pagerRef}
@@ -965,6 +952,17 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,.28)"
   },
   pageDotActive: { width: 20, backgroundColor: colors.white },
+  customPageBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    color: colors.white,
+    backgroundColor: "rgba(255,255,255,.14)",
+    fontSize: 9,
+    lineHeight: 12,
+    fontWeight: "800",
+    letterSpacing: 1.1
+  },
   versionActions: {
     position: "absolute",
     left: 18,

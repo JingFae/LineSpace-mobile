@@ -271,24 +271,37 @@ async function run() {
       "Participant publication did not preserve its author, edited title, or immutable lines."
     );
 
-    const groupsBeforeRejectedInvite = await userA.client
+    const groupsBeforeCommunityInvite = await userA.client
       .from("inbox_groups")
       .select("id", { count: "exact", head: true })
       .eq("owner_user_id", userA.userId);
     const nonMutualGroup = await userA.client.rpc("create_inbox_group", {
-      p_name: "Must roll back",
+      p_name: "Community invite",
       p_invitee_user_ids: [userC.userId]
     });
-    assert(Boolean(nonMutualGroup.error), "A non-mutual user was invited to a group.");
-    const groupsAfterRejectedInvite = await userA.client
+    assert(
+      !nonMutualGroup.error && nonMutualGroup.data,
+      "A community user could not be invited without a mutual follow."
+    );
+    const groupsAfterCommunityInvite = await userA.client
       .from("inbox_groups")
       .select("id", { count: "exact", head: true })
       .eq("owner_user_id", userA.userId);
     assert(
-      !groupsBeforeRejectedInvite.error &&
-        !groupsAfterRejectedInvite.error &&
-      groupsBeforeRejectedInvite.count === groupsAfterRejectedInvite.count,
-      "Rejected group creation left a partial group behind."
+      !groupsBeforeCommunityInvite.error &&
+        !groupsAfterCommunityInvite.error &&
+        groupsAfterCommunityInvite.count === (groupsBeforeCommunityInvite.count ?? 0) + 1,
+      "Community group creation was not committed atomically."
+    );
+    const visibleCommunityInvite = await userC.client
+      .from("inbox_groups")
+      .select("id,name")
+      .eq("id", nonMutualGroup.data.id)
+      .single();
+    assert(
+      !visibleCommunityInvite.error &&
+        visibleCommunityInvite.data?.name === "Community invite",
+      "The invited user could not see the pending Group information."
     );
 
     const directGroup = await userA.client.from("inbox_groups").insert({

@@ -29,6 +29,8 @@ import type {
   DraftOperationInput,
   DeleteThreadInput,
   DeleteThreadResult,
+  DeleteContinuationInput,
+  DeleteContinuationResult,
   DeletePoemInput,
   DeletePoemResult,
   FeedQuery,
@@ -74,6 +76,7 @@ import type {
   UpdateInboxGroupInput,
   UpdatePoemCollectionInput,
   UpdateContinuationLikeInput,
+  UpdateContinuationInput,
   UpdateUserFollowInput,
   UpdateThreadLikeInput,
   UserConnectionKind,
@@ -147,6 +150,8 @@ export interface LineSpaceApi {
   ): Promise<ContinuationDetail | null>;
   createThreadContinuation(input: CreateThreadContinuationInput): Promise<ThreadContinuation>;
   createContinuation(input: CreateContinuationInput): Promise<ThreadContinuation>;
+  updateContinuation(input: UpdateContinuationInput): Promise<ThreadContinuation>;
+  deleteContinuation(input: DeleteContinuationInput): Promise<DeleteContinuationResult>;
   setThreadLike(input: UpdateThreadLikeInput): Promise<PoetryThread>;
   setContinuationLike(input: UpdateContinuationLikeInput): Promise<ThreadContinuation>;
   setThreadCollection(input: UpdateThreadCollectionInput): Promise<PoetryThread>;
@@ -1018,9 +1023,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
     );
     const invitees = requestedInviteeIds.map((userId) => {
       const profile = this.findAnyProfile(userId);
-      if (!profile || !this.isMutualConnection(input.ownerId, userId)) {
-        throw new Error("Only mutual connections can be invited");
-      }
+      if (!profile) throw new Error("The invited user was not found");
       return profile;
     });
 
@@ -1075,12 +1078,7 @@ export class MockLineSpaceApi implements LineSpaceApi {
     const now = new Date().toISOString();
 
     for (const userId of [...new Set(input.inviteeIds)]) {
-      if (
-        existingIds.has(userId) ||
-        !this.isMutualConnection(input.inviterId, userId)
-      ) {
-        continue;
-      }
+      if (existingIds.has(userId)) continue;
       const invitee = this.findAnyProfile(userId);
       if (!invitee) continue;
       group.members.push({
@@ -1676,6 +1674,57 @@ export class MockLineSpaceApi implements LineSpaceApi {
       }
     }
     return this.withContinuationViewer(continuation, input.userId);
+  }
+
+  async updateContinuation(input: UpdateContinuationInput): Promise<ThreadContinuation> {
+    const continuation = this.continuations.find(
+      (item) => item.id === input.continuationId
+    );
+    const content = input.content.trim();
+    if (
+      !continuation ||
+      continuation.author.id !== input.userId ||
+      content.length === 0 ||
+      content.length > 5000
+    ) {
+      throw new Error("Continuation access denied");
+    }
+    continuation.content = content;
+    return this.withContinuationViewer(continuation, input.userId);
+  }
+
+  async deleteContinuation(
+    input: DeleteContinuationInput
+  ): Promise<DeleteContinuationResult> {
+    const continuation = this.continuations.find(
+      (item) => item.id === input.continuationId
+    );
+    if (!continuation || continuation.author.id !== input.userId) {
+      throw new Error("Continuation access denied");
+    }
+    const deletedIds = collectContinuationBranchIds(
+      input.continuationId,
+      this.continuations
+    );
+    const deleted = new Set(deletedIds);
+    for (let index = this.continuations.length - 1; index >= 0; index -= 1) {
+      if (deleted.has(this.continuations[index]!.id)) {
+        this.continuations.splice(index, 1);
+      }
+    }
+    const thread = this.threads.find((item) => item.id === continuation.threadId);
+    if (thread) {
+      thread.metrics.continuations = Math.max(
+        0,
+        thread.metrics.continuations - deletedIds.length
+      );
+    }
+    return {
+      continuationId: input.continuationId,
+      threadId: continuation.threadId,
+      deletedContinuationIds: deletedIds,
+      deleted: true
+    };
   }
 
   async setThreadLike(input: UpdateThreadLikeInput): Promise<PoetryThread> {
@@ -2755,6 +2804,28 @@ function cloneContinuation(continuation: ThreadContinuation): ThreadContinuation
     metrics: { ...continuation.metrics },
     viewer: { ...continuation.viewer }
   };
+}
+
+function collectContinuationBranchIds(
+  rootId: string,
+  continuations: readonly ThreadContinuation[]
+) {
+  const childrenByParent = new Map<string, string[]>();
+  for (const continuation of continuations) {
+    if (!continuation.parentContinuationId) continue;
+    const children = childrenByParent.get(continuation.parentContinuationId) ?? [];
+    children.push(continuation.id);
+    childrenByParent.set(continuation.parentContinuationId, children);
+  }
+  const collected: string[] = [];
+  const pending = [rootId];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (!current || collected.includes(current)) continue;
+    collected.push(current);
+    pending.push(...(childrenByParent.get(current) ?? []));
+  }
+  return collected;
 }
 
 function assignStableContinuationLineNumbers(

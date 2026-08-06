@@ -84,6 +84,13 @@ const communitySparkAtomicApplyMigration = await readFile(
   ),
   "utf8"
 );
+const inboxGroupCommunityInvitesMigration = await readFile(
+  new URL(
+    "20260806000300_inbox_group_community_invites.sql",
+    canonicalMigrationsUrl
+  ),
+  "utf8"
+);
 const communitySparkAtomicUndoMigration = await readFile(
   new URL(
     "20260802000200_community_spark_atomic_undo.sql",
@@ -278,6 +285,33 @@ for (const fileName of canonicalMigrationFiles) {
     `Supabase migration ${fileName} must use a 14-digit timestamp and snake_case name.`
   );
 }
+for (const required of [
+  /create\s+or\s+replace\s+function\s+public\.validate_inbox_group_invitee/i,
+  /an active group member must send the invitation/i,
+  /create\s+or\s+replace\s+function\s+public\.create_inbox_group/i,
+  /create\s+or\s+replace\s+function\s+public\.invite_inbox_group_members/i,
+  /select\s+1\s+from\s+public\.users\s+where\s+id\s*=\s*invitees\.invitee_id/i,
+  /current_user_is_active_inbox_group_member\(\s*inbox_group_members\.group_id\s*\)/i,
+  /grant\s+execute\s+on\s+function\s+public\.create_inbox_group\(text,\s*text\[\]\)/i,
+  /grant\s+execute\s+on\s+function\s+public\.invite_inbox_group_members\(text,\s*text\[\]\)/i
+] as const) {
+  assert(
+    required.test(inboxGroupCommunityInvitesMigration),
+    `Community Group invitation migration is missing ${required}.`
+  );
+}
+assert(
+  !/group invitations are limited to mutual connections/i.test(
+    inboxGroupCommunityInvitesMigration
+  ) && !/from\s+public\.user_follows/i.test(inboxGroupCommunityInvitesMigration),
+  "Community Group invitations must not require a mutual follow."
+);
+assert(
+  !/public\.is_active_inbox_group_member\(\s*inbox_group_members\.group_id\s*\)/i.test(
+    inboxGroupCommunityInvitesMigration
+  ),
+  "Community Group invitation policies must avoid the ambiguous overloaded helper."
+);
 
 assert(
   /create\s+table\s+if\s+not\s+exists\s+inbox_messages/i.test(profileSchema),

@@ -18,6 +18,8 @@ import type {
   DraftOperationInput,
   DeleteThreadInput,
   DeleteThreadResult,
+  DeleteContinuationInput,
+  DeleteContinuationResult,
   DeletePoemInput,
   DeletePoemResult,
   FeedQuery,
@@ -60,6 +62,7 @@ import type {
   UpdateInboxGroupInput,
   UpdatePoemCollectionInput,
   UpdateContinuationLikeInput,
+  UpdateContinuationInput,
   UpdateUserFollowInput,
   UpdateThreadLikeInput,
   UserConnectionKind,
@@ -538,6 +541,24 @@ export class HttpLineSpaceApi implements LineSpaceApi {
     return this.postJson<ThreadContinuation>(
       `/v1/continuations/${encodeURIComponent(continuationId)}/continuations`,
       request
+    );
+  }
+
+  async updateContinuation(
+    input: UpdateContinuationInput
+  ): Promise<ThreadContinuation> {
+    const { continuationId, ...request } = input;
+    return this.putJson<ThreadContinuation>(
+      `/v1/continuations/${encodeURIComponent(continuationId)}`,
+      request
+    );
+  }
+
+  async deleteContinuation(
+    input: DeleteContinuationInput
+  ): Promise<DeleteContinuationResult> {
+    return this.deleteJson<DeleteContinuationResult>(
+      `/v1/continuations/${encodeURIComponent(input.continuationId)}`
     );
   }
 

@@ -271,9 +271,20 @@ export class InboxRepository {
 
   async listInboxGroups(userId: string): Promise<InboxGroup[]> {
     await this.assertActor(userId);
+    const membersResult = await this.client
+      .from("inbox_group_members")
+      .select("group_id")
+      .eq("user_id", userId)
+      .eq("status", "active");
+    ensureDatabaseResult(membersResult.error);
+    const ids = ((membersResult.data as Array<{ group_id: string }> | null) ?? []).map(
+      (row) => row.group_id
+    );
+    if (ids.length === 0) return [];
     const result = await this.client
       .from("inbox_groups")
       .select(groupWithRelationsSelect)
+      .in("id", ids)
       .order("updated_at", { ascending: false })
       .order("invited_at", {
         referencedTable: "inbox_group_members",

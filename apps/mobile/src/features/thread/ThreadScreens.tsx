@@ -10,6 +10,8 @@ import {
   Easing,
   FlatList,
   Image,
+  KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -34,6 +36,7 @@ import {
 import { colors, radius, spacing, typography } from "@linespace/tokens";
 import type {
   ContinuationDetail,
+  DeleteContinuationResult,
   PoetryThread,
   ThreadContinuation,
   ThreadDetail,
@@ -51,6 +54,8 @@ import { useGuestAccess } from "@/auth/GuestAccessProvider";
 import { prefetchProfile, prefetchThread } from "@/services/contentPrefetch";
 import {
   adaptThreadToCreativeViewModel,
+  buildCustomPoemVersion,
+  buildThreadVersionComposeParams,
   getThreadContributors,
   getThreadMedia,
   type CreativeThreadViewModel
@@ -160,6 +165,7 @@ type ContinuationPathRenderNode = {
   onContinue: () => void;
   onLike: () => void;
   onShare: () => void;
+  onManage?: () => void;
 };
 
 export function ThreadFeedScreen() {
@@ -170,6 +176,7 @@ export function ThreadFeedScreen() {
   const [sort, setSort] = useState<ThreadSort>("latest");
   const [composerTarget, setComposerTarget] = useAccountComposerTarget();
   const [shareNotice, setShareNotice] = useState<ShareNotice | null>(null);
+  const [managedThread, setManagedThread] = useState<PoetryThread | null>(null);
 
   const profileQuery = useCurrentProfile(currentUserId);
   const threadQuery = useInfiniteQuery({
@@ -188,6 +195,18 @@ export function ThreadFeedScreen() {
   });
   const likeMutation = useThreadLikeMutation();
   const saveMutation = useThreadSaveMutation();
+  const deleteThreadMutation = useMutation({
+    mutationFn: (threadId: string) =>
+      lineSpaceApi.deleteThread({ threadId, userId: currentUserId }),
+    onSuccess: (result) => {
+      setManagedThread(null);
+      queryClient.removeQueries({ queryKey: ["thread-detail", result.threadId] });
+      queryClient.removeQueries({ queryKey: ["thread-ai-versions", result.threadId] });
+      void queryClient.invalidateQueries({ queryKey: ["threads"] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", currentUserId] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile-content", currentUserId] });
+    }
+  });
 
   const threads = useMemo(() => {
     const seen = new Set<string>();
@@ -265,6 +284,14 @@ export function ThreadFeedScreen() {
               onOpen={() => openThread(thread.id)}
               onOpenVersion={() => openThread(thread.id, true)}
               onAuthorPress={() => openProfile(thread.author.id)}
+              onManage={
+                thread.author.id === currentUserId
+                  ? () => {
+                      deleteThreadMutation.reset();
+                      setManagedThread(thread);
+                    }
+                  : undefined
+              }
               onShare={() =>
                 requireAccount("share this thread") && router.push({
                   pathname: "/thread/share/[id]",
@@ -317,6 +344,31 @@ export function ThreadFeedScreen() {
         }}
         target={composerTarget}
       />
+      {managedThread ? (
+        <ThreadOptionsSheet
+          error={deleteThreadMutation.isError}
+          onClose={() => {
+            deleteThreadMutation.reset();
+            setManagedThread(null);
+          }}
+          onDelete={() => deleteThreadMutation.mutate(managedThread.id)}
+          onEdit={() => {
+            const threadId = managedThread.id;
+            setManagedThread(null);
+            router.push({
+              pathname: "/(tabs)/compose",
+              params: {
+                type: "thread",
+                session: `edit-thread-${threadId}-${Date.now()}`,
+                editThreadId: threadId
+              }
+            } as unknown as Href);
+          }}
+          pending={deleteThreadMutation.isPending}
+          thread={managedThread}
+          visible
+        />
+      ) : null}
       <ShareToast notice={shareNotice} onDismiss={() => setShareNotice(null)} />
     </AppScreen>
   );
@@ -356,6 +408,9 @@ export function ThreadDetailScreen({
   const queryClient = useQueryClient();
   const [composerTarget, setComposerTarget] = useAccountComposerTarget();
   const { requireAccount } = useGuestAccess();
+  const continuationManagement = useContinuationManagement();
+  const [threadOptionsOpen, setThreadOptionsOpen] = useState(false);
+  const [customVersionReady, setCustomVersionReady] = useState(false);
   const [followingAuthorIds, setFollowingAuthorIds] = useState<Set<string>>(() => new Set());
   const [continuationOrder, setContinuationOrder] = useState<ContinuationOrder>("top");
   const [expandedRootIds, setExpandedRootIds] = useState<Set<string>>(() => new Set());
@@ -377,6 +432,22 @@ export function ThreadDetailScreen({
       void queryClient.invalidateQueries({ queryKey: ["user-profile", currentUserId] });
     }
   });
+  const deleteThreadMutation = useMutation({
+    mutationFn: (targetThreadId: string) =>
+      lineSpaceApi.deleteThread({
+        threadId: targetThreadId,
+        userId: currentUserId
+      }),
+    onSuccess: (result) => {
+      setThreadOptionsOpen(false);
+      queryClient.removeQueries({ queryKey: ["thread-detail", result.threadId] });
+      queryClient.removeQueries({ queryKey: ["thread-ai-versions", result.threadId] });
+      void queryClient.invalidateQueries({ queryKey: ["threads"] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile", currentUserId] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile-content", currentUserId] });
+      router.replace(tabRoutes.thread);
+    }
+  });
   const detail = detailQuery.data ?? undefined;
   const versionTreeQuery = useQuery({
     queryKey: ["thread-version-tree", threadId, currentUserId, detail?.continuations.map((item) => item.id).join("|")],
@@ -384,6 +455,21 @@ export function ThreadDetailScreen({
     queryFn: () => getAllThreadContinuations(detail!.continuations)
   });
   const allContinuations = detail?.allContinuations ?? versionTreeQuery.data ?? detail?.continuations ?? [];
+  const selectedContinuationIds = useMemo(
+    () =>
+      Object.entries(selectedByLine)
+        .sort(([left], [right]) => Number(left) - Number(right))
+        .map(([, id]) => id),
+    [selectedByLine]
+  );
+  const canPublishCustomVersion = Boolean(
+    detail &&
+      currentUserId &&
+      (detail.thread.author.id === currentUserId ||
+        allContinuations.some(
+          (continuation) => continuation.author.id === currentUserId
+        ))
+  );
   const sortedContinuations = useMemo(() => {
     return sortContinuationItems(
       (detail?.continuations ?? []).filter(
@@ -470,7 +556,11 @@ export function ThreadDetailScreen({
       />
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.detailContent, composerTarget && styles.composerOpenContentInset]}
+        contentContainerStyle={[
+          styles.detailContent,
+          selectionMode && styles.selectionDetailContent,
+          composerTarget && styles.composerOpenContentInset
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {detailQuery.isLoading ? (
@@ -483,6 +573,7 @@ export function ThreadDetailScreen({
               continuations={allContinuations}
               followed={followingAuthorIds.has(detail.thread.author.id)}
               thread={detail.thread}
+              isOwner={detail.thread.author.id === currentUserId}
               onAuthorPress={() => router.push({ pathname: "/profile/[id]", params: { id: detail.thread.author.id } } as unknown as Href)}
               onContinue={() => setComposerTarget({ kind: "thread", thread: detail.thread })}
               onFollow={() =>
@@ -511,6 +602,7 @@ export function ThreadDetailScreen({
               onOpenVersion={() =>
                 router.push({ pathname: "/thread/version/[id]", params: { id: detail.thread.id } } as unknown as Href)
               }
+              onManage={() => setThreadOptionsOpen(true)}
             />
             <ContinuationHeader order={continuationOrder} onChange={handleContinuationOrderChange} />
             {detail.continuations.length === 0 ? (
@@ -538,6 +630,8 @@ export function ThreadDetailScreen({
                       params: { id: target.id }
                     } as unknown as Href)
                   }
+                  onManage={continuationManagement.open}
+                  ownerUserId={currentUserId}
                   onShare={(target) =>
                     requireAccount("share this continuation") && router.push({
                       pathname: "/thread/share/[id]",
@@ -548,12 +642,14 @@ export function ThreadDetailScreen({
                   selectionMode={selectionMode}
                   selectedByLine={selectedByLine}
                   onSelect={(target, lineNumber) =>
-                    setSelectedByLine((current) => {
-                      const next = { ...current };
-                      if (next[lineNumber] === target.id) delete next[lineNumber];
-                      else next[lineNumber] = target.id;
-                      return next;
-                    })
+                    setSelectedByLine((current) =>
+                      updateCustomVersionSelection(
+                        current,
+                        target,
+                        lineNumber,
+                        allContinuations
+                      )
+                    )
                   }
                 />
               ))
@@ -562,30 +658,18 @@ export function ThreadDetailScreen({
         )}
       </ScrollView>
       {detail ? (
-        <FixedComposerButton
-          label={
-            selectionMode
-              ? `Finish custom version · ${Object.keys(selectedByLine).length} lines selected`
-              : "Continue this thread..."
-          }
-          onPress={() => {
-            if (selectionMode) {
-              router.replace({
-                pathname: "/thread/version/[id]",
-                params: {
-                  id: detail.thread.id,
-                  customSelectionIds: Object.entries(selectedByLine)
-                    .sort(([left], [right]) => Number(left) - Number(right))
-                    .map(([, id]) => id)
-                    .join(",")
-                }
-              } as unknown as Href);
-              return;
-            }
-            setComposerTarget({ kind: "thread", thread: detail.thread });
-          }}
-          hidden={Boolean(composerTarget)}
-        />
+        selectionMode ? (
+          <CustomVersionFinishBar
+            continuationCount={selectedContinuationIds.length}
+            onPress={() => setCustomVersionReady(true)}
+          />
+        ) : (
+          <FixedComposerButton
+            label="Continue this thread..."
+            onPress={() => setComposerTarget({ kind: "thread", thread: detail.thread })}
+            hidden={Boolean(composerTarget)}
+          />
+        )
       ) : null}
       {!selectionMode ? <ContinueComposer
         onClose={() => setComposerTarget(null)}
@@ -600,6 +684,71 @@ export function ThreadDetailScreen({
         }}
         target={composerTarget}
       /> : null}
+      {!selectionMode && detail ? (
+        <ThreadOptionsSheet
+          error={deleteThreadMutation.isError}
+          onClose={() => {
+            deleteThreadMutation.reset();
+            setThreadOptionsOpen(false);
+          }}
+          onDelete={() => deleteThreadMutation.mutate(detail.thread.id)}
+          onEdit={() => {
+            setThreadOptionsOpen(false);
+            router.push({
+              pathname: "/(tabs)/compose",
+              params: {
+                type: "thread",
+                session: `edit-thread-${detail.thread.id}-${Date.now()}`,
+                editThreadId: detail.thread.id
+              }
+            } as unknown as Href);
+          }}
+          pending={deleteThreadMutation.isPending}
+          thread={detail.thread}
+          visible={threadOptionsOpen}
+        />
+      ) : null}
+      {!selectionMode ? (
+        <ContinuationOptionsSheet
+          descendantCount={countContinuationDescendants(
+            continuationManagement.target?.id,
+            allContinuations
+          )}
+          {...continuationManagement}
+        />
+      ) : null}
+      {selectionMode && detail ? (
+        <CustomVersionReadySheet
+          canPublish={canPublishCustomVersion}
+          continuationCount={selectedContinuationIds.length}
+          onClose={() => setCustomVersionReady(false)}
+          onKeep={() => {
+            setCustomVersionReady(false);
+            router.replace({
+              pathname: "/thread/version/[id]",
+              params: {
+                id: detail.thread.id,
+                customSelectionIds: selectedContinuationIds.join(","),
+                focusCustomVersion: "true"
+              }
+            } as unknown as Href);
+          }}
+          onPublish={() => {
+            if (!canPublishCustomVersion || selectedContinuationIds.length === 0) return;
+            const customVersion = buildCustomPoemVersion(
+              detail.thread,
+              allContinuations,
+              selectedContinuationIds
+            );
+            setCustomVersionReady(false);
+            router.push({
+              pathname: "/(tabs)/compose",
+              params: buildThreadVersionComposeParams(detail.thread, customVersion)
+            } as unknown as Href);
+          }}
+          visible={customVersionReady}
+        />
+      ) : null}
     </AppScreen>
   );
 }
@@ -608,6 +757,13 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
   const queryClient = useQueryClient();
   const [composerTarget, setComposerTarget] = useAccountComposerTarget();
   const { requireAccount } = useGuestAccess();
+  const continuationManagement = useContinuationManagement((result) => {
+    if (!result.deletedContinuationIds.includes(continuationId ?? "")) return;
+    router.replace({
+      pathname: "/thread/[id]",
+      params: { id: result.threadId }
+    } as unknown as Href);
+  });
   const detailQuery = useQuery({
     queryKey: ["continuation-detail", continuationId, currentUserId],
     enabled: Boolean(continuationId),
@@ -637,6 +793,7 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
             <ContinuationPath
               children={sortedChildren}
               detail={detail}
+              onContinuationManage={continuationManagement.open}
               onContinuationContinue={(target) => setComposerTarget({ kind: "continuation", continuation: target })}
               onContinuationLike={(target) =>
                 continuationLikeMutation.mutate({
@@ -665,6 +822,7 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
                   params: { id: detail.thread.id, kind: "thread" }
                 } as unknown as Href)
               }
+              ownerUserId={currentUserId}
             />
             {sortedChildren.length === 0 ? (
               <LightContinuationEmptyState />
@@ -692,6 +850,13 @@ export function ContinueDetailScreen({ continuationId }: { continuationId?: stri
           } as unknown as Href);
         }}
         target={composerTarget}
+      />
+      <ContinuationOptionsSheet
+        descendantCount={countContinuationDescendants(
+          continuationManagement.target?.id,
+          detail ? [...detail.path, detail.current, ...detail.children] : []
+        )}
+        {...continuationManagement}
       />
     </AppScreen>
   );
@@ -735,7 +900,8 @@ function ThreadCard({
   onContinue,
   onShare,
   onSave,
-  onAuthorPress
+  onAuthorPress,
+  onManage
 }: {
   thread: PoetryThread;
   elevated?: boolean;
@@ -746,6 +912,7 @@ function ThreadCard({
   onShare: () => void;
   onSave?: () => void;
   onAuthorPress: () => void;
+  onManage?: () => void;
 }) {
   const showFullMeta = elevated;
   const creativeThread = adaptThreadToCreativeViewModel(thread);
@@ -761,8 +928,23 @@ function ThreadCard({
           />
         </Pressable>
         <View style={styles.threadBody}>
+          <View style={styles.threadCardHeaderRow}>
+            <Pressable accessibilityRole="button" onPress={onOpen} style={styles.threadCardAuthorButton}>
+              <CompactAuthorLine author={thread.author} createdAt={thread.createdAt} meta={showFullMeta ? thread.community : undefined} />
+            </Pressable>
+            {onManage ? (
+              <Pressable
+                accessibilityLabel="Thread options"
+                accessibilityRole="button"
+                hitSlop={10}
+                onPress={onManage}
+                style={styles.threadCardOptionsButton}
+              >
+                <Text style={styles.ownerOptionsGlyph}>•••</Text>
+              </Pressable>
+            ) : null}
+          </View>
           <Pressable accessibilityRole="button" onPress={onOpen} style={styles.threadOpenArea}>
-            <CompactAuthorLine author={thread.author} createdAt={thread.createdAt} meta={showFullMeta ? thread.community : undefined} />
             {thread.title ? <Text numberOfLines={2} style={styles.threadTitle}>{thread.title}</Text> : null}
             <Text numberOfLines={showFullMeta ? undefined : 20} style={styles.threadContent}>{creativeThread.writingPrompt}</Text>
           </Pressable>
@@ -790,6 +972,7 @@ function ThreadCard({
 function ThreadDetailHero({
   continuations,
   followed,
+  isOwner,
   thread,
   onFollow,
   onLike,
@@ -797,10 +980,12 @@ function ThreadDetailHero({
   onShare,
   onSave,
   onOpenVersion,
-  onAuthorPress
+  onAuthorPress,
+  onManage
 }: {
   continuations: readonly ThreadContinuation[];
   followed: boolean;
+  isOwner: boolean;
   thread: PoetryThread;
   onFollow: () => void;
   onLike: () => void;
@@ -809,6 +994,7 @@ function ThreadDetailHero({
   onSave: () => void;
   onOpenVersion: () => void;
   onAuthorPress: () => void;
+  onManage: () => void;
 }) {
   const creativeThread = adaptThreadToCreativeViewModel(thread);
   const contributors = getThreadContributors(thread, continuations);
@@ -827,11 +1013,23 @@ function ThreadDetailHero({
             <Text style={styles.detailHeroTime}>{formatRelative(thread.createdAt)}</Text>
           </View>
         </Pressable>
-        <Pressable accessibilityRole="button" onPress={onFollow} style={[styles.followButton, followed && styles.followingButton]}>
-          <Text style={[styles.followButtonText, followed && styles.followingButtonText]}>
-            {followed ? "Following" : "Follow"}
-          </Text>
-        </Pressable>
+        {isOwner ? (
+          <Pressable
+            accessibilityLabel="Thread options"
+            accessibilityRole="button"
+            hitSlop={10}
+            onPress={onManage}
+            style={styles.ownerOptionsButton}
+          >
+            <Text style={styles.ownerOptionsGlyph}>•••</Text>
+          </Pressable>
+        ) : (
+          <Pressable accessibilityRole="button" onPress={onFollow} style={[styles.followButton, followed && styles.followingButton]}>
+            <Text style={[styles.followButtonText, followed && styles.followingButtonText]}>
+              {followed ? "Following" : "Follow"}
+            </Text>
+          </Pressable>
+        )}
       </View>
       {thread.title ? <Text style={styles.detailHeroTitle}>{thread.title}</Text> : null}
       <Text style={styles.detailHeroContent}>{creativeThread.writingPrompt}</Text>
@@ -975,20 +1173,24 @@ function ContinuationHeader({
 
 function ExpandedContinuationGroup({
   group,
+  ownerUserId,
   onOpen,
   onLike,
   onContinue,
   onShare,
+  onManage,
   onShowContinuations,
   selectionMode = false,
   selectedByLine = {},
   onSelect
 }: {
   group: ContinuationVisibleGroup;
+  ownerUserId: string;
   onOpen: (continuation: ThreadContinuation) => void;
   onLike: (continuation: ThreadContinuation) => void;
   onContinue: (continuation: ThreadContinuation) => void;
   onShare: (continuation: ThreadContinuation) => void;
+  onManage: (continuation: ThreadContinuation) => void;
   onShowContinuations: (continuation: ThreadContinuation) => void;
   selectionMode?: boolean;
   selectedByLine?: Record<number, string>;
@@ -1003,9 +1205,11 @@ function ExpandedContinuationGroup({
         onContinue={onContinue}
         onLike={onLike}
         onOpen={onOpen}
+        onManage={onManage}
         onSelect={onSelect}
         onShare={onShare}
         onShowContinuations={onShowContinuations}
+        ownerUserId={ownerUserId}
         selectedByLine={selectedByLine}
         selectionMode={selectionMode}
       />
@@ -1015,20 +1219,24 @@ function ExpandedContinuationGroup({
 
 function ContinuationTreeNodeView({
   node,
+  ownerUserId,
   onOpen,
   onLike,
   onContinue,
   onShare,
+  onManage,
   onShowContinuations,
   selectionMode = false,
   selectedByLine = {},
   onSelect
 }: {
   node: ContinuationVisibleTreeNode;
+  ownerUserId: string;
   onOpen: (continuation: ThreadContinuation) => void;
   onLike: (continuation: ThreadContinuation) => void;
   onContinue: (continuation: ThreadContinuation) => void;
   onShare: (continuation: ThreadContinuation) => void;
+  onManage: (continuation: ThreadContinuation) => void;
   onShowContinuations?: (continuation: ThreadContinuation) => void;
   selectionMode?: boolean;
   selectedByLine?: Record<number, string>;
@@ -1089,10 +1297,19 @@ function ContinuationTreeNodeView({
           onContinue={onContinue}
           onLike={onLike}
           onOpen={onOpen}
+          onManage={
+            node.row.continuation.author.id === ownerUserId
+              ? onManage
+              : undefined
+          }
           onShare={onShare}
           onShowContinuations={onShowContinuations}
           selectionMode={selectionMode}
           selected={selectedByLine[node.row.lineNumber] === node.row.continuation.id}
+          selectionUnavailable={Boolean(
+            selectedByLine[node.row.lineNumber] &&
+              selectedByLine[node.row.lineNumber] !== node.row.continuation.id
+          )}
           onSelect={onSelect}
         />
       </View>
@@ -1114,8 +1331,10 @@ function ContinuationTreeNodeView({
             onContinue={onContinue}
             onLike={onLike}
             onOpen={onOpen}
+            onManage={onManage}
             onShare={onShare}
             onShowContinuations={onShowContinuations}
+            ownerUserId={ownerUserId}
             selectionMode={selectionMode}
             selectedByLine={selectedByLine}
             onSelect={onSelect}
@@ -1134,9 +1353,11 @@ function ContinuationCard({
   onLike,
   onContinue,
   onShare,
+  onManage,
   onShowContinuations,
   selectionMode = false,
   selected = false,
+  selectionUnavailable = false,
   onSelect
 }: {
   row: ContinuationVisibleRow;
@@ -1145,9 +1366,11 @@ function ContinuationCard({
   onLike: (continuation: ThreadContinuation) => void;
   onContinue: (continuation: ThreadContinuation) => void;
   onShare: (continuation: ThreadContinuation) => void;
+  onManage?: (continuation: ThreadContinuation) => void;
   onShowContinuations?: (continuation: ThreadContinuation) => void;
   selectionMode?: boolean;
   selected?: boolean;
+  selectionUnavailable?: boolean;
   onSelect?: (continuation: ThreadContinuation, lineNumber: number) => void;
 }) {
   const { continuation } = row;
@@ -1195,10 +1418,15 @@ function ContinuationCard({
                 <Pressable
                   accessibilityLabel={`Select line ${row.lineNumber}`}
                   accessibilityRole="checkbox"
-                  accessibilityState={{ checked: selected }}
+                  accessibilityState={{ checked: selected, disabled: selectionUnavailable }}
+                  disabled={selectionUnavailable}
                   hitSlop={10}
                   onPress={() => onSelect?.(continuation, row.lineNumber)}
-                  style={[styles.versionSelectCircle, selected && styles.versionSelectCircleActive]}
+                  style={[
+                    styles.versionSelectCircle,
+                    selected && styles.versionSelectCircleActive,
+                    selectionUnavailable && styles.versionSelectCircleUnavailable
+                  ]}
                 >
                   {selected ? <Text style={styles.versionSelectCheck}>✓</Text> : null}
                 </Pressable>
@@ -1212,7 +1440,7 @@ function ContinuationCard({
             accessibilityRole="button"
             onPress={() =>
               selectionMode
-                ? onSelect?.(continuation, row.lineNumber)
+                ? !selectionUnavailable && onSelect?.(continuation, row.lineNumber)
                 : onOpen(continuation)
             }
             style={styles.continuationOpenArea}
@@ -1227,9 +1455,12 @@ function ContinuationCard({
             onContinue={() => onContinue({ ...continuation, lineNumber: row.lineNumber })}
             onLike={() => onLike(continuation)}
             onShare={() => onShare(continuation)}
+            onManage={onManage ? () => onManage(continuation) : undefined}
           /> : (
             <Text style={styles.versionSelectionHint}>
-              Choose one option for line {row.lineNumber}
+              {selectionUnavailable
+                ? `Another option is selected for line ${row.lineNumber}`
+                : `Choose one option for line ${row.lineNumber}`}
             </Text>
           )}
           {!selectionMode && row.showContinuationEntry && onShowContinuations ? (
@@ -1272,21 +1503,25 @@ function ShowContinuationsRow({
 function ContinuationPath({
   detail,
   children,
+  ownerUserId,
   onThreadContinue,
   onThreadLike,
   onThreadShare,
   onContinuationContinue,
   onContinuationLike,
-  onContinuationShare
+  onContinuationShare,
+  onContinuationManage
 }: {
   detail: ContinuationDetail;
   children: readonly ThreadContinuation[];
+  ownerUserId: string;
   onThreadContinue: () => void;
   onThreadLike: () => void;
   onThreadShare: () => void;
   onContinuationContinue: (continuation: ThreadContinuation) => void;
   onContinuationLike: (continuation: ThreadContinuation) => void;
   onContinuationShare: (continuation: ThreadContinuation) => void;
+  onContinuationManage: (continuation: ThreadContinuation) => void;
 }) {
   const [nodeLayouts, setNodeLayouts] = useState<Record<string, { y: number; height: number }>>({});
   const { mainPathNodes, childNodes } = useMemo<{
@@ -1313,7 +1548,10 @@ function ContinuationPath({
           lineNumber: continuation.lineNumber ?? index + 2
         }),
       onLike: () => onContinuationLike(continuation),
-      onShare: () => onContinuationShare(continuation)
+      onShare: () => onContinuationShare(continuation),
+      ...(continuation.author.id === ownerUserId
+        ? { onManage: () => onContinuationManage(continuation) }
+        : {})
     }));
 
     const mainNodes = [
@@ -1356,7 +1594,10 @@ function ContinuationPath({
         } as unknown as Href),
       onContinue: () => onContinuationContinue(continuation),
       onLike: () => onContinuationLike(continuation),
-      onShare: () => onContinuationShare(continuation)
+      onShare: () => onContinuationShare(continuation),
+      ...(continuation.author.id === ownerUserId
+        ? { onManage: () => onContinuationManage(continuation) }
+        : {})
     }));
     return { mainPathNodes: mainNodes, childNodes: nextNodes };
   }, [
@@ -1366,7 +1607,9 @@ function ContinuationPath({
     detail.thread,
     onContinuationContinue,
     onContinuationLike,
+    onContinuationManage,
     onContinuationShare,
+    ownerUserId,
     onThreadContinue,
     onThreadLike,
     onThreadShare
@@ -1494,6 +1737,7 @@ function ContinuationPathNode({
           metrics={node.metrics}
           onContinue={node.onContinue}
           onLike={node.onLike}
+          onManage={node.onManage}
           onShare={node.onShare}
         />
       </View>
@@ -1564,6 +1808,7 @@ function ThreadActionBar({
   onLike,
   onContinue,
   onShare,
+  onManage,
   onSave,
   saved = false
 }: {
@@ -1574,6 +1819,7 @@ function ThreadActionBar({
   onLike: () => void;
   onContinue: () => void;
   onShare: () => void;
+  onManage?: () => void;
   onSave?: () => void;
   saved?: boolean;
 }) {
@@ -1606,6 +1852,14 @@ function ThreadActionBar({
       onPress={onShare}
     />
   );
+  const manageButton = onManage ? (
+    <ActionButton
+      key="manage"
+      icon={<Text style={styles.actionMoreGlyph}>•••</Text>}
+      label="Options"
+      onPress={onManage}
+    />
+  ) : null;
   const saveButton = onSave ? (
     <ActionButton
       key="save"
@@ -1617,8 +1871,8 @@ function ThreadActionBar({
     />
   ) : null;
   const buttons = actionOrder === "like-first"
-    ? [likeButton, continueButton, shareButton, saveButton]
-    : [continueButton, likeButton, shareButton, saveButton];
+    ? [likeButton, continueButton, shareButton, manageButton, saveButton]
+    : [continueButton, likeButton, shareButton, manageButton, saveButton];
 
   return (
     <View style={[styles.actionBar, compact && styles.compactActionBar]}>
@@ -1637,7 +1891,7 @@ function ActionButton({
 }: {
   active?: boolean;
   animatePress?: boolean;
-  count: number;
+  count?: number;
   icon: ReactNode;
   label: string;
   onPress: () => void;
@@ -1657,10 +1911,12 @@ function ActionButton({
     onPress();
   };
   return (
-    <Pressable accessibilityLabel={`${label} ${count}`} accessibilityRole="button" onPress={handlePress} style={styles.actionButton}>
+    <Pressable accessibilityLabel={count === undefined ? label : `${label} ${count}`} accessibilityRole="button" onPress={handlePress} style={styles.actionButton}>
       <Animated.View style={[styles.actionButtonContent, { transform: [{ scale }] }]}>
         {icon}
-        <Text style={[styles.actionCount, active && styles.actionCountActive]}>{formatCompact(count)}</Text>
+        {count === undefined ? null : (
+          <Text style={[styles.actionCount, active && styles.actionCountActive]}>{formatCompact(count)}</Text>
+        )}
       </Animated.View>
     </Pressable>
   );
@@ -1867,6 +2123,95 @@ function FixedComposerButton({ label, onPress, hidden = false }: { label: string
   );
 }
 
+function CustomVersionFinishBar({
+  continuationCount,
+  onPress
+}: {
+  continuationCount: number;
+  onPress: () => void;
+}) {
+  const canFinish = continuationCount > 0;
+  return (
+    <View style={styles.customFinishBar}>
+      <View style={styles.customFinishCopy}>
+        <Text style={styles.customFinishTitle}>
+          {canFinish ? `${continuationCount + 1} poem lines ready` : "Build your path"}
+        </Text>
+        <Text style={styles.customFinishHint}>
+          {canFinish ? "Your opening line is included" : "Choose at least one continuation"}
+        </Text>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        disabled={!canFinish}
+        onPress={onPress}
+        style={[styles.customFinishButton, !canFinish && styles.customFinishButtonDisabled]}
+      >
+        <Text style={styles.customFinishButtonText}>Finish</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function CustomVersionReadySheet({
+  visible,
+  continuationCount,
+  canPublish,
+  onClose,
+  onKeep,
+  onPublish
+}: {
+  visible: boolean;
+  continuationCount: number;
+  canPublish: boolean;
+  onClose: () => void;
+  onKeep: () => void;
+  onPublish: () => void;
+}) {
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
+      <View style={styles.optionsModalRoot}>
+        <Pressable accessibilityLabel="Close custom version confirmation" onPress={onClose} style={styles.optionsBackdrop} />
+        <View style={styles.optionsSheet}>
+          <View style={styles.optionsHandle} />
+          <Text style={styles.optionsEyebrow}>MY POEM VERSION</Text>
+          <Text style={styles.optionsTitle}>Your version is ready</Text>
+          <View style={styles.customReadySummary}>
+            <Text style={styles.customReadyCount}>{continuationCount + 1}</Text>
+            <View style={styles.customReadyCopy}>
+              <Text style={styles.customReadyLabel}>poem lines</Text>
+              <Text style={styles.customReadyHint}>Opening line plus your selected relay path</Text>
+            </View>
+          </View>
+          <Text style={styles.customReadyQuestion}>
+            Would you like to turn this version into a Post?
+          </Text>
+          {!canPublish ? (
+            <Text style={styles.customReadyRestriction}>
+              Join this Thread with a continuation before publishing one of its versions.
+            </Text>
+          ) : null}
+          <View style={styles.optionsButtonRow}>
+            <Pressable onPress={onKeep} style={styles.optionsSecondaryButton}>
+              <Text style={styles.optionsSecondaryText}>Preview first</Text>
+            </Pressable>
+            <Pressable
+              disabled={!canPublish}
+              onPress={onPublish}
+              style={[
+                styles.customReadyPublishButton,
+                !canPublish && styles.optionsButtonDisabled
+              ]}
+            >
+              <Text style={styles.customReadyPublishText}>Continue to Compose</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function EmptyContinuationState({
   cta,
   title,
@@ -1883,6 +2228,160 @@ function EmptyContinuationState({
         <Text style={styles.emptyButtonText}>{cta}</Text>
       </Pressable>
     </View>
+  );
+}
+
+function ThreadOptionsSheet({
+  thread,
+  visible,
+  pending,
+  error,
+  onClose,
+  onEdit,
+  onDelete
+}: {
+  thread: PoetryThread;
+  visible: boolean;
+  pending: boolean;
+  error: boolean;
+  onClose: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  useEffect(() => {
+    if (!visible) setConfirmingDelete(false);
+  }, [visible]);
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
+      <View style={styles.optionsModalRoot}>
+        <Pressable accessibilityLabel="Close thread options" onPress={onClose} style={styles.optionsBackdrop} />
+        <View style={styles.optionsSheet}>
+          <View style={styles.optionsHandle} />
+          <Text style={styles.optionsEyebrow}>YOUR THREAD</Text>
+          <Text numberOfLines={2} style={styles.optionsTitle}>{thread.title || "Poem relay"}</Text>
+          {confirmingDelete ? (
+            <View style={styles.optionsConfirmBox}>
+              <Text style={styles.optionsConfirmTitle}>Delete this thread?</Text>
+              <Text style={styles.optionsConfirmCopy}>Its complete continuation tree, versions, likes and saves will be permanently removed.</Text>
+              {error ? <Text style={styles.optionsError}>The thread could not be deleted. Please try again.</Text> : null}
+              <View style={styles.optionsButtonRow}>
+                <Pressable disabled={pending} onPress={() => setConfirmingDelete(false)} style={styles.optionsSecondaryButton}>
+                  <Text style={styles.optionsSecondaryText}>Cancel</Text>
+                </Pressable>
+                <Pressable disabled={pending} onPress={onDelete} style={styles.optionsDeleteButton}>
+                  <Text style={styles.optionsDeleteText}>{pending ? "Deleting…" : "Delete"}</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <>
+              <Pressable onPress={onEdit} style={styles.optionsActionButton}>
+                <Text style={styles.optionsActionTitle}>Edit thread setup</Text>
+                <Text style={styles.optionsActionHint}>Update the prompt, first line, rules and visibility</Text>
+              </Pressable>
+              <Pressable onPress={() => setConfirmingDelete(true)} style={[styles.optionsActionButton, styles.optionsDangerAction]}>
+                <Text style={styles.optionsDangerTitle}>Delete thread</Text>
+                <Text style={styles.optionsActionHint}>A confirmation is required</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function ContinuationOptionsSheet({
+  target,
+  descendantCount,
+  pending,
+  error,
+  onClose,
+  onSave,
+  onDelete
+}: {
+  target: ThreadContinuation | null;
+  descendantCount: number;
+  pending: boolean;
+  error: boolean;
+  onClose: () => void;
+  onSave: (content: string) => void;
+  onDelete: () => void;
+}) {
+  const [mode, setMode] = useState<"options" | "edit" | "delete">("options");
+  const [draft, setDraft] = useState("");
+  useEffect(() => {
+    setMode("options");
+    setDraft(target?.content ?? "");
+  }, [target?.id, target?.content]);
+  const trimmedDraft = draft.trim();
+  const unchanged = trimmedDraft === (target?.content.trim() ?? "");
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible={Boolean(target)}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.optionsModalRoot}>
+        <Pressable accessibilityLabel="Close continuation options" onPress={onClose} style={styles.optionsBackdrop} />
+        <View style={styles.optionsSheet}>
+          <View style={styles.optionsHandle} />
+          <Text style={styles.optionsEyebrow}>YOUR CONTINUATION</Text>
+          <Text style={styles.optionsTitle}>Line {target?.lineNumber ?? ""}</Text>
+          {mode === "edit" ? (
+            <>
+              <Text style={styles.optionsEditLabel}>Keep the meaning yours</Text>
+              <TextInput
+                autoFocus
+                maxLength={5000}
+                multiline
+                onChangeText={setDraft}
+                placeholder="Write your line…"
+                placeholderTextColor={colors.profileMuted}
+                style={styles.optionsEditInput}
+                textAlignVertical="top"
+                value={draft}
+              />
+              {error ? <Text style={styles.optionsError}>The line could not be saved. Please try again.</Text> : null}
+              <View style={styles.optionsButtonRow}>
+                <Pressable disabled={pending} onPress={() => setMode("options")} style={styles.optionsSecondaryButton}>
+                  <Text style={styles.optionsSecondaryText}>Back</Text>
+                </Pressable>
+                <Pressable disabled={pending || !trimmedDraft || unchanged} onPress={() => onSave(trimmedDraft)} style={[styles.optionsPrimaryButton, (!trimmedDraft || unchanged) && styles.optionsButtonDisabled]}>
+                  <Text style={styles.optionsPrimaryText}>{pending ? "Saving…" : "Save"}</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : mode === "delete" ? (
+            <View style={styles.optionsConfirmBox}>
+              <Text style={styles.optionsConfirmTitle}>Delete this line?</Text>
+              <Text style={styles.optionsConfirmCopy}>
+                {descendantCount > 0
+                  ? "This line and the continuation branch after it will be permanently removed."
+                  : "This line, its likes and shares will be permanently removed."}
+              </Text>
+              {error ? <Text style={styles.optionsError}>The line could not be deleted. Please try again.</Text> : null}
+              <View style={styles.optionsButtonRow}>
+                <Pressable disabled={pending} onPress={() => setMode("options")} style={styles.optionsSecondaryButton}>
+                  <Text style={styles.optionsSecondaryText}>Cancel</Text>
+                </Pressable>
+                <Pressable disabled={pending} onPress={onDelete} style={styles.optionsDeleteButton}>
+                  <Text style={styles.optionsDeleteText}>{pending ? "Deleting…" : "Delete"}</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <>
+              <Pressable onPress={() => setMode("edit")} style={styles.optionsActionButton}>
+                <Text style={styles.optionsActionTitle}>Edit this line</Text>
+                <Text style={styles.optionsActionHint}>Keep its position, likes and replies</Text>
+              </Pressable>
+              <Pressable onPress={() => setMode("delete")} style={[styles.optionsActionButton, styles.optionsDangerAction]}>
+                <Text style={styles.optionsDangerTitle}>Delete this line</Text>
+                <Text style={styles.optionsActionHint}>{descendantCount > 0 ? "Its following branch will also be removed" : "A confirmation is required"}</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 
@@ -1910,6 +2409,68 @@ function useCurrentProfile(userId: string) {
     queryFn: () => lineSpaceApi.getUserProfile(userId),
     enabled: userId.length > 0
   });
+}
+
+function useContinuationManagement(
+  onDeleted?: (result: DeleteContinuationResult) => void
+) {
+  const { user } = useAuth();
+  const actorUserId = user?.id ?? currentUserId;
+  const queryClient = useQueryClient();
+  const [target, setTarget] = useState<ThreadContinuation | null>(null);
+  const updateMutation = useMutation({
+    mutationFn: (content: string) => {
+      if (!target) throw new Error("Missing continuation target");
+      return lineSpaceApi.updateContinuation({
+        continuationId: target.id,
+        userId: actorUserId,
+        content
+      });
+    },
+    onSuccess: (updated) => {
+      optimisticallyUpdateContinuationCaches(
+        queryClient,
+        updated.id,
+        (continuation) => ({ ...continuation, content: updated.content })
+      );
+      setTarget(null);
+      invalidateContinuationManagementQueries(queryClient, updated.threadId, actorUserId);
+    }
+  });
+  const deleteMutation = useMutation({
+    mutationFn: () => {
+      if (!target) throw new Error("Missing continuation target");
+      return lineSpaceApi.deleteContinuation({
+        continuationId: target.id,
+        userId: actorUserId
+      });
+    },
+    onSuccess: (result) => {
+      removeContinuationBranchFromCaches(queryClient, result);
+      setTarget(null);
+      invalidateContinuationManagementQueries(queryClient, result.threadId, actorUserId);
+      onDeleted?.(result);
+    }
+  });
+  const close = () => {
+    if (updateMutation.isPending || deleteMutation.isPending) return;
+    updateMutation.reset();
+    deleteMutation.reset();
+    setTarget(null);
+  };
+  return {
+    target,
+    open: (continuation: ThreadContinuation) => {
+      updateMutation.reset();
+      deleteMutation.reset();
+      setTarget(continuation);
+    },
+    onClose: close,
+    onSave: (content: string) => updateMutation.mutate(content),
+    onDelete: () => deleteMutation.mutate(),
+    pending: updateMutation.isPending || deleteMutation.isPending,
+    error: updateMutation.isError || deleteMutation.isError
+  };
 }
 
 function useThreadLikeMutation() {
@@ -2147,6 +2708,93 @@ function optimisticallyUpdateContinuationCaches(
   );
 }
 
+function removeContinuationBranchFromCaches(
+  queryClient: QueryClient,
+  result: DeleteContinuationResult
+) {
+  const deletedIds = new Set(result.deletedContinuationIds);
+  const removeDeleted = (items: readonly ThreadContinuation[]) =>
+    items.filter((continuation) => !deletedIds.has(continuation.id));
+
+  optimisticallyUpdateThreadCaches(queryClient, result.threadId, (thread) => ({
+    ...thread,
+    metrics: {
+      ...thread.metrics,
+      continuations: Math.max(
+        0,
+        thread.metrics.continuations - result.deletedContinuationIds.length
+      )
+    }
+  }));
+  queryClient.setQueriesData<ThreadDetail>(
+    { queryKey: ["thread-detail", result.threadId] },
+    (detail) => detail
+      ? {
+          ...detail,
+          continuations: removeDeleted(detail.continuations),
+          allContinuations: detail.allContinuations
+            ? removeDeleted(detail.allContinuations)
+            : detail.allContinuations
+        }
+      : detail
+  );
+  queryClient.setQueriesData<ContinuationDetail>(
+    { queryKey: ["continuation-detail"] },
+    (detail) => detail
+      ? {
+          ...detail,
+          path: removeDeleted(detail.path),
+          children: removeDeleted(detail.children)
+        }
+      : detail
+  );
+  queryClient.setQueriesData<ThreadContinuation[]>(
+    { queryKey: ["thread-version-tree", result.threadId] },
+    (items) => items ? removeDeleted(items) : items
+  );
+  for (const continuationId of result.deletedContinuationIds) {
+    queryClient.removeQueries({ queryKey: ["continuation-detail", continuationId] });
+  }
+}
+
+function invalidateContinuationManagementQueries(
+  queryClient: QueryClient,
+  threadId: string,
+  actorUserId: string
+) {
+  void queryClient.invalidateQueries({ queryKey: ["threads"] });
+  void queryClient.invalidateQueries({ queryKey: ["thread-detail", threadId] });
+  void queryClient.invalidateQueries({ queryKey: ["continuation-detail"] });
+  void queryClient.invalidateQueries({ queryKey: ["thread-version-tree", threadId] });
+  void queryClient.invalidateQueries({ queryKey: ["thread-ai-versions", threadId] });
+  void queryClient.invalidateQueries({ queryKey: ["user-profile", actorUserId] });
+  void queryClient.invalidateQueries({ queryKey: ["user-profile-content"] });
+  void queryClient.invalidateQueries({ queryKey: ["inbox-summary"] });
+}
+
+function countContinuationDescendants(
+  continuationId: string | undefined,
+  continuations: readonly ThreadContinuation[]
+) {
+  if (!continuationId) return 0;
+  const childrenByParent = new Map<string, string[]>();
+  for (const continuation of continuations) {
+    if (!continuation.parentContinuationId) continue;
+    const children = childrenByParent.get(continuation.parentContinuationId) ?? [];
+    children.push(continuation.id);
+    childrenByParent.set(continuation.parentContinuationId, children);
+  }
+  const visited = new Set<string>();
+  const pending = [...(childrenByParent.get(continuationId) ?? [])];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (!current || visited.has(current)) continue;
+    visited.add(current);
+    pending.push(...(childrenByParent.get(current) ?? []));
+  }
+  return visited.size;
+}
+
 function updateThreadLikeState(thread: PoetryThread, isActive: boolean): PoetryThread {
   const changed = thread.viewer.liked !== isActive;
   return {
@@ -2358,6 +3006,39 @@ function getContinuationLineNumber(
     parentId = parent.parentContinuationId;
   }
   return lineNumber;
+}
+
+function updateCustomVersionSelection(
+  current: Record<number, string>,
+  target: ThreadContinuation,
+  lineNumber: number,
+  allContinuations: readonly ThreadContinuation[]
+) {
+  if (current[lineNumber] === target.id) {
+    return Object.fromEntries(
+      Object.entries(current).filter(([selectedLine]) => Number(selectedLine) < lineNumber)
+    );
+  }
+  if (current[lineNumber]) return current;
+
+  const byId = new Map(allContinuations.map((continuation) => [continuation.id, continuation]));
+  const path: ThreadContinuation[] = [];
+  const visited = new Set<string>();
+  let node: ThreadContinuation | undefined = target;
+  while (node && !visited.has(node.id)) {
+    visited.add(node.id);
+    path.unshift(node);
+    node = node.parentContinuationId
+      ? byId.get(node.parentContinuationId)
+      : undefined;
+  }
+
+  return Object.fromEntries(
+    path.map((continuation) => [
+      getContinuationLineNumber(continuation, allContinuations),
+      continuation.id
+    ])
+  );
 }
 
 function composerTargetKey(target: ComposerTarget) {
@@ -2578,6 +3259,7 @@ const styles = StyleSheet.create({
   feedContent: { paddingBottom: 96 },
   pageLoader: { alignItems: "center", paddingVertical: spacing.lg },
   detailContent: { paddingBottom: 86 },
+  selectionDetailContent: { paddingBottom: 112 },
   composerOpenContentInset: { paddingBottom: 150 },
   threadCard: {
     paddingHorizontal: spacing.lg,
@@ -2595,6 +3277,23 @@ const styles = StyleSheet.create({
   threadRow: { flexDirection: "row", alignItems: "flex-start" },
   threadAvatarButton: { minWidth: 38, minHeight: 38 },
   threadBody: { flex: 1, minWidth: 0, marginLeft: 10, alignItems: "flex-start" },
+  threadCardHeaderRow: {
+    width: "100%",
+    minHeight: 30,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between"
+  },
+  threadCardAuthorButton: { flex: 1, minWidth: 0, justifyContent: "center" },
+  threadCardOptionsButton: {
+    width: 36,
+    height: 30,
+    marginLeft: 8,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surfaceMuted
+  },
   threadOpenArea: { maxWidth: "100%" },
   authorRow: { flexDirection: "row", alignItems: "center" },
   authorCopy: { flex: 1, marginLeft: 12, minWidth: 0 },
@@ -2731,6 +3430,14 @@ const styles = StyleSheet.create({
   actionButtonContent: { flexDirection: "row", alignItems: "center" },
   actionCount: { marginLeft: 5, fontSize: 13, lineHeight: 17, color: colors.inkSoft },
   actionCountActive: { color: colors.liked },
+  actionMoreGlyph: {
+    marginTop: -5,
+    color: colors.inkSoft,
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: "800",
+    letterSpacing: 1
+  },
   detailHero: {
     position: "relative",
     overflow: "hidden",
@@ -2766,6 +3473,24 @@ const styles = StyleSheet.create({
   followingButton: { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.profileMuted, backgroundColor: colors.surface },
   followButtonText: { fontSize: 13, lineHeight: 17, fontWeight: "600", color: colors.white },
   followingButtonText: { color: colors.profileMuted },
+  ownerOptionsButton: {
+    width: 38,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.line,
+    backgroundColor: colors.surfaceMuted
+  },
+  ownerOptionsGlyph: {
+    marginTop: -5,
+    color: colors.ink,
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: "800",
+    letterSpacing: 1
+  },
   detailHeroTitle: { marginTop: 14, color: colors.ink, fontFamily: "Georgia", fontSize: 24, lineHeight: 30, fontWeight: "600" },
   detailHeroContent: { marginTop: 10, fontSize: 15, lineHeight: 21, color: colors.ink },
   detailTagRow: { minHeight: 22, marginTop: 10 },
@@ -2929,6 +3654,11 @@ const styles = StyleSheet.create({
     borderColor: colors.ink,
     backgroundColor: colors.ink
   },
+  versionSelectCircleUnavailable: {
+    borderColor: colors.line,
+    backgroundColor: colors.surfaceMuted,
+    opacity: 0.62
+  },
   versionSelectCheck: { color: colors.white, fontSize: 14, lineHeight: 17, fontWeight: "700" },
   versionSelectionHint: {
     marginTop: 7,
@@ -3044,6 +3774,41 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted
   },
   fixedComposerText: { fontSize: 15, lineHeight: 21, color: colors.profileMuted },
+  customFinishBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    minHeight: 80,
+    paddingHorizontal: spacing.lg,
+    paddingTop: 10,
+    paddingBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line,
+    backgroundColor: colors.surface,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: -3 },
+    elevation: 10,
+    zIndex: 20
+  },
+  customFinishCopy: { flex: 1, minWidth: 0, paddingRight: 12 },
+  customFinishTitle: { color: colors.ink, fontSize: 15, lineHeight: 20, fontWeight: "700" },
+  customFinishHint: { marginTop: 2, color: colors.profileMuted, fontSize: 12, lineHeight: 16 },
+  customFinishButton: {
+    minWidth: 104,
+    minHeight: 46,
+    paddingHorizontal: 18,
+    borderRadius: 23,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.ink
+  },
+  customFinishButtonDisabled: { backgroundColor: colors.faint },
+  customFinishButtonText: { color: colors.white, fontSize: 14, lineHeight: 18, fontWeight: "700" },
   inlineComposerRoot: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: "flex-end",
@@ -3119,6 +3884,151 @@ const styles = StyleSheet.create({
   emptyButtonText: { color: colors.white, fontSize: 15, fontWeight: "700" },
   loadingState: { paddingVertical: 40, alignItems: "center" },
   loadingText: { marginTop: 10, color: colors.profileMuted },
+  optionsModalRoot: { flex: 1, justifyContent: "flex-end" },
+  optionsBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(16,16,16,0.34)"
+  },
+  optionsSheet: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: 10,
+    paddingBottom: 30,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    backgroundColor: colors.surface,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: -4 },
+    elevation: 12
+  },
+  optionsHandle: {
+    alignSelf: "center",
+    width: 42,
+    height: 4,
+    marginBottom: 18,
+    borderRadius: 2,
+    backgroundColor: colors.line
+  },
+  optionsEyebrow: {
+    color: colors.profileMuted,
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "700",
+    letterSpacing: 1.2
+  },
+  optionsTitle: {
+    marginTop: 4,
+    marginBottom: 16,
+    color: colors.ink,
+    fontFamily: "Georgia",
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: "600"
+  },
+  optionsActionButton: {
+    minHeight: 72,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.line,
+    justifyContent: "center",
+    backgroundColor: colors.surface
+  },
+  optionsDangerAction: {
+    marginTop: 10,
+    borderColor: "rgba(215,75,57,0.28)",
+    backgroundColor: "rgba(215,75,57,0.04)"
+  },
+  optionsActionTitle: { color: colors.ink, fontSize: 15, lineHeight: 20, fontWeight: "700" },
+  optionsDangerTitle: { color: colors.accent, fontSize: 15, lineHeight: 20, fontWeight: "700" },
+  optionsActionHint: { marginTop: 3, color: colors.profileMuted, fontSize: 12, lineHeight: 17 },
+  optionsConfirmBox: {
+    padding: 16,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(215,75,57,0.28)",
+    backgroundColor: "rgba(215,75,57,0.04)"
+  },
+  optionsConfirmTitle: { color: colors.ink, fontSize: 17, lineHeight: 22, fontWeight: "700" },
+  optionsConfirmCopy: { marginTop: 5, color: colors.inkSoft, fontSize: 13, lineHeight: 19 },
+  optionsError: { marginTop: 10, color: colors.accent, fontSize: 12, lineHeight: 17 },
+  optionsEditLabel: { marginBottom: 8, color: colors.inkSoft, fontSize: 13, lineHeight: 18 },
+  optionsEditInput: {
+    minHeight: 126,
+    maxHeight: 220,
+    paddingHorizontal: 15,
+    paddingVertical: 13,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.inkSoft,
+    color: colors.ink,
+    backgroundColor: colors.surface,
+    fontSize: 16,
+    lineHeight: 23
+  },
+  optionsButtonRow: { marginTop: 16, flexDirection: "row", gap: 10 },
+  customReadySummary: {
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 18,
+    backgroundColor: colors.surfaceMuted
+  },
+  customReadyCount: {
+    minWidth: 40,
+    color: colors.ink,
+    fontFamily: "Georgia",
+    fontSize: 30,
+    lineHeight: 34,
+    fontWeight: "600"
+  },
+  customReadyCopy: { flex: 1, minWidth: 0, marginLeft: 10 },
+  customReadyLabel: { color: colors.ink, fontSize: 14, lineHeight: 18, fontWeight: "700" },
+  customReadyHint: { marginTop: 2, color: colors.profileMuted, fontSize: 12, lineHeight: 16 },
+  customReadyQuestion: { marginTop: 17, color: colors.ink, fontSize: 16, lineHeight: 22, fontWeight: "600" },
+  customReadyRestriction: { marginTop: 8, color: colors.accent, fontSize: 12, lineHeight: 17 },
+  customReadyPublishButton: {
+    flex: 1.35,
+    minHeight: 46,
+    paddingHorizontal: 12,
+    borderRadius: 23,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.ink
+  },
+  customReadyPublishText: { color: colors.white, fontSize: 13, lineHeight: 18, fontWeight: "700" },
+  optionsSecondaryButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 23,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.line,
+    backgroundColor: colors.surface
+  },
+  optionsSecondaryText: { color: colors.ink, fontSize: 14, lineHeight: 18, fontWeight: "600" },
+  optionsPrimaryButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 23,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.ink
+  },
+  optionsPrimaryText: { color: colors.white, fontSize: 14, lineHeight: 18, fontWeight: "700" },
+  optionsDeleteButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 23,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.accent
+  },
+  optionsDeleteText: { color: colors.white, fontSize: 14, lineHeight: 18, fontWeight: "700" },
+  optionsButtonDisabled: { opacity: 0.4 },
   shareToast: {
     position: "absolute",
     left: 18,

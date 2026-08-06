@@ -19,6 +19,7 @@ import {
   type PublishThreadDraftInput,
   type UpdatePoemDraftInput,
   type UpdateContinuationLikeInput,
+  type UpdateContinuationInput,
   type UpdateThreadLikeInput,
   type UpdateCommentCollectionInput,
   type UpdateUserProfileInput,
@@ -443,6 +444,50 @@ export async function handleApiRequest(
             searchParams.get("viewerId") ?? undefined
           )
         );
+      }
+
+      if (continuationRoute.resource === "continuation" && method === "PUT") {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        const request = body as Omit<
+          UpdateContinuationInput,
+          "continuationId" | "userId"
+        >;
+        if (
+          typeof request?.content !== "string" ||
+          request.content.trim().length === 0 ||
+          request.content.length > 5000
+        ) {
+          return json(400, { code: "INVALID_CONTINUATION_UPDATE" });
+        }
+        const continuation = await api.updateContinuation({
+          continuationId: continuationRoute.continuationId,
+          userId: actor.user.id,
+          content: request.content
+        });
+        if (isDatabaseBacked) {
+          scheduleBackgroundTask(
+            context,
+            processThreadAiVersionAfterDebounce(continuation.threadId)
+          );
+        }
+        return json(200, continuation);
+      }
+
+      if (continuationRoute.resource === "continuation" && method === "DELETE") {
+        const actor = await authenticateRequest(context);
+        if (!actor.ok) return actor.response;
+        const result = await api.deleteContinuation({
+          continuationId: continuationRoute.continuationId,
+          userId: actor.user.id
+        });
+        if (isDatabaseBacked) {
+          scheduleBackgroundTask(
+            context,
+            processThreadAiVersionAfterDebounce(result.threadId)
+          );
+        }
+        return json(200, result);
       }
 
       if (continuationRoute.resource === "continuations" && method === "POST") {
