@@ -28,8 +28,6 @@ export type PoemVersionLineViewModel = {
   /** Present only when AI Harmonized changed this contribution. */
   originalText?: string;
   aiChangeNote?: string;
-  /** A LineSpace-AI bridge that exists only in the Harmonized version. */
-  aiInserted?: boolean;
   author: UserProfile;
   isStartingContent: boolean;
   lineNumber: number;
@@ -331,9 +329,7 @@ export function buildThreadVersionComposeParams(
 ) {
   const creativeThread = adaptThreadToCreativeViewModel(thread);
   const contributors = [...new Map(
-    version.lines
-      .filter((line) => !line.aiInserted)
-      .map((line) => [line.author.id, line.author])
+    version.lines.map((line) => [line.author.id, line.author])
   ).values()].sort((left, right) => left.handle.localeCompare(right.handle));
   const versionLines = version.lines.map((line) => ({
     ...line,

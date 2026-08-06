@@ -9,27 +9,9 @@ import {
   type DeepSeekChatCompletionPayload
 } from "./community-spark.js";
 
-export const THREAD_VERSION_AI_PROMPT_VERSION = "thread-version-ai-v5";
+export const THREAD_VERSION_AI_PROMPT_VERSION = "thread-version-ai-v4";
 
 const THREAD_VERSION_PROVIDER_TIMEOUT_MS = 90_000;
-
-const HARMONIZATION_REPAIR_PROMPT = `
-Your previous JSON produced no accepted meaningful Harmonized intervention after
-safety validation. Return a corrected complete JSON object now.
-
-- Keep the same selectedVersionId and preserve every user line id and order.
-- Make exactly one conservative but meaningful wording, syntax, cadence, image
-  echo, or transition edit. Keep the line recognizably the contributor's and
-  preserve its central images and meaning; retaining roughly half of its wording
-  is sufficient when the revised line is stronger. Punctuation-only changes do
-  not count.
-- If the selected path has at least two user lines and a safe local edit is
-  uncertain, instead add exactly one short harmonizedInsertion before a non-first
-  line. Reuse only existing images and emotional gestures from the adjacent lines.
-- For short Chinese lines, prefer a restrained bridge insertion over rewriting
-  most of a user's wording.
-- Never answer that no change is needed. Do not add markdown or commentary.
-`.trim();
 
 /**
  * Version 1 is a selection task. Version 2 is an identity-preserving but
@@ -358,7 +340,6 @@ type RawThreadVersionAiResult = {
   confidence?: unknown;
   harmonizedRationale?: unknown;
   harmonizedLines?: unknown;
-  harmonizedInsertions?: unknown;
 };
 
 type NormalizedHarmonizedLine = {
@@ -366,8 +347,6 @@ type NormalizedHarmonizedLine = {
   text: string;
   changeNote: string;
   changed: boolean;
-  aiInserted?: true;
-  insertBeforeLineId?: string;
 };
 
 export type ThreadVersionAiResult = {
@@ -399,21 +378,6 @@ const resultSchema = {
         required: ["lineId", "text", "changeNote"],
         additionalProperties: false
       }
-    },
-    harmonizedInsertions: {
-      type: "array",
-      minItems: 0,
-      maxItems: 1,
-      items: {
-        type: "object",
-        properties: {
-          beforeLineId: { type: "string" },
-          text: { type: "string" },
-          changeNote: { type: "string" }
-        },
-        required: ["beforeLineId", "text", "changeNote"],
-        additionalProperties: false
-      }
     }
   },
   required: [
@@ -421,8 +385,7 @@ const resultSchema = {
     "recommendedRationale",
     "confidence",
     "harmonizedRationale",
-    "harmonizedLines",
-    "harmonizedInsertions"
+    "harmonizedLines"
   ],
   additionalProperties: false
 } as const;
@@ -439,83 +402,7 @@ export async function requestThreadVersionRecommendation(
 
   const apiKey = communitySparkApiKey();
   if (!apiKey) throw new Error("LLM_NOT_CONFIGURED");
-  const systemMessage = {
-    role: "system" as const,
-    content: [
-      THREAD_VERSION_RECOMMENDATION_PROMPT,
-      `The JSON response must match this schema exactly: ${JSON.stringify(resultSchema)}`
-    ].join("\n\n")
-  };
-  const userMessage = {
-    role: "user" as const,
-    content: JSON.stringify(
-      buildProviderInput(normalizeThread(input.thread), candidates)
-    )
-  };
-  const first = await requestProviderCompletion(
-    apiKey,
-    [systemMessage, userMessage],
-    candidates,
-    0.5
-  );
-  let completion = first;
-  let normalized = normalizeResult(
-    parseProviderResult(first.content),
-    candidates
-  );
-  let inputTokens = first.payload.usage?.prompt_tokens ?? 0;
-  let outputTokens = first.payload.usage?.completion_tokens ?? 0;
-  if (!hasMeaningfulHarmonization(normalized)) {
-    console.warn("Thread Version first pass had no accepted harmonization", {
-      threadId: request.poemId,
-      model: communitySparkModel(),
-      action: "repair"
-    });
-    const repair = await requestProviderCompletion(
-      apiKey,
-      [
-        systemMessage,
-        userMessage,
-        { role: "assistant", content: first.content },
-        { role: "user", content: HARMONIZATION_REPAIR_PROMPT }
-      ],
-      candidates,
-      0.25
-    );
-    completion = repair;
-    inputTokens += repair.payload.usage?.prompt_tokens ?? 0;
-    outputTokens += repair.payload.usage?.completion_tokens ?? 0;
-    normalized = normalizeResult(parseProviderResult(repair.content), candidates);
-    if (!hasMeaningfulHarmonization(normalized)) {
-      console.warn("Thread Version repair preserved the intact path", {
-        threadId: request.poemId,
-        model: communitySparkModel()
-      });
-    }
-  }
 
-  return {
-    id: completion.payload.id || `thread-version-ai-${crypto.randomUUID()}`,
-    intent: request.intent,
-    suggestions: [JSON.stringify(normalized)],
-    usage: {
-      inputTokens,
-      outputTokens
-    }
-  };
-}
-
-type ProviderMessage = {
-  role: "system" | "user" | "assistant";
-  content: string;
-};
-
-async function requestProviderCompletion(
-  apiKey: string,
-  messages: ProviderMessage[],
-  candidates: CandidateVersion[],
-  temperature: number
-) {
   let response: Response;
   try {
     response = await fetch(communitySparkEndpoint(), {
@@ -527,10 +414,27 @@ async function requestProviderCompletion(
       signal: AbortSignal.timeout(THREAD_VERSION_PROVIDER_TIMEOUT_MS),
       body: JSON.stringify({
         model: communitySparkModel(),
+        // DeepSeek V4 defaults to thinking mode. This task needs a compact,
+        // schema-bound editorial result, so non-thinking mode is both faster
+        // and less likely to exhaust a background Function invocation.
         thinking: { type: "disabled" },
-        messages,
+        messages: [
+          {
+            role: "system",
+            content: [
+              THREAD_VERSION_RECOMMENDATION_PROMPT,
+              `The JSON response must match this schema exactly: ${JSON.stringify(resultSchema)}`
+            ].join("\n\n")
+          },
+          {
+            role: "user",
+            content: JSON.stringify(
+              buildProviderInput(normalizeThread(input.thread), candidates)
+            )
+          }
+        ],
         response_format: { type: "json_object" },
-        temperature,
+        temperature: 0.5,
         max_tokens: threadVersionOutputTokenBudget(candidates),
         stream: false
       })
@@ -561,9 +465,7 @@ async function requestProviderCompletion(
     throw new Error(code === "LLM_TIMEOUT" ? code : "LLM_INVALID_RESPONSE");
   }
   const choice = payload.choices?.[0];
-  if (choice?.finish_reason === "length") {
-    throw new Error("LLM_INCOMPLETE_RESPONSE");
-  }
+  if (choice?.finish_reason === "length") throw new Error("LLM_INCOMPLETE_RESPONSE");
   if (choice?.finish_reason === "content_filter" || choice?.message?.refusal) {
     throw new Error("LLM_REFUSED");
   }
@@ -572,19 +474,24 @@ async function requestProviderCompletion(
   }
   const content = choice?.message?.content?.trim();
   if (!content) throw new Error("LLM_EMPTY_RESPONSE");
-  return { payload, content };
-}
 
-function parseProviderResult(content: string): RawThreadVersionAiResult {
+  let raw: RawThreadVersionAiResult;
   try {
-    return JSON.parse(stripJsonFence(content)) as RawThreadVersionAiResult;
+    raw = JSON.parse(stripJsonFence(content)) as RawThreadVersionAiResult;
   } catch {
     throw new Error("LLM_INVALID_RESPONSE");
   }
-}
+  const normalized = normalizeResult(raw, candidates);
 
-function hasMeaningfulHarmonization(result: ThreadVersionAiResult) {
-  return result.harmonizedLines.some((line) => line.changed);
+  return {
+    id: payload.id || `thread-version-ai-${crypto.randomUUID()}`,
+    intent: request.intent,
+    suggestions: [JSON.stringify(normalized)],
+    usage: {
+      inputTokens: payload.usage?.prompt_tokens ?? 0,
+      outputTokens: payload.usage?.completion_tokens ?? 0
+    }
+  };
 }
 
 function parseInput(value: string): ThreadVersionAiInput {
@@ -719,9 +626,9 @@ function normalizeResult(
     };
   });
 
-  const maximumChangedLines = Math.max(1, Math.ceil(selected.lines.length * 0.75));
+  const maximumChangedLines = Math.max(1, Math.ceil(selected.lines.length * 0.65));
   let changedCount = 0;
-  const editedUserLines = proposed.map((line, index) => {
+  const harmonizedLines = proposed.map((line, index) => {
     if (!line.changed) return line;
     changedCount += 1;
     if (changedCount <= maximumChangedLines) return line;
@@ -732,127 +639,35 @@ function normalizeResult(
       changed: false
     };
   });
-  const bridgeInsertions = normalizeBridgeInsertions(
-    raw.harmonizedInsertions,
-    selected
-  );
-  const insertionsByTarget = new Map(
-    bridgeInsertions.map((line) => [line.insertBeforeLineId!, line])
-  );
-  const harmonizedLines = editedUserLines.flatMap((line) => {
-    const insertion = insertionsByTarget.get(line.lineId);
-    return insertion ? [insertion, line] : [line];
-  });
-  const selectedText = selected.lines.map((line) => line.text).join("\n");
-  const chinese = isPredominantlyChinese(selectedText);
-  const hasChange = harmonizedLines.some((line) => line.changed);
 
   return {
     selectedVersionId: selected.id,
     recommendedRationale: cleanText(
       raw.recommendedRationale ?? raw.rationale,
       320
-    ) || (chinese
-      ? "这条路径在意象、语气与情感递进上最为连贯。"
-      : "This path offers the most coherent movement between its existing contributions."),
+    ) || "This path offers the most coherent movement between its existing contributions.",
     confidence:
       typeof raw.confidence === "number" && Number.isFinite(raw.confidence)
         ? Math.max(0, Math.min(1, raw.confidence))
         : 0.5,
     harmonizedRationale: cleanText(raw.harmonizedRationale, 320) ||
-      (hasChange
-        ? chinese
-          ? "局部调整与衔接让诗意流动更自然，同时保留每位创作者的核心表达。"
-          : "Focused edits make the transitions more natural while preserving every contributor's meaning."
-        : chinese
-          ? "当前路径已保留原貌，未采用可能改变作者核心表达的修改。"
-          : "The path remains intact because no proposed edit safely preserved every contributor's meaning."),
+      (harmonizedLines.some((line) => line.changed)
+        ? "Small local edits soften the transitions while preserving every contributor's meaning."
+        : "The selected path is already cohesive, so every contribution remains unchanged."),
     harmonizedLines
   };
 }
 
 function isSafeLightEdit(original: string, proposed: string) {
   if (!proposed.trim() || original === proposed) return original === proposed;
-  if (normalizeLexicalContent(original) === normalizeLexicalContent(proposed)) {
-    return false;
-  }
   const originalUnits = [...normalizeForComparison(original)];
   const proposedUnits = [...normalizeForComparison(proposed)];
   if (originalUnits.length === 0 || proposedUnits.length === 0) return false;
-  if (proposedUnits.length > originalUnits.length * 2 + 12) return false;
-  if (proposedUnits.length < originalUnits.length * 0.35 - 2) return false;
+  if (proposedUnits.length > originalUnits.length * 1.6 + 8) return false;
+  if (proposedUnits.length < originalUnits.length * 0.5 - 2) return false;
   const common = longestCommonSubsequenceLength(originalUnits, proposedUnits);
   const preservation = common / Math.max(originalUnits.length, proposedUnits.length);
-  return preservation >= (originalUnits.length <= 12 ? 0.35 : 0.45);
-}
-
-function normalizeBridgeInsertions(
-  value: unknown,
-  selected: CandidateVersion
-): NormalizedHarmonizedLine[] {
-  if (!Array.isArray(value) || value.length === 0) return [];
-  const source = value[0];
-  if (!source || typeof source !== "object") return [];
-  const item = source as Record<string, unknown>;
-  const beforeLineId = cleanText(item.beforeLineId, 500);
-  const targetIndex = selected.lines.findIndex(
-    (line) => line.lineId === beforeLineId
-  );
-  if (targetIndex <= 0) return [];
-  const text = cleanText(item.text, 500);
-  const previous = selected.lines[targetIndex - 1]!;
-  const next = selected.lines[targetIndex]!;
-  if (!isSafeBridgeInsertion(previous.text, next.text, text)) return [];
-  const lineId = `ai-bridge-before:${beforeLineId}`;
-  if (selected.lines.some((line) => line.lineId === lineId)) return [];
-  return [{
-    lineId,
-    text,
-    changeNote: cleanText(item.changeNote, 180),
-    changed: true,
-    aiInserted: true,
-    insertBeforeLineId: beforeLineId
-  }];
-}
-
-function isSafeBridgeInsertion(
-  previous: string,
-  next: string,
-  proposed: string
-) {
-  if (!proposed || /[\r\n]/u.test(proposed)) return false;
-  if (proposed === previous || proposed === next) return false;
-  const surroundingLength = Math.max(
-    normalizeForComparison(previous).length,
-    normalizeForComparison(next).length
-  );
-  if (proposed.length > Math.max(80, surroundingLength * 1.8 + 24)) {
-    return false;
-  }
-  const surroundingLanguage = dominantWritingSystem(`${previous}\n${next}`);
-  const proposedLanguage = dominantWritingSystem(proposed);
-  return surroundingLanguage === "mixed" ||
-    proposedLanguage === "mixed" ||
-    surroundingLanguage === proposedLanguage;
-}
-
-function normalizeLexicalContent(value: string) {
-  return value
-    .normalize("NFKC")
-    .toLocaleLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, "");
-}
-
-function dominantWritingSystem(value: string): "chinese" | "latin" | "mixed" {
-  const chinese = value.match(/[\u3400-\u9FFF]/gu)?.length ?? 0;
-  const latin = value.match(/[A-Za-z]/gu)?.length ?? 0;
-  if (chinese > latin * 1.5) return "chinese";
-  if (latin > chinese * 1.5) return "latin";
-  return "mixed";
-}
-
-function isPredominantlyChinese(value: string) {
-  return dominantWritingSystem(value) === "chinese";
+  return preservation >= 0.58;
 }
 
 function normalizeForComparison(value: string) {

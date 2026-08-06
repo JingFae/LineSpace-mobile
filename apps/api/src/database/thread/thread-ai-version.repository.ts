@@ -147,14 +147,7 @@ function parseSnapshotResult(value: unknown): StoredThreadAiResult | undefined {
       text: line.text,
       changeNote:
         typeof line.changeNote === "string" ? line.changeNote : "",
-      changed: line.changed,
-      ...(line.aiInserted === true &&
-      typeof line.insertBeforeLineId === "string"
-        ? {
-            aiInserted: true as const,
-            insertBeforeLineId: line.insertBeforeLineId
-          }
-        : {})
+      changed: line.changed
     }];
   });
   return {

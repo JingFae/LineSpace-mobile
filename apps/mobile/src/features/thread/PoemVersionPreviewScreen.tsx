@@ -18,7 +18,6 @@ import {
   AppScreen,
   Avatar,
   EmptyState,
-  LineSpaceAiAvatar,
   MoreIcon,
   ShareIcon,
   buildAiTextSegments
@@ -148,59 +147,23 @@ export function PoemVersionPreviewScreen({
       aiRationale: aiResult?.recommended?.rationale
     };
     const harmonizedLinesById = new Map(
-      aiResult?.harmonized?.lines
-        .filter((line) => !line.aiInserted)
-        .map((line) => [line.lineId, line]) ?? []
+      aiResult?.harmonized?.lines.map((line) => [line.lineId, line]) ?? []
     );
-    const harmonizedInsertionsByTarget = new Map(
-      aiResult?.harmonized?.lines
-        .filter(
-          (line) => line.aiInserted && typeof line.insertBeforeLineId === "string"
-        )
-        .map((line) => [line.insertBeforeLineId!, line]) ?? []
-    );
-    const harmonizedVersionLines = recommendedBase.lines.flatMap((line) => {
-      const aiLine = harmonizedLinesById.get(line.id);
-      const userLine = !aiLine?.changed || aiLine.text === line.text
-        ? { ...line }
-        : {
-            ...line,
-            originalText: line.text,
-            text: aiLine.text,
-            aiChangeNote: aiLine.changeNote
-          };
-      const insertion = harmonizedInsertionsByTarget.get(line.id);
-      if (!insertion) return [userLine];
-      return [
-        {
-          id: insertion.lineId,
-          text: insertion.text,
-          originalText: "",
-          aiChangeNote: insertion.changeNote,
-          aiInserted: true,
-          // The following user remains the structural anchor. Rendering and
-          // credits identify this synthetic line as LineSpace-AI.
-          author: line.author,
-          isStartingContent: false,
-          lineNumber: line.lineNumber,
-          likes: 0,
-          ...(line.parentContinuationId
-            ? { parentContinuationId: line.parentContinuationId }
-            : {})
-        },
-        userLine
-      ];
-    });
     const harmonized = {
       ...recommendedBase,
       id: `${recommendedBase.id}:harmonized`,
       criterion: "harmonized" as const,
       aiRationale: aiResult?.harmonized?.rationale,
-      lines: harmonizedVersionLines,
-      totalTextLength: harmonizedVersionLines.reduce(
-        (total, line) => total + line.text.length,
-        0
-      )
+      lines: recommendedBase.lines.map((line) => {
+        const aiLine = harmonizedLinesById.get(line.id);
+        if (!aiLine?.changed || aiLine.text === line.text) return { ...line };
+        return {
+          ...line,
+          originalText: line.text,
+          text: aiLine.text,
+          aiChangeNote: aiLine.changeNote
+        };
+      })
     };
     const pages: PoemVersionViewModel[] = [
       { ...mostPopular, id: `${mostPopular.id}:popular`, criterion: "mostPopular" },
@@ -561,11 +524,8 @@ function PoemArtwork({
   exportRef?: Ref<View>;
 }) {
   const contributors = [...new Map(
-    version.lines
-      .filter((line) => !line.aiInserted)
-      .map((line) => [line.author.id, line.author])
+    version.lines.map((line) => [line.author.id, line.author])
   ).values()];
-  const hasAiBridge = version.lines.some((line) => line.aiInserted);
   return (
     <View
       collapsable={false}
@@ -587,41 +547,31 @@ function PoemArtwork({
         </View>
       ) : null}
       {version.lines.map((line) => {
-        const segments = line.aiInserted
-          ? [{ text: line.text, ai: true }]
-          : line.originalText !== undefined
-            ? buildAiTextSegments(line.originalText, line.text)
-            : [{ text: line.text, ai: false }];
+        const segments = line.originalText
+          ? buildAiTextSegments(line.originalText, line.text)
+          : [{ text: line.text, ai: false }];
         return (
           <View
             key={line.id}
             style={[
               styles.artworkLineRow,
-              line.originalText !== undefined && styles.harmonizedLineRow
+              line.originalText && styles.harmonizedLineRow
             ]}
           >
-            {line.aiInserted ? (
-              <LineSpaceAiAvatar size={30} />
-            ) : (
-              <Avatar
-                color={line.author.avatarColor}
-                imageSource={line.author.avatarUrl ? { uri: line.author.avatarUrl } : undefined}
-                label={line.author.displayName}
-                size={30}
-              />
-            )}
+            <Avatar
+              color={line.author.avatarColor}
+              imageSource={line.author.avatarUrl ? { uri: line.author.avatarUrl } : undefined}
+              label={line.author.displayName}
+              size={30}
+            />
             <View style={styles.artworkLineCopy}>
               <View style={styles.artworkLineHeader}>
                 <Text style={[styles.artworkLineAuthor, { color: media.textColor }]}>
-                  {line.aiInserted
-                    ? "AI bridge · @LineSpace-AI"
-                    : `${line.lineNumber}. @${line.author.handle}`}
+                  {line.lineNumber}. @{line.author.handle}
                 </Text>
-                {!line.aiInserted ? (
-                  <Text style={[styles.artworkLineLikes, { color: media.mutedTextColor }]}>
-                    ♥ {line.likes}
-                  </Text>
-                ) : null}
+                <Text style={[styles.artworkLineLikes, { color: media.mutedTextColor }]}>
+                  ♥ {line.likes}
+                </Text>
               </View>
               <Text style={[styles.artworkLine, { color: media.textColor }]}>
                 {segments.map((segment, index) => (
@@ -655,16 +605,6 @@ function PoemArtwork({
               />
             </View>
           ))}
-          {hasAiBridge ? (
-            <View
-              style={[
-                styles.artworkAvatar,
-                { marginLeft: contributors.length ? -8 : 0 }
-              ]}
-            >
-              <LineSpaceAiAvatar size={28} />
-            </View>
-          ) : null}
         </View>
         <Text style={[styles.artworkMeta, { color: media.mutedTextColor }]}>
           {version.lines.length} lines · {version.totalLikeScore} likes

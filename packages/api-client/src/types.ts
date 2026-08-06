@@ -959,9 +959,6 @@ export type ThreadAiHarmonizedLine = {
   text: string;
   changeNote: string;
   changed: boolean;
-  /** True only for a LineSpace-AI bridge added before an existing user line. */
-  aiInserted?: true;
-  insertBeforeLineId?: string;
 };
 
 export type ThreadAiVersions = {
