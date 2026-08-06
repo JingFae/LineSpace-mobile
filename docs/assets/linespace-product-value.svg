@@ -1,0 +1,172 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="920" viewBox="0 0 1600 920" role="img" aria-labelledby="title desc">
+  <title id="title">LineSpace product positioning and value</title>
+  <desc id="desc">LineSpace turns lightweight social interaction into two author-controlled creative loops: comments become revisitable revision material for Posts, while parent-linked continuations become attributed candidate poems for Threads.</desc>
+  <defs>
+    <linearGradient id="hero" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#151515"/>
+      <stop offset="1" stop-color="#332E2C"/>
+    </linearGradient>
+    <linearGradient id="warm" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFE4E0"/>
+      <stop offset="1" stop-color="#FFF7EF"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#151515" flood-opacity="0.10"/>
+    </filter>
+    <pattern id="paper" width="36" height="36" patternUnits="userSpaceOnUse">
+      <path d="M0 35.5H36" stroke="#151515" stroke-opacity="0.025"/>
+      <circle cx="7" cy="8" r="0.8" fill="#151515" fill-opacity="0.04"/>
+    </pattern>
+    <marker id="arrowRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10Z" fill="#F5324A"/>
+    </marker>
+    <marker id="arrowInk" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10Z" fill="#151515"/>
+    </marker>
+    <style>
+      .sans { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif; }
+      .serif { font-family: Georgia, "Noto Serif SC", serif; }
+      .kicker { font-size: 14px; font-weight: 800; letter-spacing: 2.4px; }
+      .h1 { font-size: 42px; font-weight: 650; fill: #151515; }
+      .sub { font-size: 17px; fill: #625E5A; }
+      .loop-title { font-size: 25px; font-weight: 760; fill: #151515; }
+      .loop-copy { font-size: 15px; fill: #625E5A; }
+      .node-title { font-size: 16px; font-weight: 760; fill: #151515; }
+      .node-copy { font-size: 13px; fill: #625E5A; }
+      .pillar-title { font-size: 17px; font-weight: 760; fill: #151515; }
+      .pillar-copy { font-size: 14px; fill: #625E5A; }
+      .white { fill: #FFFFFF; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="920" fill="#F4F2F0"/>
+  <rect width="1600" height="920" fill="url(#paper)"/>
+  <path d="M1240 0H1600V920H1100Z" fill="#FFFFFF" fill-opacity="0.40"/>
+
+  <g class="sans">
+    <text x="64" y="64" class="kicker" fill="#F5324A">PRODUCT POSITIONING</text>
+    <text x="64" y="114" class="h1">Social interaction as creative infrastructure</text>
+    <text x="64" y="146" class="sub">For poetry and short-form writing — asynchronous, attributable and controlled by the people who create</text>
+
+    <g transform="translate(64 181)" filter="url(#shadow)">
+      <rect width="1472" height="104" rx="26" fill="url(#hero)"/>
+      <text x="34" y="38" class="kicker white">LINE SPACE, NOT GENERIC SOCIAL FEED</text>
+      <text x="34" y="73" class="serif white" font-size="25">把“看见一首诗”与“继续创作它”连接起来。</text>
+      <rect x="1075" y="27" width="363" height="50" rx="25" fill="#FFFFFF" fill-opacity="0.10" stroke="#FFFFFF" stroke-opacity="0.18"/>
+      <text x="1256.5" y="58" text-anchor="middle" class="white" font-size="14" font-weight="750">AI MEDIATES · PEOPLE AUTHOR</text>
+    </g>
+
+    <g transform="translate(64 325)" filter="url(#shadow)">
+      <rect width="710" height="360" rx="28" fill="#FFFFFF" stroke="#E8E4DF"/>
+      <rect x="24" y="22" width="98" height="27" rx="13.5" fill="#FFE4E0"/>
+      <text x="40" y="41" class="kicker" font-size="12" fill="#F5324A">POST LOOP</text>
+      <text x="24" y="86" class="loop-title">Feedback becomes revisitable material</text>
+      <text x="24" y="112" class="loop-copy">An author-owned revision loop built around reader response</text>
+
+      <g transform="translate(24 148)">
+        <rect width="142" height="93" rx="18" fill="#F9F6EF"/>
+        <text x="16" y="29" class="node-title">1 · Publish</text>
+        <text x="16" y="53" class="node-copy">Post, layout</text>
+        <text x="16" y="73" class="node-copy">and audience</text>
+      </g>
+      <path d="M175 194H198" stroke="#F5324A" stroke-width="2.5" marker-end="url(#arrowRed)"/>
+      <g transform="translate(208 148)">
+        <rect width="142" height="93" rx="18" fill="#F7F7F6"/>
+        <text x="16" y="29" class="node-title">2 · Respond</text>
+        <text x="16" y="53" class="node-copy">Comments, replies</text>
+        <text x="16" y="73" class="node-copy">and reactions</text>
+      </g>
+      <path d="M359 194H382" stroke="#F5324A" stroke-width="2.5" marker-end="url(#arrowRed)"/>
+      <g transform="translate(392 148)">
+        <rect width="142" height="93" rx="18" fill="url(#warm)"/>
+        <text x="16" y="29" class="node-title">3 · Re-enter</text>
+        <text x="16" y="53" class="node-copy">Three optional</text>
+        <text x="16" y="73" class="node-copy">Spark ideas</text>
+      </g>
+      <path d="M543 194H566" stroke="#F5324A" stroke-width="2.5" marker-end="url(#arrowRed)"/>
+      <g transform="translate(576 148)">
+        <rect width="110" height="93" rx="18" fill="#151515"/>
+        <text x="15" y="29" class="node-title white">4 · Decide</text>
+        <text x="15" y="53" class="node-copy" fill="#D7D1CD">Apply, adapt</text>
+        <text x="15" y="73" class="node-copy" fill="#D7D1CD">undo, ignore</text>
+      </g>
+
+      <rect x="24" y="271" width="662" height="62" rx="16" fill="#FFF8F6" stroke="#F6D8D2"/>
+      <circle cx="49" cy="302" r="8" fill="#F5324A"/>
+      <text x="70" y="296" font-size="15" font-weight="760" fill="#151515">Value</text>
+      <text x="70" y="318" class="loop-copy">Feedback keeps its source; the author keeps the final word.</text>
+    </g>
+
+    <g transform="translate(826 325)" filter="url(#shadow)">
+      <rect width="710" height="360" rx="28" fill="#FFFFFF" stroke="#E8E4DF"/>
+      <rect x="24" y="22" width="113" height="27" rx="13.5" fill="#EDEBE9"/>
+      <text x="40" y="41" class="kicker" font-size="12" fill="#151515">THREAD LOOP</text>
+      <text x="24" y="86" class="loop-title">Divergence becomes collective composition</text>
+      <text x="24" y="112" class="loop-copy">A participant-led loop that preserves branches and attribution</text>
+
+      <g transform="translate(24 148)">
+        <rect width="142" height="93" rx="18" fill="#F9F6EF"/>
+        <text x="16" y="29" class="node-title">1 · Invite</text>
+        <text x="16" y="53" class="node-copy">Opening line</text>
+        <text x="16" y="73" class="node-copy">plus prompt / rule</text>
+      </g>
+      <path d="M175 194H198" stroke="#151515" stroke-width="2.5" marker-end="url(#arrowInk)"/>
+      <g transform="translate(208 148)">
+        <rect width="142" height="93" rx="18" fill="#F7F7F6"/>
+        <text x="16" y="29" class="node-title">2 · Branch</text>
+        <text x="16" y="53" class="node-copy">Parent-linked</text>
+        <text x="16" y="73" class="node-copy">continuations</text>
+      </g>
+      <path d="M359 194H382" stroke="#151515" stroke-width="2.5" marker-end="url(#arrowInk)"/>
+      <g transform="translate(392 148)">
+        <rect width="142" height="93" rx="18" fill="#F7F7F6"/>
+        <text x="16" y="29" class="node-title">3 · Compare</text>
+        <text x="16" y="53" class="node-copy">Popular, recommended</text>
+        <text x="16" y="73" class="node-copy">harmonized, custom</text>
+      </g>
+      <path d="M543 194H566" stroke="#151515" stroke-width="2.5" marker-end="url(#arrowInk)"/>
+      <g transform="translate(576 148)">
+        <rect width="110" height="93" rx="18" fill="#151515"/>
+        <text x="15" y="29" class="node-title white">4 · Carry</text>
+        <text x="15" y="53" class="node-copy" fill="#D7D1CD">Export or</text>
+        <text x="15" y="73" class="node-copy" fill="#D7D1CD">publish as Post</text>
+      </g>
+
+      <rect x="24" y="271" width="662" height="62" rx="16" fill="#F7F7F6" stroke="#E8E4DF"/>
+      <circle cx="49" cy="302" r="8" fill="#151515"/>
+      <text x="70" y="296" font-size="15" font-weight="760" fill="#151515">Value</text>
+      <text x="70" y="318" class="loop-copy">Writers can add a path without overwriting anyone else’s path.</text>
+    </g>
+
+    <g transform="translate(64 727)">
+      <text x="0" y="0" class="kicker" fill="#F5324A">CROSS-CUTTING PRODUCT PROMISES</text>
+
+      <g transform="translate(0 24)" filter="url(#shadow)">
+        <rect width="466" height="120" rx="22" fill="#FFFFFF" stroke="#E8E4DF"/>
+        <circle cx="36" cy="38" r="14" fill="#FFE4E0"/>
+        <text x="62" y="44" class="pillar-title">Boundaries</text>
+        <text x="24" y="76" class="pillar-copy">Draft first, then public / included / excluded</text>
+        <text x="24" y="99" class="pillar-copy">audience; guest writes require an account.</text>
+      </g>
+
+      <g transform="translate(503 24)" filter="url(#shadow)">
+        <rect width="466" height="120" rx="22" fill="#FFFFFF" stroke="#E8E4DF"/>
+        <circle cx="36" cy="38" r="14" fill="#EDEBE9"/>
+        <text x="62" y="44" class="pillar-title">Provenance</text>
+        <text x="24" y="76" class="pillar-copy">Source comments, line authors, contributors and</text>
+        <text x="24" y="99" class="pillar-copy">visible AI changes remain inspectable.</text>
+      </g>
+
+      <g transform="translate(1006 24)" filter="url(#shadow)">
+        <rect width="466" height="120" rx="22" fill="#FFFFFF" stroke="#E8E4DF"/>
+        <circle cx="36" cy="38" r="14" fill="#F9E9C4"/>
+        <text x="62" y="44" class="pillar-title">Artifactization</text>
+        <text x="24" y="76" class="pillar-copy">Poem-aware layout, media, preview and Web</text>
+        <text x="24" y="99" class="pillar-copy">JPG / PDF export turn a thread into a work.</text>
+      </g>
+    </g>
+
+    <text x="64" y="898" class="sub">Research framing: creative uptake · feedback-to-revision · continuation-to-composition · bounded computational mediation</text>
+    <text x="1536" y="898" text-anchor="end" font-family="SFMono-Regular, Consolas, monospace" font-size="13" fill="#625E5A">DESIGN CLAIMS · NO USER-STUDY OUTCOME CLAIMED</text>
+  </g>
+</svg>
