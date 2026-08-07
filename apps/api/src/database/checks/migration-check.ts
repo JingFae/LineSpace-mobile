@@ -112,6 +112,13 @@ const communitySparkLegacyUndoBackfillMigration = await readFile(
   ),
   "utf8"
 );
+const communitySparkNonretryableConflictsMigration = await readFile(
+  new URL(
+    "20260807000100_community_spark_nonretryable_conflicts.sql",
+    canonicalMigrationsUrl
+  ),
+  "utf8"
+);
 const aiSparkAnalyticsMigration = await readFile(
   new URL(
     "20260803000100_ai_spark_request_analytics.sql",
@@ -165,6 +172,18 @@ for (const required of [
   assert(
     required.test(stableThreadLinesMigration),
     `Stable thread line migration is missing ${required}.`
+  );
+}
+for (const required of [
+  /rename\s+to\s+apply_community_spark_retryable_legacy/i,
+  /rename\s+to\s+undo_community_spark_retryable_legacy/i,
+  /when\s+serialization_failure[\s\S]*raise\s+sqlstate\s+'PT409'/i,
+  /revoke\s+execute[\s\S]*apply_community_spark_retryable_legacy[\s\S]*from\s+public,\s*anon,\s*authenticated/i,
+  /notify\s+pgrst,\s*'reload schema'/i
+] as const) {
+  assert(
+    required.test(communitySparkNonretryableConflictsMigration),
+    `Community Spark non-retryable conflict migration is missing ${required}.`
   );
 }
 for (const required of [

@@ -257,7 +257,11 @@ export class PostRepository {
         details: result.error.details,
         hint: result.error.hint
       });
-      if (result.error.code === "40001" || result.error.code === "55P03") {
+      if (
+        result.error.code === "PT409" ||
+        result.error.code === "40001" ||
+        result.error.code === "55P03"
+      ) {
         throw new DomainRepositoryError(
           "CONFLICT",
           409,
@@ -311,7 +315,11 @@ export class PostRepository {
         details: result.error.details,
         hint: result.error.hint
       });
-      if (result.error.code === "40001" || result.error.code === "55P03") {
+      if (
+        result.error.code === "PT409" ||
+        result.error.code === "40001" ||
+        result.error.code === "55P03"
+      ) {
         throw new DomainRepositoryError(
           "CONFLICT",
           409,

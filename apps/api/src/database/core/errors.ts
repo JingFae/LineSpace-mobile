@@ -27,7 +27,9 @@ export function classifyDatabaseError(error: {
   if (error.code === "42501" || error.code === "PGRST301") {
     return "forbidden";
   }
-  if (error.code === "40001") return "serialization-conflict";
+  if (error.code === "40001" || error.code === "PT409") {
+    return "serialization-conflict";
+  }
   return "unavailable";
 }
 
